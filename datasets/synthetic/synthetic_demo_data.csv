@@ -1,0 +1,8 @@
+# SYNTHETIC DEMONSTRATION DATASET
+# This file contains synthetic scenario variations for testing catastrophic storm surges (e.g. 150mm cloudburst)
+# and hypothetical sensor feeds where real-time physical telemetry is absent.
+scenario_id,simulated_rainfall_mm,simulated_river_discharge_cusecs,affected_corridor,expected_water_level_m,simulated_risk_score,synthetic_label
+SIM_EXTREME_01,145.0,45000,Sinhagad Road Basin,2.9,94,CRITICAL_EVACUATION_REQUIRED
+SIM_EXTREME_02,110.0,38000,Bund Garden Confluence,2.1,84,HIGH_RISK_DIVERT_TRAFFIC
+SIM_MODERATE_01,55.0,18000,FC Road Corridor,0.4,45,MODERATE_DRIVE_WITH_CAUTION
+SIM_LOW_01,15.0,8000,Kothrud Elevated Corridor,0.05,16,LOW_NORMAL_OPERATIONS

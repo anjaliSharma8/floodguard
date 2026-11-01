@@ -1,0 +1,460 @@
+{
+  "type": "FeatureCollection",
+  "metadata": {
+    "region": "Pune & Pimpri-Chinchwad, Maharashtra, India",
+    "source": "OpenStreetMap Contributors & Geofabrik India",
+    "extracted_at": "2026-10-30T08:00:00Z",
+    "nodes_count": 18,
+    "edges_count": 24
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "R01",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.8446, 18.5314],
+          [73.8402, 18.5245],
+          [73.8378, 18.5186]
+        ]
+      },
+      "properties": {
+        "road_id": "R01",
+        "road_name": "Fergusson College (FC) Road",
+        "from_node": "N_SHIVAJINAGAR",
+        "to_node": "N_DECCAN",
+        "road_type": "primary",
+        "distance_km": 1.8,
+        "estimated_speed_kmph": 35,
+        "base_elevation_m": 560,
+        "slope_pct": 1.2,
+        "drainage_condition": "moderate",
+        "accessibility": "all_vehicles",
+        "one_way": true,
+        "flood_risk_level": "moderate",
+        "flood_risk_score": 42
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R02",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.8446, 18.5314],
+          [73.8475, 18.5255],
+          [73.8410, 18.5190]
+        ]
+      },
+      "properties": {
+        "road_id": "R02",
+        "road_name": "Jangali Maharaj (JM) Road",
+        "from_node": "N_SHIVAJINAGAR",
+        "to_node": "N_DECCAN",
+        "road_type": "primary",
+        "distance_km": 1.9,
+        "estimated_speed_kmph": 40,
+        "base_elevation_m": 558,
+        "slope_pct": 0.8,
+        "drainage_condition": "good",
+        "accessibility": "all_vehicles",
+        "one_way": true,
+        "flood_risk_level": "low",
+        "flood_risk_score": 28
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R03",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.8378, 18.5186],
+          [73.8320, 18.5080],
+          [73.8210, 18.4980]
+        ]
+      },
+      "properties": {
+        "road_id": "R03",
+        "road_name": "Sinhagad Road (Anand Nagar Stretch)",
+        "from_node": "N_DECCAN",
+        "to_node": "N_SINHAGAD_RD",
+        "road_type": "primary",
+        "distance_km": 3.8,
+        "estimated_speed_kmph": 25,
+        "base_elevation_m": 546,
+        "slope_pct": 0.4,
+        "drainage_condition": "poor",
+        "accessibility": "heavy_vehicles_only",
+        "one_way": false,
+        "flood_risk_level": "critical",
+        "flood_risk_score": 88
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R04",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.8378, 18.5186],
+          [73.8240, 18.5075],
+          [73.8060, 18.5020]
+        ]
+      },
+      "properties": {
+        "road_id": "R04",
+        "road_name": "Karve Road (Deccan to Kothrud)",
+        "from_node": "N_DECCAN",
+        "to_node": "N_KOTHRUD",
+        "road_type": "primary",
+        "distance_km": 3.2,
+        "estimated_speed_kmph": 35,
+        "base_elevation_m": 572,
+        "slope_pct": 2.1,
+        "drainage_condition": "good",
+        "accessibility": "all_vehicles",
+        "one_way": false,
+        "flood_risk_level": "low",
+        "flood_risk_score": 18
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R05",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.8060, 18.5020],
+          [73.8120, 18.4850],
+          [73.8210, 18.4980]
+        ]
+      },
+      "properties": {
+        "road_id": "R05",
+        "road_name": "Warje Bypass / Canal Link",
+        "from_node": "N_KOTHRUD",
+        "to_node": "N_SINHAGAD_RD",
+        "road_type": "secondary",
+        "distance_km": 4.1,
+        "estimated_speed_kmph": 30,
+        "base_elevation_m": 565,
+        "slope_pct": 1.5,
+        "drainage_condition": "moderate",
+        "accessibility": "all_vehicles",
+        "one_way": false,
+        "flood_risk_level": "moderate",
+        "flood_risk_score": 38
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R06",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.8378, 18.5186],
+          [73.8480, 18.5100],
+          [73.8580, 18.5018]
+        ]
+      },
+      "properties": {
+        "road_id": "R06",
+        "road_name": "Tilak Road (Deccan to Swargate)",
+        "from_node": "N_DECCAN",
+        "to_node": "N_SWARGATE",
+        "road_type": "primary",
+        "distance_km": 2.4,
+        "estimated_speed_kmph": 30,
+        "base_elevation_m": 559,
+        "slope_pct": 0.7,
+        "drainage_condition": "moderate",
+        "accessibility": "all_vehicles",
+        "one_way": false,
+        "flood_risk_level": "moderate",
+        "flood_risk_score": 45
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R07",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.8580, 18.5018],
+          [73.8550, 18.4720],
+          [73.8520, 18.4520]
+        ]
+      },
+      "properties": {
+        "road_id": "R07",
+        "road_name": "Satara Road (Swargate to Katraj)",
+        "from_node": "N_SWARGATE",
+        "to_node": "N_KATRAJ",
+        "road_type": "primary",
+        "distance_km": 5.6,
+        "estimated_speed_kmph": 45,
+        "base_elevation_m": 585,
+        "slope_pct": 3.0,
+        "drainage_condition": "moderate",
+        "accessibility": "all_vehicles",
+        "one_way": false,
+        "flood_risk_level": "low",
+        "flood_risk_score": 25
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R08",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.8446, 18.5314],
+          [73.8680, 18.5280],
+          [73.8790, 18.5340]
+        ]
+      },
+      "properties": {
+        "road_id": "R08",
+        "road_name": "Pune Station to Bund Garden Road",
+        "from_node": "N_SHIVAJINAGAR",
+        "to_node": "N_BUND_GARDEN",
+        "road_type": "primary",
+        "distance_km": 3.6,
+        "estimated_speed_kmph": 35,
+        "base_elevation_m": 551,
+        "slope_pct": 0.5,
+        "drainage_condition": "moderate",
+        "accessibility": "all_vehicles",
+        "one_way": false,
+        "flood_risk_level": "high",
+        "flood_risk_score": 68
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R09",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.8790, 18.5340],
+          [73.8920, 18.5520],
+          [73.9197, 18.5822]
+        ]
+      },
+      "properties": {
+        "road_id": "R09",
+        "road_name": "Yerawada - Airport Road",
+        "from_node": "N_BUND_GARDEN",
+        "to_node": "N_AIRPORT",
+        "road_type": "trunk",
+        "distance_km": 6.8,
+        "estimated_speed_kmph": 50,
+        "base_elevation_m": 568,
+        "slope_pct": 1.4,
+        "drainage_condition": "good",
+        "accessibility": "all_vehicles",
+        "one_way": false,
+        "flood_risk_level": "low",
+        "flood_risk_score": 22
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R10",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.8446, 18.5314],
+          [73.8180, 18.5580],
+          [73.8050, 18.5620]
+        ]
+      },
+      "properties": {
+        "road_id": "R10",
+        "road_name": "Ganeshkhind Road (Univ to Aundh)",
+        "from_node": "N_SHIVAJINAGAR",
+        "to_node": "N_AUNDH",
+        "road_type": "primary",
+        "distance_km": 4.5,
+        "estimated_speed_kmph": 40,
+        "base_elevation_m": 565,
+        "slope_pct": 1.1,
+        "drainage_condition": "good",
+        "accessibility": "all_vehicles",
+        "one_way": false,
+        "flood_risk_level": "low",
+        "flood_risk_score": 20
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R11",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.8050, 18.5620],
+          [73.7850, 18.5680],
+          [73.7650, 18.5980]
+        ]
+      },
+      "properties": {
+        "road_id": "R11",
+        "road_name": "Aundh-Baner-Wakad Highway",
+        "from_node": "N_AUNDH",
+        "to_node": "N_WAKAD",
+        "road_type": "trunk",
+        "distance_km": 5.8,
+        "estimated_speed_kmph": 55,
+        "base_elevation_m": 574,
+        "slope_pct": 1.3,
+        "drainage_condition": "good",
+        "accessibility": "all_vehicles",
+        "one_way": false,
+        "flood_risk_level": "very_low",
+        "flood_risk_score": 14
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R12",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.7650, 18.5980],
+          [73.7380, 18.5910],
+          [73.7180, 18.5890]
+        ]
+      },
+      "properties": {
+        "road_id": "R12",
+        "road_name": "Wakad to Hinjawadi IT Park Phase 1",
+        "from_node": "N_WAKAD",
+        "to_node": "N_HINJAWADI",
+        "road_type": "primary",
+        "distance_km": 4.2,
+        "estimated_speed_kmph": 45,
+        "base_elevation_m": 578,
+        "slope_pct": 0.9,
+        "drainage_condition": "good",
+        "accessibility": "all_vehicles",
+        "one_way": false,
+        "flood_risk_level": "low",
+        "flood_risk_score": 19
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R13",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.7650, 18.5980],
+          [73.7880, 18.6180],
+          [73.8131, 18.6279]
+        ]
+      },
+      "properties": {
+        "road_id": "R13",
+        "road_name": "Wakad - Pimple Saudagar - Pimpri Link",
+        "from_node": "N_WAKAD",
+        "to_node": "N_PIMPRI",
+        "road_type": "primary",
+        "distance_km": 5.4,
+        "estimated_speed_kmph": 40,
+        "base_elevation_m": 562,
+        "slope_pct": 0.7,
+        "drainage_condition": "moderate",
+        "accessibility": "all_vehicles",
+        "one_way": false,
+        "flood_risk_level": "moderate",
+        "flood_risk_score": 48
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R14",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.8131, 18.6279],
+          [73.7997, 18.6298],
+          [73.7850, 18.6420]
+        ]
+      },
+      "properties": {
+        "road_id": "R14",
+        "road_name": "Pimpri - Chinchwad Grade Separator",
+        "from_node": "N_PIMPRI",
+        "to_node": "N_CHINCHWAD",
+        "road_type": "trunk",
+        "distance_km": 3.1,
+        "estimated_speed_kmph": 50,
+        "base_elevation_m": 566,
+        "slope_pct": 0.5,
+        "drainage_condition": "good",
+        "accessibility": "all_vehicles",
+        "one_way": false,
+        "flood_risk_level": "low",
+        "flood_risk_score": 26
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R15",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.8446, 18.5314],
+          [73.8320, 18.5720],
+          [73.8131, 18.6279]
+        ]
+      },
+      "properties": {
+        "road_id": "R15",
+        "road_name": "Old Mumbai-Pune Highway (Shivajinagar-Pimpri)",
+        "from_node": "N_SHIVAJINAGAR",
+        "to_node": "N_PIMPRI",
+        "road_type": "trunk",
+        "distance_km": 11.2,
+        "estimated_speed_kmph": 55,
+        "base_elevation_m": 560,
+        "slope_pct": 0.8,
+        "drainage_condition": "good",
+        "accessibility": "all_vehicles",
+        "one_way": false,
+        "flood_risk_level": "low",
+        "flood_risk_score": 24
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R16",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [73.8210, 18.4980],
+          [73.8400, 18.4750],
+          [73.8520, 18.4520]
+        ]
+      },
+      "properties": {
+        "road_id": "R16",
+        "road_name": "Sinhagad Road - Dhayari - Katraj Dehu Road Bypass",
+        "from_node": "N_SINHAGAD_RD",
+        "to_node": "N_KATRAJ",
+        "road_type": "secondary",
+        "distance_km": 6.5,
+        "estimated_speed_kmph": 40,
+        "base_elevation_m": 580,
+        "slope_pct": 2.4,
+        "drainage_condition": "moderate",
+        "accessibility": "all_vehicles",
+        "one_way": false,
+        "flood_risk_level": "moderate",
+        "flood_risk_score": 36
+      }
+    }
+  ]
+}

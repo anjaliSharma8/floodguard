@@ -1,0 +1,6 @@
+{
+  "name": "FloodGuard – AI Flood Risk & Emergency Safe-Route System",
+  "description": "AI-powered, community-driven flood risk intelligence and emergency safe-route management system for Pune & Pimpri-Chinchwad, India.",
+  "requestFramePermissions": ["geolocation", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

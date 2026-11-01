@@ -1,0 +1,9 @@
+location_id,station_name,latitude,longitude,date,rainfall_mm,rainfall_duration_hrs,source,observation_timestamp
+PUN_01,IMD Shivajinagar,18.5314,73.8446,2026-10-30,42.5,4.0,India Meteorological Department (IMD),2026-10-30T08:00:00Z
+PUN_02,IMD Pashan,18.5388,73.7915,2026-10-30,35.0,3.5,India Meteorological Department (IMD),2026-10-30T08:00:00Z
+PUN_03,IMD Lohegaon (Airport),18.5822,73.9197,2026-10-30,68.2,5.0,India Meteorological Department (IMD),2026-10-30T08:00:00Z
+PUN_04,IMD Chinchwad,18.6298,73.7997,2026-10-30,58.0,4.5,IMD AWS Pune Division,2026-10-30T08:00:00Z
+PUN_05,IMD Lavale,18.5412,73.7291,2026-10-30,76.5,6.0,India Meteorological Department (IMD),2026-10-30T08:00:00Z
+PUN_06,Khadakwasla Dam Catchment,18.4357,73.7634,2026-10-30,88.0,6.5,Central Water Commission (CWC),2026-10-30T08:00:00Z
+PUN_07,Mutha River Basin (Swargate),18.5018,73.8580,2026-10-30,64.0,5.0,Pune Municipal Corporation (PMC),2026-10-30T08:00:00Z
+PUN_08,Pavana River Basin (Pimpri),18.6279,73.8131,2026-10-30,61.5,4.5,PCMC Disaster Cell,2026-10-30T08:00:00Z

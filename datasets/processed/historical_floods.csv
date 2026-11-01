@@ -1,0 +1,6 @@
+incident_id,location_name,latitude,longitude,date,flood_severity,water_level_m,road_affected,source,verification_status
+INC_2019_01,Ambil Odha Flash Flood,18.4980,73.8420,2019-09-25,Critical,2.4,Sinhagad Road / Aranyeshwar,PMC Disaster Analysis & Local News,Verified
+INC_2019_02,Sinhagad Road Ekta Nagari,18.4850,73.8210,2019-09-26,Critical,2.8,Sinhagad Road Riverside,CWC Flood Bulletins,Verified
+INC_2021_01,Mutha River Swelling (Bhide Bridge),18.5175,73.8440,2021-07-23,High,1.8,Deccan Riverside Causeway,Irrigation Dept Discharge Report,Verified
+INC_2023_01,Pavana River Inundation (Sangvi / Pimple Gurav),18.5880,73.8120,2023-07-19,High,1.5,Old Sangvi Bridge Road,PCMC Flood Incident Log,Verified
+INC_2024_01,Yerawada Holkar Bridge Low Basin,18.5520,73.8740,2024-08-04,Moderate,1.1,Yerawada Bund Road,Traffic Police Incident Desk,Verified

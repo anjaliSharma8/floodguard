@@ -1,0 +1,6 @@
+report_id,user_id,road_id,location_name,latitude,longitude,report_type,description,severity,timestamp,verification_status,confidence_score
+REP_101,usr_pune_89,R03,Sinhagad Road near Ekta Nagari,18.4980,73.8210,Road flooded,"Water level has reached knee height (approx 1.5 ft) on the riverside lane. Small cars cannot pass.",Critical,2026-10-30T08:15:00Z,Verified,0.92
+REP_102,usr_pune_42,R01,FC Road outside Starbucks,18.5245,73.8402,Waterlogging,"Minor water accumulation near the footpath drain, two-wheelers can pass cautiously.",Moderate,2026-10-30T08:30:00Z,Verified,0.85
+REP_103,usr_pune_17,R08,Bund Garden Bridge approach,18.5340,73.8790,Traffic disruption,"Traffic crawl due to 6-inch water puddles near bridge ramp.",High,2026-10-30T08:45:00Z,Under Review,0.74
+REP_104,usr_pune_63,R13,Pimple Saudagar Linear Garden stretch,18.6180,73.7880,Drainage overflow,"Manhole cover dislodged due to storm water pressure.",High,2026-10-30T09:00:00Z,Reported,0.68
+REP_105,usr_pune_55,R04,Karve Road near Nal Stop,18.5075,73.8240,Fallen tree,"Branch fell on side lane, PMC garden dept notified, single lane slow.",Moderate,2026-10-30T09:10:00Z,Verified,0.90

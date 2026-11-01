@@ -1,0 +1,1670 @@
+# FLOODGUARD – COMPLETE MASTER DEVELOPMENT PROMPT
+## AI-Powered, Community-Driven Flood Risk Intelligence and Emergency Safe-Route Management System
+
+**Hackathon:** Katathon 6.0  
+**Problem Statement:** 103 – Flood Risk and Emergency Safe-Route Mapper  
+**Project Name:** FloodGuard
+
+---
+
+# 1. PROJECT OBJECTIVE
+
+Modify and enhance my existing working FloodGuard application into a complete AI-powered, community-driven flood-risk intelligence and emergency safe-route management platform.
+
+FloodGuard should help citizens make informed evacuation and emergency decisions while enabling authorised disaster-management experts to monitor flood risks, manage incidents, analyse road conditions and coordinate emergency response.
+
+The application must have TWO COMPLETELY SEPARATE INTERFACES:
+
+1. CITIZEN MODE – Personal emergency assistance and safe-route navigation.
+2. EXPERT MODE – Secure flood monitoring, disaster management and operational decision support.
+
+Both interfaces must use shared backend services, datasets, database records, flood-risk calculations and routing algorithms.
+
+**IMPORTANT: The existing application is already developed and working.**
+
+Do not rebuild the project from scratch.
+
+Before modifying anything:
+- Inspect the existing project structure.
+- Understand the current frontend and backend.
+- Identify existing components and working features.
+- Inspect database schemas and APIs.
+- Identify the existing routing implementation.
+- Identify existing authentication functionality.
+- Reuse existing components wherever possible.
+
+Preserve the current FloodGuard branding, dark theme, map implementation, working functionality and technology stack.
+
+Do not replace functional components unnecessarily.
+
+Default geographical scope: Pune and Pimpri-Chinchwad, Maharashtra, India.
+
+Keep the system modular so additional geographical areas can be added later.
+
+---
+
+# 2. TECHNOLOGY STACK
+
+First inspect the existing technology stack and preserve it wherever possible.
+
+Preferred architecture:
+
+### Frontend
+- React.js
+- TypeScript
+- Vite
+- Tailwind CSS
+- Leaflet.js
+- OpenStreetMap
+- Recharts or Plotly
+- Web Speech API
+
+### Backend
+- Python
+- FastAPI
+- REST APIs
+- Pydantic
+- SQLAlchemy
+
+### AI and Data Processing
+- Pandas
+- NumPy
+- GeoPandas
+- Shapely
+- Scikit-learn
+- NetworkX
+- Optional LLM API
+- RAG architecture for chatbot responses
+
+### Database
+- PostgreSQL
+- PostGIS for geographical information
+- SQLite as a lightweight development alternative
+
+### Additional Technologies
+- JWT or secure session authentication
+- WebSockets or controlled polling
+- Progressive Web App
+- Docker where appropriate
+
+Do not introduce unnecessary new technologies if equivalent functionality already exists.
+
+---
+
+# 3. TWO COMPLETELY SEPARATE INTERFACES
+
+This is the most important architectural requirement.
+
+Create two distinct application experiences, not one dashboard with a role toggle.
+
+## A. CITIZEN MODE
+
+Purpose:
+
+Help ordinary people understand their local flood situation, find suitable routes, access emergency assistance and report dangerous conditions.
+
+## B. EXPERT MODE
+
+Purpose:
+
+Help authorised disaster-management authorities and emergency coordinators monitor risks, verify incidents, manage road conditions, perform scenario analysis and coordinate emergency operations.
+
+### Fundamental difference
+
+Citizen Mode answers:
+
+- What is happening around me?
+- Where can I go?
+- Which available route should I consider?
+- Where can I get emergency assistance?
+- How do I report a dangerous situation?
+
+Expert Mode answers:
+
+- Which areas are at risk?
+- Which road segments have high risk scores?
+- Why are they classified as high risk?
+- Which incidents require verification?
+- What happens if rainfall increases?
+- What happens if important roads become blocked?
+- Which areas may become inaccessible?
+- What actions should authorities consider?
+
+Both modes must use the same underlying risk engine and routing services.
+
+A road must never receive different risk calculations merely because different users are viewing it.
+
+---
+
+# 4. MANDATORY SIGNUP AND LOGIN SYSTEM
+
+Every user must authenticate before entering Citizen Mode or Expert Mode.
+
+There must be NO GUEST ACCESS.
+
+Create a professional FloodGuard welcome page.
+
+### Welcome page
+
+Display:
+
+**Welcome to FloodGuard**
+
+"Choose your account type to continue."
+
+Two options:
+
+1. Continue as Citizen.
+2. Continue as Expert.
+
+Each option must open its corresponding authentication flow.
+
+Provide separate signup and login pages.
+
+### Required authentication routes
+
+- /auth/citizen/signup
+- /auth/citizen/login
+- /auth/expert/signup
+- /auth/expert/login
+
+Also provide:
+- Forgot password.
+- Password reset.
+- Logout.
+- Account status page.
+- Access denied page.
+
+### A. Citizen Signup
+
+Fields:
+- Full name.
+- Email address.
+- Password.
+- Confirm password.
+- Phone number, if required.
+
+Backend must:
+- Validate all fields.
+- Check for duplicate email.
+- Hash the password.
+- Assign the CITIZEN role automatically.
+- Create an active citizen account.
+- Never allow users to choose ADMIN or EXPERT through the citizen registration request.
+
+After successful registration, redirect to Citizen Mode.
+
+### B. Citizen Login
+
+Fields:
+- Email address.
+- Password.
+
+After successful authentication, redirect to:
+
+/citizen/dashboard
+
+Citizens must be able to:
+- View their profile.
+- Update permitted profile information.
+- View submitted reports.
+- Submit new reports.
+- Submit route feedback.
+- Log out.
+
+### C. Expert Signup
+
+Provide a separate Expert registration page.
+
+Fields:
+- Full name.
+- Official email address.
+- Organisation or department.
+- Designation.
+- Password.
+- Confirm password.
+- Additional verification information where required.
+
+Important security requirement:
+
+Expert registration must NOT automatically grant operational privileges.
+
+When an expert registers:
+- Create an account with role EXPERT.
+- Set account status to PENDING_APPROVAL.
+- Store the registration details.
+- Notify the administrator or make the application visible in the approval dashboard.
+- Prevent access to the Expert dashboard until approval.
+
+After administrator approval, the expert can log in and access Expert Mode.
+
+### D. Expert Login
+
+Fields:
+- Registered email.
+- Password.
+
+After successful authentication:
+- If account status is ACTIVE, redirect to /expert/dashboard.
+- If PENDING_APPROVAL, display an awaiting-approval page.
+- If REJECTED, display an appropriate message.
+- If SUSPENDED, deny access.
+
+Do not allow unauthorised expert access.
+
+### E. Administrator
+
+The ADMIN role must be provisioned through a secure administrative setup process, not public registration.
+
+Administrators can:
+- Approve expert applications.
+- Reject expert applications.
+- Suspend accounts.
+- Manage user roles.
+- Manage permissions.
+- Review audit logs.
+
+For the hackathon demonstration, create seeded demonstration accounts through a backend seed script.
+
+Never hardcode production passwords in frontend code or commit credentials to GitHub.
+
+---
+
+# 5. REAL BACKEND AUTHENTICATION AND AUTHORIZATION
+
+Authentication must be implemented in the backend, not just the frontend.
+
+Do not use:
+- Hardcoded login credentials in frontend code.
+- localStorage role values as proof of authorization.
+- A frontend-only role toggle.
+- User-submitted role values without backend verification.
+
+Implement:
+
+- Secure password hashing using Argon2 or bcrypt.
+- JWT-based authentication or secure server sessions.
+- Token expiration.
+- Refresh-token handling if implemented.
+- Logout and session invalidation where supported.
+- Password validation.
+- Account status validation.
+- Role-based authorization.
+- Permission-based access control.
+- Protected API endpoints.
+
+If using JWT, validate its signature, expiry and claims on every protected request.
+
+Prefer HttpOnly, Secure and SameSite cookies where supported by the deployment architecture. Implement CSRF protection for cookie-authenticated state-changing requests.
+
+### User database structure
+
+Create or update the users table:
+
+- id
+- full_name
+- email
+- phone
+- password_hash
+- role
+- account_status
+- organisation
+- designation
+- created_at
+- updated_at
+
+Allowed roles:
+
+- CITIZEN
+- EXPERT
+- ADMIN
+
+Account statuses:
+
+- ACTIVE
+- PENDING_APPROVAL
+- REJECTED
+- SUSPENDED
+
+### Backend authorization
+
+Implement reusable authentication and authorization functions.
+
+For FastAPI, examples include:
+
+- get_current_user
+- require_role
+- require_permission
+- verify_account_status
+
+Suggested permissions:
+
+| Operation | Citizen | Expert | Admin |
+|---|---|---|---|
+| Access Citizen Mode | Yes | Yes, if permitted | Yes |
+| Access Expert Mode | No | Yes, after approval | Yes |
+| Find routes | Yes | Yes | Yes |
+| Submit incident reports | Yes | Yes | Yes |
+| Submit route feedback | Yes | Yes | Yes |
+| Verify incidents | No | Yes | Yes |
+| Update official road status | No | If authorised | Yes |
+| Run scenarios | No | Yes | Yes |
+| Inspect detailed risk data | Limited | Yes | Yes |
+| Manage datasets | No | If authorised | Yes |
+| View audit logs | No | If authorised | Yes |
+| Approve experts | No | No | Yes |
+| Manage user permissions | No | No | Yes |
+
+Unauthenticated requests must return HTTP 401.
+
+Authenticated but unauthorized requests must return HTTP 403.
+
+Never trust a role provided by the frontend.
+
+A citizen must not be able to access expert operations by manually changing a URL or sending an API request.
+
+---
+
+# 6. CITIZEN INTERFACE
+
+Create a separate, responsive Citizen application.
+
+Suggested routes:
+
+- /citizen/dashboard
+- /citizen/map
+- /citizen/routes
+- /citizen/community
+- /citizen/polls
+- /citizen/emergency
+- /citizen/assistant
+- /citizen/my-reports
+- /citizen/profile
+
+### Citizen navigation
+
+1. Home.
+2. Map & Routes.
+3. Community & Polls.
+4. Emergency SOS.
+5. AI Guard.
+6. My Reports.
+7. Profile / Logout.
+
+The existing Authority Desk and all expert-only controls must be removed from Citizen navigation and Citizen pages.
+
+Do not merely hide Authority Desk using CSS.
+
+Do not expose its operational functionality through accessible citizen routes.
+
+## A. Citizen Dashboard
+
+Display:
+- Selected area.
+- Available flood-risk status.
+- Relevant warnings.
+- Nearby assistance.
+- Last updated timestamp.
+- Data freshness indicator.
+- Quick route search.
+- Recent community alerts.
+
+Show whether information is:
+- Live.
+- Cached.
+- Historical.
+- Simulated.
+
+Never falsely claim that simulated information is live.
+
+## B. Interactive Map
+
+Preserve the existing working map.
+
+Include:
+- Pune and Pimpri-Chinchwad geographical coverage.
+- Flood-risk overlays.
+- Road network.
+- Reported road incidents.
+- Verified incidents.
+- Shelters.
+- Hospitals.
+- Animal rescue resources.
+- Selected destination.
+- Recommended route.
+
+Provide a clear map legend.
+
+Use different markers for reported, verified and resolved incidents.
+
+## C. Safe Route Planner
+
+Allow citizens to:
+- Select their starting location.
+- Select a destination.
+- Use their current location after permission.
+- Search available locations.
+- Compare routes.
+- View distance.
+- View estimated travel time.
+- View modelled route risk.
+- Receive road-condition warnings.
+- Recalculate routes when conditions change.
+
+Provide route preferences:
+
+1. Recommended – Balance estimated travel time and modelled risk.
+2. Shortest Time – Minimise estimated travel time while respecting road restrictions.
+3. Accessible Destination – Prefer destinations meeting verified accessibility requirements.
+
+Display:
+- Recommended route.
+- Alternative routes.
+- Route risk explanation.
+- Relevant road restrictions.
+- Data freshness.
+
+Never describe a route as guaranteed safe.
+
+Do not recommend roads marked blocked in the active routing dataset.
+
+If no feasible route exists, explain this clearly.
+
+## D. Nearby Assistance
+
+Display:
+- Emergency shelters.
+- Hospitals.
+- Relief centres.
+- Police stations.
+- Fire stations.
+- Ambulance facilities.
+- Animal rescue facilities.
+- Veterinary hospitals.
+- Pet-friendly shelters.
+
+Allow filtering by:
+- Pet-friendly.
+- Wheelchair accessibility.
+- Nearby.
+- Facility type.
+
+Only display real verified information or clearly labelled demonstration data.
+
+## E. Community Reporting
+
+Citizens can:
+- Report flooding.
+- Report waterlogging.
+- Report blocked roads.
+- Report drainage overflow.
+- Report fallen trees.
+- Report inaccessible bridges.
+- Request rescue.
+- Upload photographs.
+- Provide descriptions and locations.
+
+After submission:
+- Save the report in the database.
+- Generate a report reference.
+- Display submission status.
+- Allow the citizen to track its status.
+
+Initial status:
+
+REPORTED / UNDER REVIEW.
+
+A citizen must not be able to officially verify their own report or change authoritative road status.
+
+## F. Route Feedback
+
+After a journey, citizens can submit:
+- Reached safely.
+- Road partially flooded.
+- Road blocked.
+- Route condition changed.
+- Journey rating.
+- Travel time feedback.
+
+Use this information in the community intelligence system after appropriate credibility checks.
+
+## G. Personal Evacuation Assistant
+
+Allow citizens to select relevant requirements:
+
+- Travelling with children.
+- Travelling with elderly people.
+- Mobility requirements.
+- Travelling with pets.
+
+Use these preferences to filter suitable destinations and assistance resources when the required data are available.
+
+If accessibility or pet accommodation cannot be verified, clearly state that it is unknown.
+
+## H. Emergency SOS
+
+Provide:
+- Verified emergency helplines.
+- Nearby hospitals.
+- Available shelters.
+- Rescue request form.
+- Animal rescue information.
+- Emergency guidance.
+- Special assistance information.
+
+Verify emergency contact information before presenting it as operational.
+
+Do not invent 24x7 services or claim that an SOS has reached authorities unless the backend confirms successful delivery.
+
+## I. AI Guard
+
+Provide:
+- AI chatbot.
+- English, Hindi and Marathi support where available.
+- Voice input.
+- Spoken responses.
+- Text input.
+- Emergency instructions.
+- Route explanations.
+- Nearby shelter information.
+
+Use RAG for verified static emergency guidance.
+
+For dynamic information, call backend APIs.
+
+Never invent:
+- Current road conditions.
+- Live rainfall values.
+- Shelter availability.
+- Emergency phone numbers.
+- Confirmed evacuation instructions.
+
+---
+
+# 7. EXPERT INTERFACE
+
+Create a separate authenticated Expert application.
+
+The existing Authority Desk functionality should be reorganised and moved here.
+
+Do not show Authority Desk as a navigation item inside Citizen Mode.
+
+Suggested routes:
+
+- /expert/dashboard
+- /expert/map
+- /expert/incidents
+- /expert/route-analysis
+- /expert/simulator
+- /expert/analytics
+- /expert/datasets
+- /expert/audit-logs
+- /expert/profile
+
+### Expert navigation
+
+1. Operations Overview.
+2. GIS Risk Map.
+3. Incident Management.
+4. Route Analysis.
+5. Scenario Simulator.
+6. Risk & Impact Analytics.
+7. Dataset Management.
+8. Audit Logs.
+9. Profile / Logout.
+
+## A. Operations Overview
+
+Display backend-derived statistics:
+
+- Active citizen reports.
+- Verified incidents.
+- Reports awaiting verification.
+- High-risk road segments.
+- Blocked roads.
+- Shelter availability information.
+- Rainfall data status.
+- Dataset freshness.
+
+Cards must be clickable and open the corresponding filtered pages.
+
+## B. Advanced GIS Risk Map
+
+Provide selectable geographical layers:
+
+- Flood-risk zones.
+- Road network.
+- Road status.
+- Rainfall observations.
+- Terrain and elevation.
+- Drainage.
+- Historical flood incidents.
+- Community reports.
+- Verified incidents.
+- Shelters.
+- Hospitals.
+- Recommended routes.
+
+Allow experts to:
+- Enable and disable layers.
+- Filter incidents.
+- Inspect individual road segments.
+- Compare nearby roads.
+- View underlying data sources.
+
+Use GeoJSON for exchanging geographical information.
+
+## C. Road Risk Inspection
+
+When an expert selects a road segment, display:
+
+- Road ID.
+- Road name.
+- Road status.
+- Risk score.
+- Risk category.
+- Rainfall contribution.
+- Terrain contribution.
+- Drainage information.
+- Historical incident information.
+- Community reports.
+- Data source.
+- Last updated timestamp.
+
+Explain how the score was calculated.
+
+Do not invent model confidence or present unvalidated risk scores as accurate predictions.
+
+## D. Incident Management
+
+Provide a dedicated incident verification centre.
+
+Display:
+- Incident ID.
+- Citizen ID where access is permitted.
+- Incident category.
+- Location.
+- Description.
+- Photograph.
+- Submission timestamp.
+- Verification status.
+- Severity or priority.
+- Assigned reviewer, if implemented.
+
+Allow authorised experts to:
+- Review reports.
+- Verify reports.
+- Reject false reports.
+- Request additional information.
+- Mark incidents resolved.
+- Update road status when authorised.
+
+Incident workflow:
+
+Citizen submits report
+→ Backend stores report
+→ Expert reviews evidence
+→ Expert verifies or rejects
+→ Authorised expert updates road status if necessary
+→ Routing engine recalculates routes
+→ Citizen receives updated information
+→ Audit log records the action.
+
+A citizen report must never automatically become an authoritative road closure.
+
+## E. Advanced Route Analysis
+
+Allow experts to:
+- Compare multiple routes.
+- Inspect individual road segments.
+- Compare estimated travel times.
+- Compare distance.
+- Compare risk scores.
+- Identify road bottlenecks.
+- Simulate road closures.
+- Recalculate alternative routes.
+- Identify destinations that become inaccessible.
+
+Use the same routing engine as Citizen Mode.
+
+## F. Scenario Simulator
+
+This should be a major differentiating Expert Mode feature.
+
+Allow experts to:
+
+- Select a geographical area.
+- Adjust hypothetical rainfall intensity.
+- Select roads to block.
+- Run a flood-risk scenario.
+- Recalculate road-segment risk.
+- Recalculate routes.
+- Compare baseline and simulated conditions.
+- Identify newly high-risk segments.
+- Identify areas that may lose route connectivity.
+- Display before-and-after results.
+
+Example:
+
+Baseline:
+- Current available rainfall input.
+- Existing road statuses.
+
+Scenario:
+- Increased hypothetical rainfall.
+- Two selected roads blocked.
+
+Show:
+- Risk-score changes.
+- Newly high-risk roads.
+- Route availability.
+- Estimated travel-time changes.
+- Areas requiring further assessment.
+
+Scenario outputs must be derived from simulation logic.
+
+Clearly label hypothetical conditions.
+
+Do not claim physical flood propagation unless a suitable hydrological or hydraulic model has been implemented and validated.
+
+Scenario modifications must not silently overwrite live operational data.
+
+## G. Risk and Impact Analytics
+
+Display:
+- Historical incidents over time.
+- Risk-score distributions.
+- Road closures.
+- Incident severity.
+- Rainfall trends.
+- Route feasibility.
+- Scenario comparisons.
+
+Allow report export if supported by the existing architecture.
+
+## H. Dataset Management
+
+Allow authorised experts to inspect:
+- Dataset sources.
+- Last updated timestamps.
+- Data availability.
+- Missing values.
+- Invalid coordinates.
+- Duplicate records.
+- Data freshness.
+- Import status.
+
+Only authorised administrators or designated experts should be able to upload or modify datasets.
+
+## I. Audit Logs
+
+Record:
+- User ID.
+- Role.
+- Action.
+- Affected record.
+- Previous value where appropriate.
+- New value where appropriate.
+- Timestamp.
+
+Sensitive operational actions must be traceable.
+
+---
+
+# 8. DATASET COLLECTION AND INTEGRATION
+
+Use real-world datasets wherever available.
+
+The system should use a hybrid data approach:
+
+- Real datasets for geographical and environmental information.
+- Clearly labelled synthetic datasets for missing information and hackathon demonstrations.
+- Community reports for new local observations.
+
+Do not fabricate real-time measurements or historical flood labels.
+
+Default region: Pune and Pimpri-Chinchwad.
+
+## A. Rainfall Dataset
+
+Sources:
+- India Meteorological Department.
+- National Water Data Portal.
+- Central Water Commission.
+
+Fields:
+- location_id
+- latitude
+- longitude
+- date
+- rainfall_mm
+- rainfall_duration
+- source
+- observation_timestamp
+
+Use historical rainfall records and available current weather information.
+
+IMD 0.25-degree gridded rainfall is useful for regional analysis but is too coarse for street-level flood measurement.
+
+## B. Road Network Dataset
+
+Source:
+- OpenStreetMap.
+- Geofabrik India downloads.
+
+Fields:
+- road_id
+- from_node
+- to_node
+- road_name
+- road_type
+- distance_km
+- estimated_speed_kmph
+- one_way
+- accessibility
+- geometry
+
+Represent intersections as graph nodes and roads as graph edges.
+
+Preserve road geometry for accurate map display.
+
+## C. Elevation and Terrain Dataset
+
+Source:
+- NASA SRTM elevation data.
+
+Fields:
+- location_id
+- latitude
+- longitude
+- elevation_m
+- slope
+- terrain_category
+
+Calculate slope where possible.
+
+Do not treat low elevation alone as proof of flooding.
+
+## D. Historical Flood Dataset
+
+Collect available historical incidents from:
+- Government reports.
+- CWC information.
+- IMD-related records.
+- Verified local incident records.
+- Publicly available flood datasets.
+
+Fields:
+- incident_id
+- location_id
+- latitude
+- longitude
+- date
+- flood_severity
+- water_level_if_available
+- road_id_if_available
+- source
+- verification_status
+
+Do not use national flood-death statistics as road-level training labels.
+
+## E. Drainage Dataset
+
+Fields:
+- drainage_id
+- latitude
+- longitude
+- drainage_type
+- drainage_capacity_if_available
+- maintenance_status
+- source
+
+Do not invent drainage capacity values.
+
+## F. Emergency Facilities Dataset
+
+Collect:
+- Shelters.
+- Hospitals.
+- Fire stations.
+- Police stations.
+- Ambulance facilities.
+- Veterinary facilities.
+- Animal rescue centres.
+
+Shelter fields:
+- shelter_id
+- name
+- latitude
+- longitude
+- capacity
+- current_occupancy
+- availability
+- accessibility
+- contact_information
+- last_updated
+
+Only display verified availability or clearly labelled simulated information.
+
+## G. Community Reports Dataset
+
+Fields:
+- report_id
+- user_id
+- road_id
+- latitude
+- longitude
+- report_type
+- description
+- image_url
+- severity
+- timestamp
+- verification_status
+- confidence_score
+
+Statuses:
+- REPORTED
+- UNDER_REVIEW
+- VERIFIED
+- REJECTED
+- RESOLVED
+
+## H. Route Feedback Dataset
+
+Fields:
+- feedback_id
+- user_id
+- route_id
+- route_segment_id
+- reached_safely
+- route_condition
+- rating
+- timestamp
+- verification_status
+
+## I. Live Poll Dataset
+
+Fields:
+- poll_id
+- road_id
+- question
+- options
+- user_id
+- selected_option
+- timestamp
+- verification_status
+
+Support live poll updates using WebSockets or controlled polling.
+
+Implement duplicate-vote prevention, rate limiting and basic credibility checks.
+
+## Dataset processing pipeline
+
+Create scripts to:
+
+1. Download or import datasets.
+2. Validate records.
+3. Remove duplicates.
+4. Handle missing values.
+5. Validate geographical coordinates.
+6. Convert road data to GeoJSON.
+7. Generate road graph information.
+8. Store processed datasets.
+9. Record data source and timestamp.
+10. Expose dataset information through backend APIs.
+
+Create folders:
+
+datasets/
+  raw/
+  processed/
+  community/
+  synthetic/
+
+Do not assume all data sources provide freely accessible APIs. Support manual downloads and CSV/GeoJSON imports.
+
+---
+
+# 9. FLOOD RISK ASSESSMENT ENGINE
+
+Implement a transparent risk engine.
+
+Consider:
+
+- Rainfall intensity.
+- Recent rainfall accumulation.
+- Elevation.
+- Terrain slope.
+- Drainage availability.
+- Historical flood incidents.
+- Verified community reports.
+- Current road conditions.
+
+Use a configurable weighted scoring formula.
+
+Example:
+
+Risk Score =
+(W1 × Rainfall Risk)
++ (W2 × Terrain Risk)
++ (W3 × Drainage Risk)
++ (W4 × Historical Flood Risk)
++ (W5 × Verified Community Risk)
+
+Normalize factors to a common scale.
+
+Risk categories:
+
+- 0–20: Very Low.
+- 21–40: Low.
+- 41–60: Moderate.
+- 61–80: High.
+- 81–100: Critical.
+
+Display the score and explain its contributing factors.
+
+Start with rule-based scoring.
+
+Only introduce machine learning when suitable labelled historical observations are available.
+
+Potential models:
+- Random Forest.
+- Decision Tree.
+- Gradient Boosting.
+
+If ML is implemented, include:
+- Data preprocessing.
+- Feature engineering.
+- Train/test split.
+- Precision.
+- Recall.
+- F1-score.
+- Confusion matrix.
+
+Clearly distinguish model predictions, rule-based estimates, live observations and synthetic demonstration data.
+
+---
+
+# 10. ROUTING ENGINE – DIJKSTRA AND A*
+
+Implement actual graph-based route calculation.
+
+Use:
+
+- NetworkX.
+- Dijkstra's algorithm.
+- A* where useful.
+
+Represent the road network as:
+
+G = (V, E)
+
+Where:
+- V = road intersections.
+- E = road segments.
+
+Each edge should contain:
+- Distance.
+- Travel time.
+- Risk score.
+- Road status.
+- Accessibility constraints.
+- Road geometry.
+
+Example cost function:
+
+Cost(e) = T(e) + λR(e)
+
+Where:
+- T(e) = estimated travel time.
+- R(e) = flood-risk penalty.
+- λ = configurable risk preference.
+
+Mandatory rules:
+- Exclude confirmed blocked roads.
+- Respect supported access restrictions.
+- Calculate alternative routes.
+- Recalculate when road status changes.
+- Do not silently return blocked routes.
+- Clearly handle no-route scenarios.
+- Do not claim guaranteed safety.
+
+Citizen Mode presents recommendations simply.
+
+Expert Mode provides detailed route comparison and inspection.
+
+---
+
+# 11. COMMUNITY-POWERED FLOOD INTELLIGENCE
+
+Implement community reporting as a major differentiating feature.
+
+Citizens can:
+- Report flooding.
+- Report blocked roads.
+- Share photographs.
+- Report waterlogging.
+- Request emergency assistance.
+- Submit route feedback.
+- Participate in live road-condition polls.
+
+Build a community credibility mechanism considering:
+- Recency.
+- Verification status.
+- Number of independent reports.
+- Source credibility.
+- Conflicting reports.
+
+Recent, verified and corroborated feedback may influence route recommendations.
+
+Important:
+
+A route must not become safe simply because it receives many positive votes.
+
+Official closures and verified critical hazards must override positive community feedback.
+
+Public reports must not automatically become authoritative road closures.
+
+---
+
+# 12. MULTILINGUAL VOICE SUPPORT
+
+Support:
+- English.
+- Hindi.
+- Marathi.
+
+Implement:
+- Voice-based destination search.
+- Voice-based incident reporting.
+- Spoken route instructions.
+- Text-to-speech.
+- Language selection.
+
+Use Web Speech API where supported.
+
+Always provide text alternatives when voice recognition is unavailable.
+
+---
+
+# 13. AI EMERGENCY CHATBOT
+
+Build an AI assistant using RAG for verified static emergency information.
+
+Example questions:
+- Where is the nearest listed shelter?
+- What should I do during heavy rainfall?
+- Is there a reported road blockage?
+- How do I report flooding?
+- Are pet-friendly facilities available?
+- What does a high-risk score mean?
+
+For dynamic information, use backend APIs.
+
+The chatbot must never invent:
+- Road conditions.
+- Shelter availability.
+- Emergency contacts.
+- Current rainfall.
+- Confirmed evacuation instructions.
+
+If the LLM API fails, provide predefined emergency guidance.
+
+Citizen chatbot responses should be simple.
+
+Expert chatbot responses may summarise incidents and explain available analytical results.
+
+---
+
+# 14. OFFLINE EMERGENCY MODE
+
+Implement PWA functionality.
+
+Include:
+- Cached application interface.
+- Cached selected map information.
+- Cached road graph.
+- Cached shelter and emergency information.
+- Offline emergency guidance.
+- Offline incident-report queue.
+- Offline route-feedback queue.
+- Synchronisation after reconnection.
+
+Allow routing only using the cached graph.
+
+Show:
+
+"Offline mode: Information is based on previously downloaded data. Current road conditions cannot be verified."
+
+Display:
+- Last synchronisation time.
+- Cached coverage.
+- Data freshness.
+
+Never present stale information as live.
+
+---
+
+# 15. API FAILURE HANDLING
+
+Plan for external service failures.
+
+Weather API failure:
+- Use last available observations.
+- Display timestamp.
+- Mark information as stale.
+
+External routing failure:
+- Use local road graph.
+- Use internal NetworkX routing.
+
+Chatbot failure:
+- Use predefined emergency guidance.
+
+Voice failure:
+- Provide text input.
+
+Internet failure:
+- Enter offline mode.
+
+Database failure:
+- Display an error.
+- Never falsely confirm successful submission.
+- Queue permitted offline submissions where supported.
+
+Implement logging, error handling and health-check endpoints.
+
+---
+
+# 16. DATABASE DESIGN
+
+Create or adapt relational database tables:
+
+- users
+- roles
+- permissions
+- expert_applications
+- roads
+- road_nodes
+- road_conditions
+- rainfall_observations
+- terrain_locations
+- historical_flood_incidents
+- drainage_assets
+- shelters
+- emergency_facilities
+- community_reports
+- route_feedback
+- live_polls
+- poll_votes
+- emergency_alerts
+- rescue_requests
+- route_history
+- audit_logs
+
+Use foreign keys, indexes, timestamps and geographical data types where appropriate.
+
+Implement database migrations and seed scripts.
+
+Do not duplicate existing tables unnecessarily.
+
+---
+
+# 17. FRONTEND DESIGN
+
+Preserve the existing FloodGuard design identity and dark theme.
+
+Create distinct layouts.
+
+### Citizen design
+- Mobile-first.
+- Simple navigation.
+- Large emergency controls.
+- Clear map.
+- Simple risk explanations.
+- Route-focused interface.
+- Nearby assistance.
+- No Authority Desk or expert management controls.
+
+### Expert design
+- Desktop-first but responsive.
+- Analytical dashboard.
+- Multiple map layers.
+- Tables and filters.
+- Incident management.
+- Route comparison.
+- Scenario simulation.
+- Dataset analytics.
+- Audit logs.
+
+Use consistent semantic risk colours and accessible labels.
+
+All buttons must perform meaningful actions.
+
+Do not create disconnected or decorative features that appear functional but do nothing.
+
+---
+
+# 18. BACKEND API STRUCTURE
+
+Reuse existing endpoints wherever possible.
+
+Suggested endpoints:
+
+### Authentication
+- POST /auth/citizen/register
+- POST /auth/citizen/login
+- POST /auth/expert/register
+- POST /auth/expert/login
+- POST /auth/logout
+- GET /auth/me
+- POST /auth/forgot-password
+- POST /auth/reset-password
+
+### Expert Approval
+- GET /admin/expert-applications
+- PATCH /admin/expert-applications/{id}/approve
+- PATCH /admin/expert-applications/{id}/reject
+
+### Map and Data
+- GET /map/roads
+- GET /map/risk-zones
+- GET /data/rainfall
+- GET /data/historical-floods
+
+### Risk
+- POST /risk/calculate
+- GET /risk/location/{location_id}
+- POST /risk/simulate
+
+### Routing
+- POST /routes/find
+- POST /routes/recalculate
+- GET /routes/{route_id}
+
+### Community
+- POST /reports
+- GET /reports
+- GET /reports/my-reports
+- PATCH /reports/{report_id}/verify
+- POST /routes/feedback
+- GET /routes/feedback/{route_id}
+
+### Polls
+- POST /polls
+- GET /polls
+- POST /polls/{poll_id}/vote
+
+### Emergency Resources
+- GET /resources/shelters
+- GET /resources/hospitals
+- GET /resources/animal-rescue
+
+### Expert Operations
+- GET /expert/dashboard
+- PATCH /roads/{road_id}/status
+- PATCH /shelters/{shelter_id}
+- POST /expert/scenarios
+- GET /expert/analytics
+- GET /expert/audit-logs
+
+### Chatbot
+- POST /chatbot/message
+
+### System
+- GET /health
+- GET /system/data-status
+
+All protected endpoints must validate authentication, role, account status and required permissions.
+
+These endpoint names are suggestions. Reuse the existing API architecture rather than creating duplicate functionality.
+
+---
+
+# 19. TESTING AND VALIDATION
+
+Test all major functionality.
+
+### Authentication
+- Citizen signup.
+- Citizen login.
+- Expert signup.
+- Expert pending approval.
+- Expert approval.
+- Expert login.
+- Invalid credentials.
+- Expired tokens.
+- Logout.
+- Suspended accounts.
+
+### Authorization
+- Citizen cannot access Expert dashboard.
+- Citizen cannot verify reports.
+- Citizen cannot change official road status.
+- Expert can perform permitted actions.
+- Expert cannot perform administrator-only actions.
+- Unauthenticated users cannot call protected APIs.
+
+### Dataset
+- Missing values.
+- Duplicate records.
+- Invalid coordinates.
+- Stale information.
+- Source attribution.
+
+### Risk Engine
+- Low rainfall.
+- Heavy rainfall.
+- Low elevation.
+- Verified flood incident.
+- Conflicting reports.
+
+### Routing
+- Normal route.
+- Risk-aware route.
+- Blocked road.
+- Route recalculation.
+- Disconnected graph.
+- No feasible route.
+
+### Integration
+- Citizen submits report.
+- Expert verifies report.
+- Authorised road status changes.
+- Routing engine recalculates.
+- Citizen receives updated information.
+- Audit log records the action.
+
+### Reliability
+- Weather API failure.
+- LLM failure.
+- Internet disconnection.
+- Database failure.
+- Stale cached information.
+
+Never claim a feature has passed testing without actually executing the test.
+
+---
+
+# 20. IMPLEMENTATION PHASES
+
+Work incrementally.
+
+### Phase 1 – Existing Project Inspection
+- Inspect source code.
+- Inspect routes.
+- Inspect components.
+- Inspect backend.
+- Inspect database.
+- Identify existing features.
+
+### Phase 2 – Authentication
+- Create welcome page.
+- Citizen signup and login.
+- Expert signup and login.
+- Administrator approval workflow.
+- Backend authentication.
+- Backend authorization.
+- Protected routes.
+
+### Phase 3 – Separate Interfaces
+- Separate Citizen layout.
+- Separate Expert layout.
+- Remove Authority Desk from Citizen interface.
+- Move authority functionality into Expert interface.
+- Implement independent navigation.
+
+### Phase 4 – Shared Backend
+- Connect both interfaces.
+- Reuse shared database.
+- Connect report submission and verification.
+- Connect road-status updates.
+- Connect route recalculation.
+
+### Phase 5 – Dataset Integration
+- Import Pune road network.
+- Integrate rainfall data.
+- Integrate elevation data.
+- Import historical incidents where available.
+- Prepare emergency-resource data.
+- Implement validation and preprocessing.
+
+### Phase 6 – Risk and Routing
+- Implement risk scoring.
+- Implement Dijkstra.
+- Implement A* where appropriate.
+- Implement blocked-road avoidance.
+- Implement route alternatives.
+
+### Phase 7 – Community Intelligence
+- Citizen reports.
+- Expert verification.
+- Route feedback.
+- Live polls.
+- Credibility calculations.
+
+### Phase 8 – Expert Operations
+- Operations dashboard.
+- GIS risk map.
+- Incident management.
+- Route analysis.
+- Scenario simulator.
+- Analytics.
+- Audit logs.
+
+### Phase 9 – AI and Accessibility
+- AI chatbot.
+- RAG.
+- Voice input.
+- Multilingual support.
+- Personal evacuation assistance.
+
+### Phase 10 – Offline and Deployment
+- PWA.
+- Offline cache.
+- Offline report queue.
+- API failure handling.
+- Tests.
+- Deployment.
+- Documentation.
+
+After each phase:
+- List modified files.
+- Explain implementation.
+- Run relevant tests.
+- Fix errors.
+- Do not proceed while critical integration errors remain.
+
+---
+
+# 21. EXPECTED FINAL DELIVERABLES
+
+Provide:
+
+1. Complete updated FloodGuard frontend.
+2. Separate Citizen interface.
+3. Separate Expert interface.
+4. Citizen signup and login.
+5. Expert signup and login.
+6. Administrator approval workflow.
+7. Backend authentication.
+8. Backend role-based authorization.
+9. Protected API endpoints.
+10. Updated database schema and migrations.
+11. Dataset collection and preprocessing pipeline.
+12. Real-world datasets where available.
+13. Labelled synthetic demonstration datasets.
+14. Flood-risk assessment engine.
+15. Dijkstra/A* routing engine.
+16. Community reporting.
+17. Route feedback and live polls.
+18. Emergency SOS and resources.
+19. Expert GIS dashboard.
+20. Scenario simulator.
+21. AI Guard chatbot.
+22. Multilingual voice support.
+23. Offline PWA functionality.
+24. Unit and integration tests.
+25. README and deployment instructions.
+26. Environment variable documentation.
+
+---
+
+# 22. FINAL ACCEPTANCE CRITERIA
+
+The project is complete only when:
+
+1. The welcome page asks users to choose Citizen or Expert.
+2. Every user must sign up or log in before entering either mode.
+3. Citizen registration creates a CITIZEN account.
+4. Expert registration creates a PENDING_APPROVAL account.
+5. Only approved experts can enter Expert Mode.
+6. Administrator accounts are securely provisioned.
+7. Citizen and Expert interfaces have completely separate navigation and layouts.
+8. Authority Desk and expert management controls are absent from Citizen Mode.
+9. Expert operations are protected by backend authorization.
+10. Citizens cannot bypass authorization through direct API calls.
+11. Both modes share the same risk and routing engines.
+12. Citizen reports appear in Expert Incident Management.
+13. Verified road-status changes affect route calculations.
+14. Dijkstra/A* route calculations work on the road network.
+15. Blocked roads are excluded from feasible routes.
+16. Scenario simulations do not silently modify live operational data.
+17. Dataset sources and timestamps are displayed.
+18. Synthetic information is clearly labelled.
+19. AI responses do not fabricate emergency information.
+20. Existing working FloodGuard features remain functional.
+
+# 23. FIRST ACTION
+
+Start by inspecting my existing project.
+
+Do not immediately rewrite the application.
+
+First provide a short implementation audit showing:
+
+- Existing frontend structure.
+- Existing backend structure.
+- Existing database.
+- Existing authentication functionality.
+- Existing Authority Desk functionality.
+- Existing routing implementation.
+- Features that can be reused.
+- Features that need modification.
+- Missing functionality.
+
+Then implement the modifications phase by phase.
+
+If credentials, external datasets or API keys are required, explain the exact setup steps.
+
+Do not fabricate successful integration or testing results.
+
+**FINAL VISION:**
+
+FloodGuard must become a secure, data-driven flood emergency platform with two independent interfaces:
+
+CITIZEN MODE – A personal emergency assistance and safe-route navigation system.
+
+EXPERT MODE – A secure flood-risk monitoring, incident management and disaster-response decision-support system.
+
+Both interfaces must be connected through shared real backend services, authenticated users, role-based authorization, community intelligence, geographical datasets and intelligent route optimization.

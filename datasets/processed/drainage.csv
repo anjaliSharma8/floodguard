@@ -1,0 +1,7 @@
+drainage_id,sector,latitude,longitude,drainage_type,drainage_capacity_cusecs,maintenance_status,source
+DRN_01,Sinhagad Road / Ambil Odha,18.4980,73.8210,Natural Nullah + Storm Box Drain,450,Maintenance Delayed - Heavy Silt,PMC Stormwater Audit
+DRN_02,FC Road / Fergusson College Ward,18.5314,73.8446,Sub-surface Concrete Storm Sewer,180,Cleaned & Operational,PMC Ghole Road Ward
+DRN_03,JM Road,18.5255,73.8475,Box Culvert Drain,220,Cleaned & Operational,PMC Ghole Road Ward
+DRN_04,Bund Garden / Sangam,18.5340,73.8790,Open Nullah into Mula-Mutha,380,Partially Clogged,PMC Dhole Patil Road Ward
+DRN_05,Pimpri Pavana Bank,18.6279,73.8131,Embankment Drain,310,Cleaned,PCMC Storm Water Dept
+DRN_06,Kothrud Paud Road,18.5080,73.8070,Underground Storm Conduits,290,Operational,PMC Kothrud Ward

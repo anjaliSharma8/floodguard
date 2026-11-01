@@ -1,0 +1,5 @@
+feedback_id,user_id,route_id,route_name,reached_safely,route_condition,water_level_category,travel_time_mins,rating,timestamp,verification_status
+FB_201,usr_pune_89,ROUTE_KOTHRUD_TO_DECCAN,Karve Road Alternative,true,Clear with light puddles,None / Minor,12,5,2026-10-30T08:50:00Z,Verified
+FB_202,usr_pune_42,ROUTE_SHIVAJINAGAR_TO_DECCAN,JM Road Main,true,Smooth traffic flow,None,8,5,2026-10-30T09:05:00Z,Verified
+FB_203,usr_pune_11,ROUTE_DECCAN_TO_SINHAGAD,Sinhagad Road Main,false,Blocked near Anand Nagar bridge,Heavy (Above axle),35,1,2026-10-30T09:12:00Z,Verified
+FB_204,usr_pune_73,ROUTE_AUNDH_TO_WAKAD,Aundh-Baner Highway,true,Safe and clear,None,14,5,2026-10-30T09:18:00Z,Verified

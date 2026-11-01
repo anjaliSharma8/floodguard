@@ -1,0 +1,7 @@
+facility_id,name,facility_type,latitude,longitude,emergency_contact,total_beds,available_icu,has_trauma_center,last_updated
+HOSP_01,Sassoon General Hospital & BJ Medical College,Government Tertiary Hospital,18.5262,73.8729,+91-20-26128000,1296,42,true,2026-10-30T08:00:00Z
+HOSP_02,Ruby Hall Clinic,Multispeciality Hospital,18.5332,73.8798,+91-20-66455100,550,28,true,2026-10-30T08:00:00Z
+HOSP_03,Deenanath Mangeshkar Hospital (Erandwane),Tertiary Care Hospital,18.5028,73.8294,+91-20-40151000,800,35,true,2026-10-30T08:00:00Z
+HOSP_04,KEM Hospital Pune (Rasta Peth),Trust Hospital,18.5190,73.8682,+91-20-26061000,550,22,true,2026-10-30T08:00:00Z
+HOSP_05,YCM Hospital (Yashwantrao Chavan Memorial, Pimpri),Municipal Government Hospital,18.6255,73.8190,+91-20-27422501,750,30,true,2026-10-30T08:00:00Z
+HOSP_06,Sahyadri Super Speciality Hospital (Deccan),Multispeciality Hospital,18.5160,73.8340,+91-20-67213000,200,15,true,2026-10-30T08:00:00Z

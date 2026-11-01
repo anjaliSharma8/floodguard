@@ -1,0 +1,8 @@
+facility_id,name,facility_type,latitude,longitude,contact_information,specialization,service_hours,last_updated
+EM_01,Pune Municipal Corporation (PMC) Disaster Management Cell,Disaster Control Room,18.5308,73.8553,+91-20-25501269,"Floods, River Monitoring, Evacuation Coordination",24x7,2026-10-30T08:00:00Z
+EM_02,PCMC Disaster Management & Control Room,Disaster Control Room,18.6279,73.8131,+91-20-67333333,"Pimpri-Chinchwad Flood Monitoring & Rescue",24x7,2026-10-30T08:00:00Z
+EM_03,Central Fire Brigade Headquarters (Bhavani Peth),Fire & Rescue,18.5110,73.8640,101 / +91-20-26451707,"Water Rescue, Boat Operations, Tree Fall Clearance",24x7,2026-10-30T08:00:00Z
+EM_04,NDRF 5th Battalion Pune (Talegaon Station Post),National Disaster Response,18.7200,73.6800,1070 / +91-20-24328888,"Deep Water Evacuation, Flood Inundation Deployment",24x7,2026-10-30T08:00:00Z
+EM_05,RESQ Charitable Trust Animal Rescue Center,Animal Rescue & Veterinary,18.5280,73.7480,+91-9890999111,"Wildlife & Domestic Animal Flood Rescue, Large Animal Ambulances",24x7,2026-10-30T08:00:00Z
+EM_06,SPCA Pune & Veterinary Hospital,Animal Welfare & Clinic,18.5080,73.8520,+91-20-24440022,"Small Animal Emergency Care, Temporary Kennels",08:00-20:00,2026-10-30T08:00:00Z
+EM_07,Bodhisattva Animal Rescue Clinic (Kothrud),Animal Shelter & Rescue,18.5040,73.7990,+91-9158000456,"Street Dog & Cat Flood Sanctuary, Emergency Triage",24x7,2026-10-30T08:00:00Z

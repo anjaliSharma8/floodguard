@@ -1,0 +1,1239 @@
+# MASTER DEVELOPMENT PROMPT
+# FloodGuard – AI-Powered, Community-Driven Flood Risk Intelligence and Emergency Safe-Route Management System
+
+## 1. Project Overview
+
+Build a complete, functional, responsive web application named **FloodGuard**.
+
+FloodGuard is an AI-powered, community-driven flood risk intelligence and emergency safe-route management platform designed to help citizens, emergency responders, and government authorities make informed decisions before, during, and after floods.
+
+The system should combine:
+- Real-world geographical and weather datasets.
+- Flood-risk assessment.
+- AI-assisted analysis.
+- Graph-based route optimization.
+- Real-time community reporting and route feedback.
+- Emergency resource management.
+- Multilingual voice interaction.
+- Offline emergency support.
+- Citizen and expert dashboards.
+
+**Default geographical scope:** Pune and Pimpri-Chinchwad, Maharashtra, India.
+
+The architecture must be modular so that other cities and geographical regions can be added later.
+
+Do not create only a static UI or a collection of dummy dashboards. Build a working end-to-end application with functional backend APIs, data processing, database integration, risk calculation, routing algorithms, and realistic demonstrations.
+
+---
+
+# 2. Technology Stack
+
+Use the following technology stack unless a technical limitation requires a documented alternative.
+
+### Frontend
+- React.js
+- TypeScript
+- Vite
+- Tailwind CSS
+- Leaflet.js with OpenStreetMap
+- Recharts for visual analytics
+- Web Speech API for voice input and text-to-speech
+
+### Backend
+- Python
+- FastAPI
+- REST APIs
+- Pydantic
+- NetworkX for graph algorithms
+
+### Data Processing and AI
+- Pandas
+- NumPy
+- GeoPandas
+- Shapely
+- Scikit-learn
+- Optional LLM API for the emergency chatbot
+
+### Database
+- PostgreSQL with PostGIS for geographical data.
+- SQLite as a lightweight local development alternative.
+- SQLAlchemy for database operations.
+
+### Additional Tools
+- OpenStreetMap
+- IMD weather and rainfall data
+- NASA SRTM elevation data
+- CWC flood information where available
+- Git and GitHub
+- Docker as an optional deployment enhancement
+
+Keep API keys in environment variables. Never expose secret keys in frontend code.
+
+---
+
+# 3. DATASET COLLECTION AND MANAGEMENT
+
+Dataset integration is one of the most important parts of FloodGuard.
+
+Do not simply create a frontend with hardcoded flood values. Build a proper dataset pipeline that collects, processes, stores, and uses geographical, environmental, and community data.
+
+Use real datasets wherever accessible. When real data is unavailable, create simulated datasets for demonstration, but clearly identify them as synthetic.
+
+## 3.1 Dataset Categories
+
+Collect and integrate the following datasets.
+
+### A. Rainfall Dataset
+
+Purpose:
+Understand rainfall intensity and identify areas with potential flood risk.
+
+Required fields:
+- location_id
+- latitude
+- longitude
+- date
+- rainfall_mm
+- rainfall_duration
+- source
+- observation_timestamp
+
+Potential sources:
+- India Meteorological Department (IMD)
+- National Water Data Portal
+- Central Water Commission (CWC)
+
+Use available historical rainfall records and current weather information.
+
+Important:
+IMD gridded rainfall data at 0.25-degree resolution is useful for regional rainfall analysis, but it is too coarse to represent individual street-level conditions. Do not treat it as street-level flood measurements.
+
+### B. Road Network Dataset
+
+Purpose:
+Create the geographical graph required for route calculation.
+
+Source:
+- OpenStreetMap
+- Geofabrik India extracts
+
+Extract roads for Pune and Pimpri-Chinchwad.
+
+Required fields:
+- road_id
+- from_node
+- to_node
+- road_name
+- road_type
+- latitude
+- longitude
+- distance_km
+- estimated_speed_kmph
+- geometry
+- accessibility
+- one_way
+
+Represent the road network as a graph:
+
+- Intersections are graph nodes.
+- Roads are graph edges.
+- Every edge has distance, travel time, flood risk, and availability.
+
+Preserve road geometry so that routes can be displayed accurately on the map.
+
+### C. Elevation and Terrain Dataset
+
+Purpose:
+Identify low-lying areas and terrain conditions that may increase flood risk.
+
+Source:
+- NASA SRTM elevation data, approximately 30-metre resolution.
+
+Required fields:
+- location_id
+- latitude
+- longitude
+- elevation_m
+- slope
+- terrain_category
+
+Calculate slope from elevation data where possible.
+
+Low-lying areas and drainage conditions should contribute to the flood-risk assessment, but elevation alone must not be treated as proof of flooding.
+
+### D. Historical Flood Dataset
+
+Purpose:
+Understand historical flood-prone locations and support future model training.
+
+Collect available historical flood incidents from:
+- Government reports.
+- CWC information.
+- IMD-related records.
+- Publicly available flood datasets.
+- Verified local incident records.
+
+Required fields:
+- incident_id
+- location_id
+- latitude
+- longitude
+- date
+- flood_severity
+- water_level_if_available
+- road_id_if_available
+- source
+- verification_status
+
+Use historical records as evidence of past incidents, not as automatic proof of current road conditions.
+
+### E. Drainage Dataset
+
+Purpose:
+Identify drainage infrastructure and possible waterlogging locations.
+
+Required fields:
+- drainage_id
+- latitude
+- longitude
+- drainage_type
+- drainage_capacity_if_available
+- maintenance_status
+- source
+
+Use available municipal or OpenStreetMap drainage information.
+
+If actual drainage-capacity data is unavailable, clearly mark it as unavailable rather than inventing measurements.
+
+### F. Emergency Facilities Dataset
+
+Collect information about:
+- Flood shelters.
+- Emergency relief centres.
+- Hospitals.
+- Fire stations.
+- Police stations.
+- Ambulance facilities.
+- Animal rescue centres.
+- Veterinary hospitals.
+
+Required shelter fields:
+- shelter_id
+- name
+- latitude
+- longitude
+- capacity
+- current_occupancy
+- availability
+- accessibility
+- contact_information
+- last_updated
+
+Required hospital and emergency facility fields:
+- facility_id
+- name
+- facility_type
+- latitude
+- longitude
+- contact_information
+- availability
+- last_updated
+
+Do not display fabricated facilities as verified real-world resources.
+
+### G. Community Reports Dataset
+
+Create a dataset that stores citizen-submitted flood reports.
+
+Fields:
+- report_id
+- user_id
+- road_id
+- latitude
+- longitude
+- report_type
+- description
+- image_url
+- severity
+- timestamp
+- verification_status
+- confidence_score
+
+Possible report types:
+- Waterlogging.
+- Road flooded.
+- Road blocked.
+- Heavy rainfall.
+- Drainage overflow.
+- Fallen tree.
+- Bridge inaccessible.
+- Traffic disruption.
+- Rescue required.
+
+Report verification statuses:
+- Reported.
+- Under Review.
+- Verified.
+- Rejected.
+- Resolved.
+
+A citizen report must not automatically become an official road closure.
+
+### H. Route Feedback Dataset
+
+Implement a unique community-driven route feedback feature.
+
+Citizens who successfully reach their destinations using a recommended route should be able to submit feedback.
+
+Fields:
+- feedback_id
+- user_id
+- route_id
+- route_segment_id
+- reached_safely
+- route_condition
+- water_level_category
+- travel_time
+- rating
+- timestamp
+- verification_status
+
+Allow users to report:
+- Reached safely.
+- Route partially flooded.
+- Route blocked.
+- Route conditions changed.
+- Route was not accessible.
+
+Use recent, verified, corroborated feedback to improve route recommendations.
+
+Important:
+A route must NOT become safe simply because it receives many positive votes. Official closures, verified hazards, and current dangerous conditions must override popularity.
+
+### I. Public Live Poll Dataset
+
+Introduce live community polls similar to public live news-channel polls.
+
+Example:
+"How is the condition of FC Road right now?"
+
+Options:
+- Completely safe.
+- Minor waterlogging.
+- Heavy waterlogging.
+- Road blocked.
+- Need emergency assistance.
+
+Store:
+- poll_id
+- road_id
+- question
+- options
+- user_id
+- selected_option
+- timestamp
+- verification_status
+
+Show poll results visually with live updates.
+
+Use authentication, rate limits, duplicate-vote prevention, and credibility checks to reduce spam and manipulation.
+
+---
+
+## 3.2 Dataset Folder Structure
+
+Create the following structure:
+
+FloodGuard/
+│
+├── datasets/
+│   ├── raw/
+│   │   ├── rainfall_raw.csv
+│   │   ├── roads_raw.geojson
+│   │   ├── elevation.tif
+│   │   ├── historical_floods.csv
+│   │   └── drainage_raw.geojson
+│   │
+│   ├── processed/
+│   │   ├── rainfall.csv
+│   │   ├── roads.geojson
+│   │   ├── terrain.csv
+│   │   ├── drainage.csv
+│   │   ├── historical_floods.csv
+│   │   ├── road_conditions.csv
+│   │   ├── shelters.csv
+│   │   ├── hospitals.csv
+│   │   └── emergency_facilities.csv
+│   │
+│   ├── community/
+│   │   ├── community_reports.csv
+│   │   ├── route_feedback.csv
+│   │   └── live_polls.csv
+│   │
+│   └── synthetic/
+│       └── synthetic_demo_data.csv
+│
+├── backend/
+│   ├── data_collection/
+│   ├── preprocessing/
+│   ├── risk_engine/
+│   ├── routing/
+│   ├── community/
+│   ├── authentication/
+│   ├── chatbot/
+│   └── api/
+│
+├── frontend/
+│
+├── database/
+│
+├── models/
+│
+├── tests/
+│
+├── .env.example
+├── requirements.txt
+└── README.md
+
+Create scripts to download, validate, clean, preprocess, and import datasets.
+
+Do not assume every external source has a freely accessible API. Support manual downloads and CSV/GeoJSON imports when required.
+
+Provide dataset source attribution and record the source and last-updated timestamp for every important dataset.
+
+---
+
+# 4. FLOOD RISK PREDICTION ENGINE
+
+Build a flood-risk assessment engine using geographical, environmental, historical, and community information.
+
+The engine should calculate a risk score for geographical locations and road segments.
+
+### Initial risk factors
+
+- Rainfall intensity.
+- Recent rainfall accumulation.
+- Elevation.
+- Terrain slope.
+- Drainage availability and condition.
+- Historical flood incidents.
+- Verified road waterlogging reports.
+- Current road conditions.
+
+Create a transparent weighted risk score initially.
+
+For example:
+
+Risk Score =
+(W1 × Rainfall Risk)
++ (W2 × Terrain Risk)
++ (W3 × Drainage Risk)
++ (W4 × Historical Flood Risk)
++ (W5 × Verified Community Risk)
+
+Normalize individual factors to a consistent scale.
+
+Make weights configurable.
+
+Use these categories:
+- 0–20: Very Low Risk.
+- 21–40: Low Risk.
+- 41–60: Moderate Risk.
+- 61–80: High Risk.
+- 81–100: Critical Risk.
+
+Display the score and explain the factors contributing to it.
+
+### Machine Learning Integration
+
+Design the system to support machine learning models such as:
+- Random Forest.
+- Decision Tree.
+- Gradient Boosting.
+
+However, do not train a supposedly accurate flood prediction model using invented labels.
+
+First build a working rule-based risk engine.
+
+Only train and evaluate ML models when sufficiently reliable labelled historical observations are available.
+
+Include:
+- Data preprocessing.
+- Feature engineering.
+- Train/test split.
+- Model evaluation.
+- Precision.
+- Recall.
+- F1-score.
+- Confusion matrix.
+
+Clearly distinguish:
+1. Rule-based risk assessment.
+2. ML-based predictions.
+3. Live observations.
+4. Simulated demonstration values.
+
+---
+
+# 5. INTELLIGENT SAFE-ROUTE MANAGEMENT
+
+This is one of the core features of FloodGuard.
+
+Implement actual graph-based route calculation instead of merely drawing lines between locations.
+
+### Algorithms
+
+Use:
+- Dijkstra's algorithm for shortest-path routing.
+- A* algorithm as an optional optimized routing approach.
+- NetworkX for graph management.
+
+Represent the road network as:
+
+G = (V, E)
+
+Where:
+- V represents road intersections.
+- E represents connecting road segments.
+
+Each edge should have:
+- Distance.
+- Estimated travel time.
+- Risk score.
+- Road availability.
+- Community condition information.
+
+Define a route cost:
+
+Route Cost = Travel Time + (Risk Weight × Flood Risk Penalty)
+
+For example:
+
+Cost(e) = T(e) + λR(e)
+
+Where:
+- T(e) = estimated travel time.
+- R(e) = flood-risk penalty.
+- λ = configurable risk preference.
+
+### Routing functionality
+
+Users should be able to:
+1. Select their current location.
+2. Enter their destination.
+3. View multiple possible routes.
+4. Compare shortest route and safest available route.
+5. See estimated distance and travel time.
+6. View risk scores for each route.
+7. Avoid blocked roads.
+8. Recalculate routes when conditions change.
+
+Display routes using different colours:
+- Green: Lower risk.
+- Yellow: Moderate risk.
+- Orange: High risk.
+- Red: Critical risk or blocked.
+
+Never recommend a confirmed blocked road.
+
+If no feasible route exists, explain this clearly and direct the user to available emergency guidance rather than inventing a safe route.
+
+Do not claim that a route is guaranteed safe.
+
+---
+
+# 6. COMMUNITY-POWERED FLOOD INTELLIGENCE
+
+This should be one of FloodGuard's major differentiating features.
+
+### A. Citizen Reporting
+
+Allow authenticated citizens to:
+- Submit flood reports.
+- Upload photographs.
+- Report blocked roads.
+- Report waterlogging.
+- Share emergency incidents.
+- Report changes in road conditions.
+
+Display reports on the map with their status and timestamp.
+
+### B. Safe Route Feedback
+
+After completing a journey, citizens can provide feedback.
+
+Allow:
+- Safe journey confirmation.
+- Route rating.
+- Road-condition feedback.
+- Flooding alerts.
+- Blockage reports.
+
+Build a route confidence mechanism that considers:
+- Recency.
+- Verification status.
+- Number of independent reports.
+- Source credibility.
+- Contradictory reports.
+
+Community feedback should help improve recommendations, but it must never override confirmed road closures or verified critical hazards.
+
+### C. Live Public Polls
+
+Provide a live polling feature for road conditions.
+
+Example:
+
+"What is the current condition of Sinhagad Road?"
+
+Show:
+- Total votes.
+- Percentage for each option.
+- Latest report time.
+- Verification status.
+
+Use WebSockets or polling for live updates.
+
+### D. Community Feed
+
+Create a feed of recent community reports, alerts, verified updates, and rescue requests.
+
+Include filtering by location, severity, and report status.
+
+---
+
+# 7. CITIZEN MODE
+
+Create a simple, accessible interface for ordinary citizens.
+
+Features:
+- Interactive flood-risk map.
+- Current location selection.
+- Destination search.
+- Safe-route recommendations.
+- Route comparison.
+- Live flood alerts.
+- Community reports.
+- Route feedback.
+- Live public polls.
+- Emergency SOS.
+- Nearby shelters and hospitals.
+- Animal rescue resources.
+- Multilingual interface.
+- Voice input.
+- Text-to-speech guidance.
+- Offline emergency information.
+
+The interface must be easy to use during stressful emergency situations.
+
+Use large buttons, clear labels, readable fonts, and accessible colour contrast.
+
+---
+
+# 8. EXPERT / AUTHORITY DASHBOARD
+
+Create a separate dashboard for authorised experts and emergency operators.
+
+Features:
+
+### Flood Monitoring
+- Live geographical flood-risk map.
+- Rainfall monitoring.
+- High-risk area identification.
+- Historical flood analysis.
+- Road blockage monitoring.
+
+### Incident Management
+- View submitted reports.
+- Verify or reject reports.
+- Update road conditions.
+- Mark roads as blocked or reopened.
+- View report evidence.
+- Track incident status.
+
+### Emergency Resource Management
+- Manage shelters.
+- Update shelter capacity.
+- Monitor occupancy.
+- Locate hospitals and emergency facilities.
+- View rescue-resource availability.
+
+### Route Management
+- Compare alternative routes.
+- Monitor risky road segments.
+- Identify disconnected areas.
+- View community feedback.
+- Analyse route confidence.
+
+### Scenario Simulation
+Allow experts to simulate:
+- Heavy rainfall.
+- Multiple blocked roads.
+- Flooding in selected areas.
+- Shelter capacity changes.
+- Emergency evacuation scenarios.
+
+### Analytics
+Show:
+- Number of active reports.
+- Verified incidents.
+- High-risk road segments.
+- Available shelters.
+- Critical areas.
+- Route recalculations.
+- Community participation.
+
+Include timestamps and data freshness indicators.
+
+---
+
+# 9. PRE-FLOOD ANALYSIS
+
+Build a module that helps authorities prepare before flooding occurs.
+
+Features:
+- Rainfall trend analysis.
+- Historical flood-prone area identification.
+- Low-elevation area identification.
+- Drainage risk analysis.
+- Potentially vulnerable road identification.
+- Shelter readiness monitoring.
+- Emergency resource planning.
+- What-if rainfall simulation.
+
+Allow an expert to select an area and simulate different rainfall scenarios.
+
+Show how the risk score changes under each scenario.
+
+Clearly label simulated rainfall scenarios as hypothetical, not live forecasts.
+
+---
+
+# 10. POST-FLOOD MANAGEMENT
+
+Build a post-flood analysis module.
+
+Features:
+- Collect flood damage reports.
+- Identify affected road segments.
+- Record damaged infrastructure.
+- Monitor shelter occupancy.
+- Identify areas requiring assistance.
+- Track rescue requests.
+- Manage relief resources.
+- Generate post-flood reports.
+
+Allow experts to classify incident severity.
+
+If image-based damage classification is implemented, use a real model or clearly labelled demonstration mode. Do not claim an untrained image model can accurately detect flood damage.
+
+---
+
+# 11. MULTILINGUAL VOICE ASSISTANT
+
+Support:
+- English.
+- Hindi.
+- Marathi.
+
+Features:
+- Voice-based destination search.
+- Voice-based flood reports.
+- Spoken route instructions.
+- Text-to-speech emergency guidance.
+- Language selection.
+
+Use Web Speech API where supported.
+
+Provide text input as a fallback when speech recognition is unavailable.
+
+Do not make voice functionality mandatory for using the application.
+
+---
+
+# 12. AI EMERGENCY CHATBOT
+
+Build an AI assistant that helps citizens understand FloodGuard and emergency information.
+
+Example questions:
+- Is my selected route currently risky?
+- Where is the nearest available shelter?
+- What should I do during heavy rainfall?
+- How do I report a flooded road?
+- Are animal rescue facilities available nearby?
+- What does a critical flood-risk score mean?
+
+Use retrieval-augmented generation (RAG) for verified static emergency guidance.
+
+For dynamic questions, retrieve information from backend APIs.
+
+Important chatbot rules:
+- Never invent road conditions.
+- Never invent shelter availability.
+- Never invent emergency phone numbers.
+- Never claim a route is safe without supporting data.
+- Clearly communicate when information is unavailable or outdated.
+- Display the timestamp of live information when relevant.
+
+If the LLM API fails, provide predefined emergency guidance and basic application help.
+
+---
+
+# 13. OFFLINE EMERGENCY MODE
+
+The application must remain useful when internet connectivity is unavailable.
+
+Implement:
+- Progressive Web App (PWA).
+- Service worker.
+- Cached application interface.
+- Cached selected geographical map data where licensing and technical limits permit.
+- Cached road graph.
+- Cached emergency facility information.
+- Cached emergency guidance.
+- Offline report creation.
+- Offline route feedback storage.
+- Synchronisation when connectivity returns.
+
+### Offline routing
+
+Allow routing only using a previously cached road graph.
+
+Show a clear warning:
+
+"Offline mode: route information is based on previously downloaded data. Current flood conditions and road closures cannot be verified."
+
+Show:
+- Last synchronisation time.
+- Cached geographical coverage.
+- Whether live updates are available.
+
+Never present stale information as live information.
+
+---
+
+# 14. API FAILURE AND SYSTEM RELIABILITY
+
+Plan for external service failures.
+
+### If weather API fails:
+- Use the last available rainfall information.
+- Display its timestamp.
+- Mark data as stale.
+- Allow manual scenario input for experts.
+
+### If map API or external routing service fails:
+- Use locally stored road geometry.
+- Use the internal NetworkX graph.
+- Continue routing where cached data is sufficient.
+
+### If chatbot API fails:
+- Use predefined emergency guidance.
+
+### If voice recognition fails:
+- Provide text input.
+
+### If internet fails:
+- Switch to offline mode.
+
+### If database connectivity fails:
+- Display a clear service warning.
+- Avoid falsely confirming that a report or update was saved.
+- Queue permitted offline submissions for later synchronisation.
+
+Implement logging, error handling, retries where appropriate, and health-check endpoints.
+
+---
+
+# 15. AUTHENTICATION AND SECURITY
+
+Implement role-based authentication.
+
+Roles:
+1. Citizen.
+2. Expert / Emergency Operator.
+3. Administrator.
+
+Features:
+- User registration.
+- Login.
+- Secure password hashing.
+- Session or token-based authentication.
+- Role-based access control.
+- Protected expert routes.
+- User profile.
+- Logout.
+- Audit logs for sensitive actions.
+
+Only authorised experts should be able to verify reports or officially change road status.
+
+Citizens should not be able to impersonate emergency authorities.
+
+Validate uploaded files, protect user information, and apply rate limiting to reporting and voting endpoints.
+
+---
+
+# 16. ANIMAL AND VULNERABLE-POPULATION ASSISTANCE
+
+FloodGuard should consider all members of society.
+
+Include support for:
+- Children.
+- Elderly people.
+- People with disabilities.
+- Pregnant individuals.
+- Pets.
+- Stray animals.
+- Birds and other wildlife.
+
+Features:
+- Pet-friendly shelters.
+- Veterinary facilities.
+- Animal rescue contact information.
+- Accessibility information for shelters.
+- Emergency assistance requests.
+- Special evacuation requirements.
+
+Do not invent animal rescue facilities. Use verified data or explicitly labelled demonstration records.
+
+---
+
+# 17. DATABASE DESIGN
+
+Design appropriate relational database tables.
+
+Suggested tables:
+
+- users
+- roles
+- roads
+- road_nodes
+- road_conditions
+- rainfall_observations
+- terrain_locations
+- historical_flood_incidents
+- drainage_assets
+- shelters
+- emergency_facilities
+- community_reports
+- route_feedback
+- live_polls
+- poll_votes
+- emergency_alerts
+- rescue_requests
+- route_history
+- audit_logs
+
+Use appropriate foreign keys, indexes, timestamps, and geographical data types.
+
+Include database migrations and seed scripts.
+
+---
+
+# 18. FRONTEND DESIGN AND USER EXPERIENCE
+
+Create a professional, modern, responsive interface.
+
+Design direction:
+- Emergency-management dashboard aesthetic.
+- Clean layout.
+- Clear typography.
+- Accessible contrast.
+- Responsive desktop and mobile layouts.
+- Interactive maps.
+- Cards and charts.
+- Consistent navigation.
+- Clear loading and error states.
+
+Required pages:
+
+1. Landing Page.
+2. Login / Registration.
+3. Citizen Dashboard.
+4. Interactive Flood Map.
+5. Safe Route Planner.
+6. Community Reports.
+7. Route Feedback.
+8. Live Polls.
+9. Emergency Resources.
+10. AI Chatbot.
+11. Expert Dashboard.
+12. Incident Verification.
+13. Pre-Flood Analysis.
+14. Post-Flood Management.
+15. Admin Dashboard.
+16. User Profile.
+17. Offline Emergency Page.
+
+Do not build buttons that do nothing. Every visible button must perform a meaningful action or be clearly marked as a future feature.
+
+---
+
+# 19. API DESIGN
+
+Create REST APIs with clear request and response schemas.
+
+Suggested endpoints:
+
+### Authentication
+- POST /auth/register
+- POST /auth/login
+- GET /auth/me
+
+### Map and Data
+- GET /map/roads
+- GET /map/risk-zones
+- GET /data/rainfall
+- GET /data/historical-floods
+
+### Risk Assessment
+- POST /risk/calculate
+- GET /risk/location/{location_id}
+- POST /risk/simulate
+
+### Routing
+- POST /routes/find
+- POST /routes/recalculate
+- GET /routes/{route_id}
+
+### Community
+- POST /reports
+- GET /reports
+- PATCH /reports/{report_id}/verify
+- POST /routes/feedback
+- GET /routes/feedback/{route_id}
+
+### Polls
+- POST /polls
+- GET /polls
+- POST /polls/{poll_id}/vote
+
+### Emergency Resources
+- GET /resources/shelters
+- GET /resources/hospitals
+- GET /resources/animal-rescue
+
+### Expert Operations
+- GET /expert/dashboard
+- PATCH /roads/{road_id}/status
+- PATCH /shelters/{shelter_id}
+
+### Chatbot
+- POST /chatbot/message
+
+### System
+- GET /health
+- GET /system/data-status
+
+Implement validation, authentication, permissions, and meaningful error responses.
+
+---
+
+# 20. TESTING AND VALIDATION
+
+Create tests for the main system components.
+
+### Dataset Tests
+- Missing values.
+- Duplicate records.
+- Invalid coordinates.
+- Incorrect data types.
+- Missing source attribution.
+- Stale observations.
+
+### Risk Engine Tests
+- Low rainfall scenario.
+- Heavy rainfall scenario.
+- Low-lying area.
+- Verified flood incident.
+- Conflicting community reports.
+
+### Routing Tests
+- Normal shortest route.
+- Risk-aware route.
+- Blocked road.
+- Route recalculation.
+- No feasible route.
+- Disconnected graph.
+
+### Reliability Tests
+- Weather API failure.
+- Chatbot API failure.
+- Internet disconnection.
+- Stale cached data.
+- Database failure.
+
+### Community Tests
+- Duplicate reports.
+- Unverified reports.
+- Route feedback submission.
+- Duplicate poll voting.
+- Expert report verification.
+
+Measure:
+- Route calculation time.
+- Risk assessment time.
+- Blocked-road violations.
+- API response time.
+- Route recalculation performance.
+
+Never claim that the application is fully validated without actual test results.
+
+---
+
+# 21. IMPLEMENTATION PHASES
+
+Develop the project in the following order.
+
+### Phase 1: Project Foundation
+- Set up frontend and backend.
+- Configure database.
+- Create project structure.
+- Implement authentication.
+- Create initial UI.
+
+### Phase 2: Dataset Pipeline
+- Download Pune road network.
+- Obtain rainfall information.
+- Obtain elevation data.
+- Import historical flood information where available.
+- Create emergency facility datasets.
+- Create data preprocessing scripts.
+- Validate and store datasets.
+- Create clearly labelled synthetic demonstration data for missing information.
+
+### Phase 3: Flood Risk Engine
+- Implement feature extraction.
+- Implement rule-based risk scoring.
+- Create risk categories.
+- Display risk zones on the map.
+- Add expert scenario simulation.
+
+### Phase 4: Routing Engine
+- Build road graph.
+- Implement Dijkstra.
+- Implement A* if useful.
+- Add risk-aware route cost.
+- Exclude verified blocked roads.
+- Display alternative routes.
+- Add dynamic route recalculation.
+
+### Phase 5: Community Intelligence
+- Citizen reporting.
+- Report verification.
+- Route feedback.
+- Live polls.
+- Community feed.
+- Confidence and credibility calculations.
+
+### Phase 6: Citizen and Expert Dashboards
+- Complete citizen mode.
+- Complete expert mode.
+- Add shelter and emergency facility management.
+- Add analytics.
+
+### Phase 7: AI and Accessibility
+- Add multilingual interface.
+- Add voice input.
+- Add text-to-speech.
+- Add RAG chatbot.
+- Add animal and accessibility assistance.
+
+### Phase 8: Offline and Reliability
+- Implement PWA.
+- Cache selected map data.
+- Implement offline reports.
+- Implement offline routing.
+- Add API failure handling.
+- Add data freshness indicators.
+
+### Phase 9: Testing and Deployment
+- Test all major workflows.
+- Fix integration errors.
+- Prepare environment variables.
+- Write README.
+- Deploy frontend and backend.
+- Document dataset sources and limitations.
+
+---
+
+# 22. EXPECTED PROJECT DELIVERABLES
+
+Generate:
+
+1. Complete frontend source code.
+2. Complete backend source code.
+3. Database schema and migrations.
+4. Dataset download/import scripts.
+5. Dataset preprocessing pipeline.
+6. Initial real-world datasets where accessible.
+7. Clearly labelled synthetic demonstration datasets.
+8. Flood-risk engine.
+9. Dijkstra and A* routing implementation.
+10. Community reporting system.
+11. Route feedback and live polling.
+12. Citizen dashboard.
+13. Expert dashboard.
+14. AI chatbot.
+15. Multilingual voice functionality.
+16. Offline PWA support.
+17. API documentation.
+18. Unit and integration tests.
+19. `.env.example`.
+20. Complete README with setup instructions.
+
+---
+
+# 23. IMPORTANT DEVELOPMENT RULES
+
+Follow these instructions throughout development:
+
+1. Build a working application, not just a UI prototype.
+2. Do not hardcode live flood information.
+3. Prefer real, attributable datasets.
+4. Clearly label synthetic and simulated data.
+5. Do not fabricate real emergency facilities or road closures.
+6. Never train an ML model using invented ground-truth labels and claim it is accurate.
+7. Keep risk scoring explainable.
+8. Ensure Dijkstra/A* routing actually works on the road graph.
+9. Confirmed road closures and verified hazards must override positive community votes.
+10. Clearly communicate stale or unavailable data.
+11. Provide an internal routing fallback if external routing APIs fail.
+12. Do not claim a route is guaranteed safe.
+13. Protect user information and expert operations.
+14. Keep code modular, reusable, and documented.
+15. Test every major feature.
+16. Make the application usable on mobile devices.
+17. Ensure the core application works even if optional AI APIs are unavailable.
+
+---
+
+# 24. FIRST TASK: START BUILDING THE PROJECT
+
+Do not generate the entire application as disconnected code snippets.
+
+Start by:
+
+1. Creating the complete folder structure.
+2. Setting up React + TypeScript frontend.
+3. Setting up FastAPI backend.
+4. Configuring the database.
+5. Creating the dataset pipeline.
+6. Downloading or importing the Pune road network from OpenStreetMap.
+7. Preparing the rainfall and elevation data import workflows.
+8. Creating initial emergency-resource datasets.
+9. Building a working risk engine.
+10. Implementing Dijkstra-based route calculation.
+
+Then connect the frontend map to the backend.
+
+After completing each phase:
+- Show the files created.
+- Explain how to run the application.
+- List environment variables required.
+- Run relevant tests.
+- Fix errors before moving to the next phase.
+
+If an external dataset or API requires registration, credentials, or manual downloading, explain the exact steps and provide a fallback.
+
+**Final objective:** Deliver FloodGuard as a functional, data-driven, AI-assisted flood-risk and emergency safe-route management platform with community-powered intelligence, explainable risk assessment, reliable route optimization, and offline emergency support.

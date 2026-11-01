@@ -1,0 +1,7 @@
+shelter_id,name,latitude,longitude,capacity,current_occupancy,pet_friendly,wheelchair_accessible,contact_information,address,last_updated
+SH_01,Shivajinagar Relief Community Hall,18.5320,73.8460,250,65,true,true,+91-20-25501001,"Ghole Road, Shivajinagar, Pune",2026-10-30T08:30:00Z
+SH_02,Kothrud Municipal Sports Complex,18.5080,73.8070,500,120,true,true,+91-20-25442010,"Near Chandani Chowk Rd, Kothrud",2026-10-30T08:30:00Z
+SH_03,Sinhagad Road Flood Rescue Shelter (Dhayari),18.4750,73.8180,350,210,false,true,+91-20-24358890,"Vadgaon Budruk, Sinhagad Road",2026-10-30T08:30:00Z
+SH_04,Swargate Multipurpose Relief Center,18.5020,73.8590,300,95,true,false,+91-20-24443211,"Jedhe Chowk, Swargate",2026-10-30T08:30:00Z
+SH_05,Pimpri-Chinchwad PCMC Disaster Relief Shelter,18.6280,73.8150,450,110,true,true,+91-20-27425555,"Near PCMC Bhavan, Pimpri",2026-10-30T08:30:00Z
+SH_06,Yerawada Community Flood Sanctuary,18.5530,73.8890,200,45,false,true,+91-20-26681020,"Airport Road Junction, Yerawada",2026-10-30T08:30:00Z
