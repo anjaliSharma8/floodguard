@@ -88,8 +88,20 @@ class ApiService {
     );
     try {
       final result = _asMap(response, 'route response');
-      _asMap(result['shortestRoute'], 'shortest route');
-      _asMap(result['safestRoute'], 'safest route');
+      final shortest = _asMap(
+        result.containsKey('shortestRoute')
+            ? result['shortestRoute']
+            : result['shortest'],
+        'shortest route',
+      );
+      final safest = _asMap(
+        result.containsKey('safestRoute')
+            ? result['safestRoute']
+            : result['safest'],
+        'safest route',
+      );
+      result['shortestRoute'] = shortest;
+      result['safestRoute'] = safest;
       return result;
     } on FormatException catch (error) {
       throw ApiException(

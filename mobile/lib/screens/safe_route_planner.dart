@@ -124,12 +124,13 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
   Map<String, dynamic>? get currentRoute {
     if (routeResponse == null) return null;
 
-    final key = selectedRoute == 'Safest' ? 'safestRoute' : 'shortestRoute';
+    final canonicalKey = selectedRoute == 'Safest'
+        ? 'safestRoute'
+        : 'shortestRoute';
+    final backendKey = selectedRoute == 'Safest' ? 'safest' : 'shortest';
+    final result = routeResponse![canonicalKey] ?? routeResponse![backendKey];
 
-    final result = routeResponse![key];
-
-    if (result == null) return null;
-
+    if (result is! Map) return null;
     return Map<String, dynamic>.from(result);
   }
 
