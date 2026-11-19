@@ -83,9 +83,96 @@ void main() {
         startNodeId: 'N_A',
         targetNodeId: 'N_B',
       );
+      expect(response['shortestRoute']['feasible'], isFalse);
       expect(response['safestRoute']['feasible'], isTrue);
     },
   );
+
+  test('route response normalizes the current backend format', () async {
+    final shortest = {
+      'mode': 'shortest',
+      'feasible': true,
+      'nodeIds': ['N_A', 'N_B'],
+      'nodes': [
+        {'id': 'N_A', 'name': 'Point A', 'lat': 18.5, 'lng': 73.8},
+        {'id': 'N_B', 'name': 'Point B', 'lat': 18.6, 'lng': 73.9},
+      ],
+      'edges': [
+        {
+          'id': 'R_A',
+          'name': 'Road A',
+          'distanceKm': 2.4,
+          'riskScore': 42,
+          'status': 'OPEN',
+        },
+      ],
+      'totalDistanceKm': 2.4,
+      'travelTimeMins': 8.0,
+      'averageRiskScore': 42,
+      'maxRiskScore': 42,
+      'safetyRating': 'Moderate Risk',
+    };
+    final safest = {...shortest, 'mode': 'safest', 'totalDistanceKm': 2.8};
+    final fastest = {...shortest, 'mode': 'fastest'};
+    final alternatives = [safest];
+    final service = ApiService(
+      baseUrl: 'http://example.test',
+      client: MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'originNode': {'id': 'N_A'},
+            'targetNode': {'id': 'N_B'},
+            'snappedOrigin': null,
+            'snappedDest': null,
+            'lambdaRisk': 1.5,
+            'shortest': shortest,
+            'fastest': fastest,
+            'safest': safest,
+            'alternatives': alternatives,
+          }),
+          200,
+        ),
+      ),
+    );
+
+    final response = await service.findRoute(
+      startNodeId: 'N_A',
+      targetNodeId: 'N_B',
+    );
+
+    expect(response['shortestRoute'], shortest);
+    expect(response['safestRoute'], safest);
+    expect(response['fastest'], fastest);
+    expect(response['alternatives'], alternatives);
+  });
+
+  test('route response rejects missing and non-object route values', () async {
+    for (final body in [
+      {'shortest': <String, dynamic>{}},
+      {
+        'shortest': <String, dynamic>{},
+        'safest': ['not', 'an object'],
+      },
+      {'shortest': 'not an object', 'safest': <String, dynamic>{}},
+      {'shortestRoute': <String, dynamic>{}, 'safestRoute': null},
+    ]) {
+      final service = ApiService(
+        baseUrl: 'http://example.test',
+        client: MockClient((_) async => http.Response(jsonEncode(body), 200)),
+      );
+
+      await expectLater(
+        service.findRoute(startNodeId: 'N_A', targetNodeId: 'N_B'),
+        throwsA(
+          isA<ApiException>().having(
+            (error) => error.kind,
+            'kind',
+            ApiFailureKind.parsing,
+          ),
+        ),
+      );
+    }
+  });
 
   test('HTTP failures preserve status and server error text', () async {
     final service = ApiService(

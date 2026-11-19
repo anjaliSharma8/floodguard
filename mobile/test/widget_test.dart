@@ -191,6 +191,118 @@ void main() {
     );
   });
 
+  testWidgets('route preference chips render the matching backend route', (
+    WidgetTester tester,
+  ) async {
+    final startNode = {
+      'id': 'N_A',
+      'name': 'Point A',
+      'lat': 18.5,
+      'lng': 73.8,
+      'elevationM': 560,
+    };
+    final endNode = {
+      'id': 'N_B',
+      'name': 'Point B',
+      'lat': 18.6,
+      'lng': 73.9,
+      'elevationM': 559,
+    };
+
+    Map<String, dynamic> route({
+      required String mode,
+      required double distance,
+      required int risk,
+      required String road,
+    }) => {
+      'mode': mode,
+      'feasible': true,
+      'nodeIds': ['N_A', 'N_B'],
+      'nodes': [startNode, endNode],
+      'edges': [
+        {
+          'id': 'R_$mode',
+          'name': road,
+          'distanceKm': distance,
+          'riskScore': risk,
+          'status': 'OPEN',
+        },
+      ],
+      'totalDistanceKm': distance,
+      'travelTimeMins': 8.0,
+      'averageRiskScore': risk,
+      'maxRiskScore': risk,
+      'safetyRating': 'Moderate Risk',
+    };
+
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/roads') {
+        return http.Response(
+          jsonEncode({
+            'nodes': {'N_A': startNode, 'N_B': endNode},
+            'segments': [],
+          }),
+          200,
+        );
+      }
+      if (request.url.path == '/api/routes/find') {
+        return http.Response(
+          jsonEncode({
+            'originNode': startNode,
+            'targetNode': endNode,
+            'lambdaRisk': 1.5,
+            'shortest': route(
+              mode: 'shortest',
+              distance: 2.4,
+              risk: 42,
+              road: 'Shortest Road',
+            ),
+            'fastest': route(
+              mode: 'fastest',
+              distance: 2.6,
+              risk: 48,
+              road: 'Fastest Road',
+            ),
+            'safest': route(
+              mode: 'safest',
+              distance: 3.2,
+              risk: 20,
+              road: 'Safest Road',
+            ),
+            'alternatives': [],
+          }),
+          200,
+        );
+      }
+      return http.Response('Not found', 404);
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(home: SafeRoutePlannerScreen(client: client)),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final findRouteButton = find.text('Find Safe Route');
+    await tester.ensureVisible(findRouteButton);
+    await tester.tap(findRouteButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Safest Route Details'), findsOneWidget);
+    expect(find.text('3.20 km'), findsOneWidget);
+    expect(find.textContaining('Safest Road'), findsOneWidget);
+
+    final shortestChip = find.text('Shortest Route').first;
+    await tester.ensureVisible(shortestChip);
+    await tester.tap(shortestChip);
+    await tester.pump();
+
+    expect(find.text('Shortest Route Details'), findsOneWidget);
+    expect(find.text('2.40 km'), findsOneWidget);
+    expect(find.textContaining('Shortest Road'), findsOneWidget);
+  });
+
   testWidgets('road API errors are visible beside the location controls', (
     WidgetTester tester,
   ) async {
