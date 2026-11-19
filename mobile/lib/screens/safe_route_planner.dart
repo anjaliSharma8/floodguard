@@ -1,6 +1,6 @@
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:material_ui/material_ui.dart';
 
 class SafeRoutePlannerScreen extends StatefulWidget {
   const SafeRoutePlannerScreen({super.key});
@@ -10,275 +10,262 @@ class SafeRoutePlannerScreen extends StatefulWidget {
 }
 
 class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
-  final TextEditingController sourceController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  final _sourceController = TextEditingController();
+  final _destinationController = TextEditingController();
 
-  final TextEditingController destinationController = TextEditingController();
-
-  String selectedRoute = 'Safest';
-
-  static const Color primaryColor = Color(0xFF087E8B);
+  String _selectedRoute = 'Safest';
+  String? _statusMessage;
 
   @override
   void dispose() {
-    sourceController.dispose();
-    destinationController.dispose();
+    _sourceController.dispose();
+    _destinationController.dispose();
     super.dispose();
   }
 
-  void findRoute() {
-    if (sourceController.text.trim().isEmpty ||
-        destinationController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter both starting point and destination.'),
-        ),
-      );
-      return;
-    }
+  void _findRoute() {
+    FocusScope.of(context).unfocus();
+    if (!_formKey.currentState!.validate()) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '$selectedRoute route requested. '
-          'Live route calculation is not connected yet.',
-        ),
-      ),
-    );
+    setState(() {
+      _statusMessage =
+          '$_selectedRoute route selected. Live calculation is not available yet.';
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Safe Route Planner',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: primaryColor,
-        foregroundColor: Colors.white,
+        title: const Text('Safe Route Planner'),
+        backgroundColor: colors.primary,
+        foregroundColor: colors.onPrimary,
       ),
-
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Page heading
-            const Text(
-              'Find a Safer Way',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 8),
-
-            const Text(
-              'Plan your journey while avoiding potentially flooded areas.',
-              style: TextStyle(color: Colors.grey, fontSize: 14),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Starting point
-            const Text(
-              'Starting Point',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-
-            const SizedBox(height: 8),
-
-            TextField(
-              controller: sourceController,
-              decoration: InputDecoration(
-                hintText: 'Enter your current location',
-                prefixIcon: const Icon(Icons.my_location, color: primaryColor),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Destination
-            const Text(
-              'Destination',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-
-            const SizedBox(height: 8),
-
-            TextField(
-              controller: destinationController,
-              decoration: InputDecoration(
-                hintText: 'Enter destination',
-                prefixIcon: const Icon(Icons.location_on, color: Colors.red),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Route preference
-            const Text(
-              'Route Preference',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-
-            const SizedBox(height: 12),
-
-            Row(
+      resizeToAvoidBottomInset: true,
+      body: SafeArea(
+        top: true,
+        child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Text('Safest Route'),
-                    selected: selectedRoute == 'Safest',
-                    selectedColor: Colors.teal.shade100,
-                    onSelected: (_) {
-                      setState(() {
-                        selectedRoute = 'Safest';
-                      });
-                    },
+                Text(
+                  'Plan your journey',
+                  style: textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF123047),
                   ),
                 ),
-
-                const SizedBox(width: 12),
-
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Text('Fastest Route'),
-                    selected: selectedRoute == 'Fastest',
-                    selectedColor: Colors.teal.shade100,
-                    onSelected: (_) {
-                      setState(() {
-                        selectedRoute = 'Fastest';
-                      });
-                    },
+                const SizedBox(height: 4),
+                Text(
+                  'Enter your start and destination.',
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: _sourceController,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: 'Starting point',
+                    hintText: 'Enter an address or landmark',
+                    prefixIcon: Icon(Icons.my_location),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Enter a starting point.';
+                    }
+                    return null;
+                  },
+                  onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _destinationController,
+                  textInputAction: TextInputAction.done,
+                  decoration: const InputDecoration(
+                    labelText: 'Destination',
+                    hintText: 'Enter an address or landmark',
+                    prefixIcon: Icon(Icons.location_on_outlined),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Enter a destination.';
+                    }
+                    return null;
+                  },
+                  onFieldSubmitted: (_) => _findRoute(),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Route preference',
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Safest'),
+                      selected: _selectedRoute == 'Safest',
+                      onSelected: (_) {
+                        setState(() {
+                          _selectedRoute = 'Safest';
+                        });
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('Fastest'),
+                      selected: _selectedRoute == 'Fastest',
+                      onSelected: (_) {
+                        setState(() {
+                          _selectedRoute = 'Fastest';
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Map preview',
+                  style: textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF123047),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Semantics(
+                  label: 'Map preview centered on Pune. Pan and zoom the map.',
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: SizedBox(
+                      height: 220,
+                      width: double.infinity,
+                      child: FlutterMap(
+                        options: const MapOptions(
+                          initialCenter: LatLng(18.5204, 73.8567),
+                          initialZoom: 12,
+                          minZoom: 5,
+                          maxZoom: 18,
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName: 'com.example.sankatsetu',
+                          ),
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                point: LatLng(18.5204, 73.8567),
+                                width: 48,
+                                height: 48,
+                                child: Icon(
+                                  Icons.location_on,
+                                  color: colors.error,
+                                  size: 40,
+                                ),
+                              ),
+                            ],
+                          ),
+                          RichAttributionWidget(
+                            attributions: [
+                              TextSourceAttribution(
+                                'OpenStreetMap contributors',
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: colors.errorContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        color: colors.onErrorContainer,
+                        size: 24,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Never cross flowing floodwater. Follow official '
+                          'emergency instructions.',
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: colors.onErrorContainer,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-
-            const SizedBox(height: 24),
-
-            // Interactive OpenStreetMap
-            const Text(
-              'Live Map',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 12),
-
-            SizedBox(
-              height: 320,
-              width: double.infinity,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: FlutterMap(
-                  options: const MapOptions(
-                    initialCenter: LatLng(18.5204, 73.8567),
-                    initialZoom: 12,
-                    minZoom: 5,
-                    maxZoom: 18,
+          ),
+        ),
+      ),
+      bottomNavigationBar: AnimatedPadding(
+        duration: const Duration(milliseconds: 150),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _findRoute,
+                    icon: const Icon(Icons.alt_route),
+                    label: const Text('Find safe route'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52),
+                    ),
                   ),
-
-                  children: [
-                    // OpenStreetMap tiles
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.example.sankatsetu',
-                    ),
-
-                    // Pune marker
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          point: LatLng(18.5204, 73.8567),
-                          width: 50,
-                          height: 50,
-                          child: const Icon(
-                            Icons.location_on,
-                            color: Colors.red,
-                            size: 42,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    // Map attribution
-                    RichAttributionWidget(
-                      attributions: [
-                        TextSourceAttribution('OpenStreetMap contributors'),
-                      ],
-                    ),
-                  ],
                 ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Flood safety notice
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(
-                    Icons.warning_amber_rounded,
-                    color: Colors.deepOrange,
-                    size: 28,
-                  ),
-
-                  const SizedBox(width: 12),
-
-                  Expanded(
+                if (_statusMessage != null) ...[
+                  const SizedBox(height: 8),
+                  Semantics(
+                    liveRegion: true,
                     child: Text(
-                      'Safety Notice\n'
-                      'Avoid waterlogged roads and never cross '
-                      'flowing floodwater. Follow official '
-                      'emergency instructions.',
-                      style: TextStyle(
-                        color: Colors.orange.shade900,
-                        height: 1.5,
+                      _statusMessage!,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ],
-              ),
+              ],
             ),
-
-            const SizedBox(height: 24),
-
-            // Find route button
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton.icon(
-                onPressed: findRoute,
-                icon: const Icon(Icons.alt_route),
-                label: const Text(
-                  'Find Safe Route',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryColor,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
