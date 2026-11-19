@@ -2,10 +2,269 @@
   "type": "FeatureCollection",
   "metadata": {
     "region": "Pune & Pimpri-Chinchwad, Maharashtra, India",
-    "source": "OpenStreetMap Contributors & Geofabrik India",
-    "extracted_at": "2026-10-30T08:00:00Z",
-    "nodes_count": 18,
-    "edges_count": 24
+    "road_source": "OpenStreetMap Contributors (ODbL) via OSRM Project Routing Geometry",
+    "elevation_source": "Copernicus DEM GLO-90 via Open-Meteo Elevation API",
+    "extracted_at": "2026-11-19T08:29:44.039Z",
+    "nodes_count": 32,
+    "edges_count": 46,
+    "nodes": {
+      "N_SHIVAJINAGAR": {
+        "id": "N_SHIVAJINAGAR",
+        "name": "Shivajinagar (Sancheti Chowk)",
+        "lat": 18.5314,
+        "lng": 73.8446,
+        "sector": "Central Pune",
+        "elevationM": 564
+      },
+      "N_DECCAN": {
+        "id": "N_DECCAN",
+        "name": "Deccan Gymkhana (Goodluck Chowk)",
+        "lat": 18.5186,
+        "lng": 73.8378,
+        "sector": "Central Pune",
+        "elevationM": 573
+      },
+      "N_NAL_STOP": {
+        "id": "N_NAL_STOP",
+        "name": "Nal Stop (Karve Road)",
+        "lat": 18.5078,
+        "lng": 73.8292,
+        "sector": "Erandwane",
+        "elevationM": 575
+      },
+      "N_KOTHRUD": {
+        "id": "N_KOTHRUD",
+        "name": "Kothrud (Karve Statue)",
+        "lat": 18.5024,
+        "lng": 73.8095,
+        "sector": "Kothrud",
+        "elevationM": 581
+      },
+      "N_CHANDANI": {
+        "id": "N_CHANDANI",
+        "name": "Chandani Chowk (Paud Rd / NH48)",
+        "lat": 18.5082,
+        "lng": 73.7825,
+        "sector": "Bavdhan-Kothrud",
+        "elevationM": 646
+      },
+      "N_WARJE": {
+        "id": "N_WARJE",
+        "name": "Warje Flyover Junction",
+        "lat": 18.4864,
+        "lng": 73.8035,
+        "sector": "Warje",
+        "elevationM": 589
+      },
+      "N_SINHAGAD_RD": {
+        "id": "N_SINHAGAD_RD",
+        "name": "Sinhagad Road (Anand Nagar / Ekta Nagari)",
+        "lat": 18.4968,
+        "lng": 73.8214,
+        "sector": "Mutha Basin",
+        "elevationM": 567
+      },
+      "N_DHAYARI": {
+        "id": "N_DHAYARI",
+        "name": "Dhayari Phata (Sinhagad Rd)",
+        "lat": 18.4638,
+        "lng": 73.8166,
+        "sector": "Dhayari",
+        "elevationM": 578
+      },
+      "N_SWARGATE": {
+        "id": "N_SWARGATE",
+        "name": "Swargate (Jedhe Chowk)",
+        "lat": 18.5018,
+        "lng": 73.858,
+        "sector": "Swargate",
+        "elevationM": 580
+      },
+      "N_BIBWEWADI": {
+        "id": "N_BIBWEWADI",
+        "name": "Bibwewadi / Market Yard",
+        "lat": 18.4806,
+        "lng": 73.8648,
+        "sector": "Bibwewadi",
+        "elevationM": 616
+      },
+      "N_KATRAJ": {
+        "id": "N_KATRAJ",
+        "name": "Katraj Chowk",
+        "lat": 18.452,
+        "lng": 73.852,
+        "sector": "Katraj",
+        "elevationM": 673
+      },
+      "N_PUNE_STN": {
+        "id": "N_PUNE_STN",
+        "name": "Pune Railway Station",
+        "lat": 18.5289,
+        "lng": 73.8744,
+        "sector": "Station-Camp",
+        "elevationM": 558
+      },
+      "N_CAMP": {
+        "id": "N_CAMP",
+        "name": "Camp (MG Road / Pulgate)",
+        "lat": 18.5142,
+        "lng": 73.8796,
+        "sector": "Camp",
+        "elevationM": 574
+      },
+      "N_HADAPSAR": {
+        "id": "N_HADAPSAR",
+        "name": "Hadapsar Gadital",
+        "lat": 18.5011,
+        "lng": 73.9261,
+        "sector": "Hadapsar",
+        "elevationM": 572
+      },
+      "N_BUND_GARDEN": {
+        "id": "N_BUND_GARDEN",
+        "name": "Bund Garden / Sangam Bridge",
+        "lat": 18.5364,
+        "lng": 73.8812,
+        "sector": "Mula-Mutha Confluence",
+        "elevationM": 560
+      },
+      "N_YERAWADA": {
+        "id": "N_YERAWADA",
+        "name": "Yerawada Gunjan Chowk",
+        "lat": 18.5529,
+        "lng": 73.8797,
+        "sector": "Yerawada",
+        "elevationM": 557
+      },
+      "N_VIMAN_NAGAR": {
+        "id": "N_VIMAN_NAGAR",
+        "name": "Viman Nagar (Nagar Rd)",
+        "lat": 18.5679,
+        "lng": 73.9143,
+        "sector": "Viman Nagar",
+        "elevationM": 581
+      },
+      "N_AIRPORT": {
+        "id": "N_AIRPORT",
+        "name": "Lohegaon Airport Junction",
+        "lat": 18.5822,
+        "lng": 73.9197,
+        "sector": "Lohegaon",
+        "elevationM": 591
+      },
+      "N_KHARADI": {
+        "id": "N_KHARADI",
+        "name": "Kharadi Bypass",
+        "lat": 18.5515,
+        "lng": 73.941,
+        "sector": "Kharadi",
+        "elevationM": 561
+      },
+      "N_UNIV_CIRCLE": {
+        "id": "N_UNIV_CIRCLE",
+        "name": "Pune University Circle",
+        "lat": 18.5529,
+        "lng": 73.827,
+        "sector": "Ganeshkhind",
+        "elevationM": 582
+      },
+      "N_AUNDH": {
+        "id": "N_AUNDH",
+        "name": "Aundh Parihar Chowk",
+        "lat": 18.562,
+        "lng": 73.805,
+        "sector": "Aundh",
+        "elevationM": 567
+      },
+      "N_PASHAN": {
+        "id": "N_PASHAN",
+        "name": "Pashan Sus Road Junction",
+        "lat": 18.5435,
+        "lng": 73.7924,
+        "sector": "Pashan",
+        "elevationM": 584
+      },
+      "N_BANER": {
+        "id": "N_BANER",
+        "name": "Baner Balewadi Phata",
+        "lat": 18.559,
+        "lng": 73.7868,
+        "sector": "Baner",
+        "elevationM": 573
+      },
+      "N_WAKAD": {
+        "id": "N_WAKAD",
+        "name": "Wakad Bridge (NH48)",
+        "lat": 18.598,
+        "lng": 73.765,
+        "sector": "Wakad",
+        "elevationM": 573
+      },
+      "N_HINJAWADI": {
+        "id": "N_HINJAWADI",
+        "name": "Hinjawadi IT Park Phase 1",
+        "lat": 18.589,
+        "lng": 73.718,
+        "sector": "Hinjawadi",
+        "elevationM": 597
+      },
+      "N_PIMPLE_SAUDAGAR": {
+        "id": "N_PIMPLE_SAUDAGAR",
+        "name": "Pimple Saudagar (Kunal Icon)",
+        "lat": 18.5987,
+        "lng": 73.7975,
+        "sector": "Pimple Saudagar",
+        "elevationM": 566
+      },
+      "N_SANGVI": {
+        "id": "N_SANGVI",
+        "name": "Old Sangvi (Pavana Bridge)",
+        "lat": 18.5818,
+        "lng": 73.8168,
+        "sector": "Sangvi",
+        "elevationM": 560
+      },
+      "N_DAPODI": {
+        "id": "N_DAPODI",
+        "name": "Dapodi / Harris Bridge",
+        "lat": 18.5808,
+        "lng": 73.8318,
+        "sector": "Dapodi",
+        "elevationM": 559
+      },
+      "N_PIMPRI": {
+        "id": "N_PIMPRI",
+        "name": "Pimpri Chowk (PCMC)",
+        "lat": 18.6279,
+        "lng": 73.8131,
+        "sector": "Pimpri",
+        "elevationM": 584
+      },
+      "N_CHINCHWAD": {
+        "id": "N_CHINCHWAD",
+        "name": "Chinchwad Station",
+        "lat": 18.642,
+        "lng": 73.785,
+        "sector": "Chinchwad",
+        "elevationM": 579
+      },
+      "N_BHOSARI": {
+        "id": "N_BHOSARI",
+        "name": "Bhosari Nashik Phata",
+        "lat": 18.6242,
+        "lng": 73.8355,
+        "sector": "Bhosari",
+        "elevationM": 588
+      },
+      "N_NIGDI": {
+        "id": "N_NIGDI",
+        "name": "Nigdi Bhakti Shakti Chowk",
+        "lat": 18.6518,
+        "lng": 73.7659,
+        "sector": "Nigdi",
+        "elevationM": 597
+      }
+    }
   },
   "features": [
     {
@@ -14,9 +273,94 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.8446, 18.5314],
-          [73.8402, 18.5245],
-          [73.8378, 18.5186]
+          [
+            73.84462,
+            18.531382
+          ],
+          [
+            73.846614,
+            18.531073
+          ],
+          [
+            73.848267,
+            18.530629
+          ],
+          [
+            73.849793,
+            18.530249
+          ],
+          [
+            73.851232,
+            18.529817
+          ],
+          [
+            73.852526,
+            18.529272
+          ],
+          [
+            73.851148,
+            18.527288
+          ],
+          [
+            73.850223,
+            18.525972
+          ],
+          [
+            73.849444,
+            18.524778
+          ],
+          [
+            73.848201,
+            18.522805
+          ],
+          [
+            73.846227,
+            18.520512
+          ],
+          [
+            73.84551,
+            18.51963
+          ],
+          [
+            73.844514,
+            18.518433
+          ],
+          [
+            73.843389,
+            18.517174
+          ],
+          [
+            73.842667,
+            18.516271
+          ],
+          [
+            73.842226,
+            18.515811
+          ],
+          [
+            73.842043,
+            18.515882
+          ],
+          [
+            73.841618,
+            18.517425
+          ],
+          [
+            73.841101,
+            18.517618
+          ],
+          [
+            73.83966,
+            18.517827
+          ],
+          [
+            73.838115,
+            18.518014
+          ],
+          [
+            73.837651,
+            18.518627
+          ]
         ]
       },
       "properties": {
@@ -25,15 +369,20 @@
         "from_node": "N_SHIVAJINAGAR",
         "to_node": "N_DECCAN",
         "road_type": "primary",
-        "distance_km": 1.8,
+        "distance_km": 3.44,
         "estimated_speed_kmph": 35,
-        "base_elevation_m": 560,
-        "slope_pct": 1.2,
+        "base_elevation_m": 564,
+        "midpoint_elevation_m": 564,
+        "slope_pct": 0.26,
         "drainage_condition": "moderate",
-        "accessibility": "all_vehicles",
+        "access_restriction": "all_vehicles",
         "one_way": true,
-        "flood_risk_level": "moderate",
-        "flood_risk_score": 42
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Mutha Left Bank",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -42,26 +391,120 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.8446, 18.5314],
-          [73.8475, 18.5255],
-          [73.8410, 18.5190]
+          [
+            73.837651,
+            18.518627
+          ],
+          [
+            73.838288,
+            18.517997
+          ],
+          [
+            73.839452,
+            18.51786
+          ],
+          [
+            73.840175,
+            18.51775
+          ],
+          [
+            73.841023,
+            18.517628
+          ],
+          [
+            73.841496,
+            18.517581
+          ],
+          [
+            73.84146,
+            18.518334
+          ],
+          [
+            73.841194,
+            18.519908
+          ],
+          [
+            73.841058,
+            18.520863
+          ],
+          [
+            73.84094,
+            18.521867
+          ],
+          [
+            73.840918,
+            18.522404
+          ],
+          [
+            73.840944,
+            18.522867
+          ],
+          [
+            73.841343,
+            18.524561
+          ],
+          [
+            73.841497,
+            18.525159
+          ],
+          [
+            73.841643,
+            18.525671
+          ],
+          [
+            73.841817,
+            18.526203
+          ],
+          [
+            73.842086,
+            18.526713
+          ],
+          [
+            73.842279,
+            18.527061
+          ],
+          [
+            73.842872,
+            18.528188
+          ],
+          [
+            73.843061,
+            18.528479
+          ],
+          [
+            73.843557,
+            18.529392
+          ],
+          [
+            73.844564,
+            18.531244
+          ],
+          [
+            73.84462,
+            18.531382
+          ]
         ]
       },
       "properties": {
         "road_id": "R02",
         "road_name": "Jangali Maharaj (JM) Road",
-        "from_node": "N_SHIVAJINAGAR",
-        "to_node": "N_DECCAN",
+        "from_node": "N_DECCAN",
+        "to_node": "N_SHIVAJINAGAR",
         "road_type": "primary",
-        "distance_km": 1.9,
+        "distance_km": 2.1,
         "estimated_speed_kmph": 40,
-        "base_elevation_m": 558,
-        "slope_pct": 0.8,
+        "base_elevation_m": 564,
+        "midpoint_elevation_m": 572,
+        "slope_pct": 0.43,
         "drainage_condition": "good",
-        "accessibility": "all_vehicles",
+        "access_restriction": "all_vehicles",
         "one_way": true,
-        "flood_risk_level": "low",
-        "flood_risk_score": 28
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -70,26 +513,116 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.8378, 18.5186],
-          [73.8320, 18.5080],
-          [73.8210, 18.4980]
+          [
+            73.837651,
+            18.518627
+          ],
+          [
+            73.836645,
+            18.518101
+          ],
+          [
+            73.834967,
+            18.518149
+          ],
+          [
+            73.833663,
+            18.518381
+          ],
+          [
+            73.832756,
+            18.518731
+          ],
+          [
+            73.831573,
+            18.518951
+          ],
+          [
+            73.830378,
+            18.519011
+          ],
+          [
+            73.830066,
+            18.518103
+          ],
+          [
+            73.829179,
+            18.516108
+          ],
+          [
+            73.82872,
+            18.514535
+          ],
+          [
+            73.82875,
+            18.513471
+          ],
+          [
+            73.829029,
+            18.512022
+          ],
+          [
+            73.829762,
+            18.510353
+          ],
+          [
+            73.830883,
+            18.508351
+          ],
+          [
+            73.829254,
+            18.507535
+          ],
+          [
+            73.828053,
+            18.506936
+          ],
+          [
+            73.827335,
+            18.506588
+          ],
+          [
+            73.826065,
+            18.506023
+          ],
+          [
+            73.825478,
+            18.505903
+          ],
+          [
+            73.826028,
+            18.506157
+          ],
+          [
+            73.828019,
+            18.507049
+          ],
+          [
+            73.829194,
+            18.507796
+          ]
         ]
       },
       "properties": {
         "road_id": "R03",
-        "road_name": "Sinhagad Road (Anand Nagar Stretch)",
+        "road_name": "Karve Road (Deccan - Nal Stop)",
         "from_node": "N_DECCAN",
-        "to_node": "N_SINHAGAD_RD",
+        "to_node": "N_NAL_STOP",
         "road_type": "primary",
-        "distance_km": 3.8,
-        "estimated_speed_kmph": 25,
-        "base_elevation_m": 546,
-        "slope_pct": 0.4,
-        "drainage_condition": "poor",
-        "accessibility": "heavy_vehicles_only",
+        "distance_km": 3.23,
+        "estimated_speed_kmph": 35,
+        "base_elevation_m": 573,
+        "midpoint_elevation_m": 578,
+        "slope_pct": 0.06,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
         "one_way": false,
-        "flood_risk_level": "critical",
-        "flood_risk_score": 88
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -98,26 +631,116 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.8378, 18.5186],
-          [73.8240, 18.5075],
-          [73.8060, 18.5020]
+          [
+            73.829194,
+            18.507796
+          ],
+          [
+            73.830883,
+            18.508351
+          ],
+          [
+            73.829254,
+            18.507535
+          ],
+          [
+            73.828053,
+            18.506936
+          ],
+          [
+            73.827335,
+            18.506588
+          ],
+          [
+            73.826065,
+            18.506023
+          ],
+          [
+            73.825331,
+            18.505757
+          ],
+          [
+            73.82436,
+            18.50545
+          ],
+          [
+            73.822387,
+            18.504786
+          ],
+          [
+            73.821136,
+            18.504152
+          ],
+          [
+            73.819821,
+            18.503256
+          ],
+          [
+            73.818524,
+            18.502751
+          ],
+          [
+            73.816222,
+            18.502134
+          ],
+          [
+            73.815329,
+            18.50204
+          ],
+          [
+            73.814213,
+            18.50206
+          ],
+          [
+            73.812632,
+            18.502148
+          ],
+          [
+            73.811526,
+            18.502005
+          ],
+          [
+            73.810769,
+            18.501871
+          ],
+          [
+            73.81052,
+            18.501932
+          ],
+          [
+            73.810071,
+            18.501976
+          ],
+          [
+            73.809517,
+            18.502345
+          ],
+          [
+            73.809479,
+            18.50238
+          ]
         ]
       },
       "properties": {
         "road_id": "R04",
-        "road_name": "Karve Road (Deccan to Kothrud)",
-        "from_node": "N_DECCAN",
+        "road_name": "Karve Road (Nal Stop - Kothrud)",
+        "from_node": "N_NAL_STOP",
         "to_node": "N_KOTHRUD",
         "road_type": "primary",
-        "distance_km": 3.2,
-        "estimated_speed_kmph": 35,
-        "base_elevation_m": 572,
-        "slope_pct": 2.1,
+        "distance_km": 2.69,
+        "estimated_speed_kmph": 40,
+        "base_elevation_m": 575,
+        "midpoint_elevation_m": 576,
+        "slope_pct": 0.22,
         "drainage_condition": "good",
-        "accessibility": "all_vehicles",
+        "access_restriction": "all_vehicles",
         "one_way": false,
-        "flood_risk_level": "low",
-        "flood_risk_score": 18
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -126,26 +749,112 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.8060, 18.5020],
-          [73.8120, 18.4850],
-          [73.8210, 18.4980]
+          [
+            73.809479,
+            18.50238
+          ],
+          [
+            73.809086,
+            18.503116
+          ],
+          [
+            73.807746,
+            18.504485
+          ],
+          [
+            73.806897,
+            18.507284
+          ],
+          [
+            73.804222,
+            18.507013
+          ],
+          [
+            73.802861,
+            18.506872
+          ],
+          [
+            73.802607,
+            18.506907
+          ],
+          [
+            73.80029,
+            18.507356
+          ],
+          [
+            73.796642,
+            18.507777
+          ],
+          [
+            73.794928,
+            18.507854
+          ],
+          [
+            73.792235,
+            18.50817
+          ],
+          [
+            73.790296,
+            18.508323
+          ],
+          [
+            73.78763,
+            18.507192
+          ],
+          [
+            73.784808,
+            18.506834
+          ],
+          [
+            73.783195,
+            18.507176
+          ],
+          [
+            73.782105,
+            18.507237
+          ],
+          [
+            73.781551,
+            18.507097
+          ],
+          [
+            73.781508,
+            18.506426
+          ],
+          [
+            73.783523,
+            18.506995
+          ],
+          [
+            73.782563,
+            18.5087
+          ],
+          [
+            73.78242,
+            18.508217
+          ]
         ]
       },
       "properties": {
         "road_id": "R05",
-        "road_name": "Warje Bypass / Canal Link",
+        "road_name": "Paud Road (Kothrud - Chandani Chowk)",
         "from_node": "N_KOTHRUD",
-        "to_node": "N_SINHAGAD_RD",
-        "road_type": "secondary",
-        "distance_km": 4.1,
-        "estimated_speed_kmph": 30,
-        "base_elevation_m": 565,
-        "slope_pct": 1.5,
-        "drainage_condition": "moderate",
-        "accessibility": "all_vehicles",
+        "to_node": "N_CHANDANI",
+        "road_type": "trunk",
+        "distance_km": 4.08,
+        "estimated_speed_kmph": 50,
+        "base_elevation_m": 581,
+        "midpoint_elevation_m": 610,
+        "slope_pct": 1.59,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
         "one_way": false,
-        "flood_risk_level": "moderate",
-        "flood_risk_score": 38
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -154,26 +863,116 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.8378, 18.5186],
-          [73.8480, 18.5100],
-          [73.8580, 18.5018]
+          [
+            73.78242,
+            18.508217
+          ],
+          [
+            73.785286,
+            18.507524
+          ],
+          [
+            73.789464,
+            18.50825
+          ],
+          [
+            73.794404,
+            18.508018
+          ],
+          [
+            73.79749,
+            18.507789
+          ],
+          [
+            73.80171,
+            18.507279
+          ],
+          [
+            73.802842,
+            18.507017
+          ],
+          [
+            73.807629,
+            18.507525
+          ],
+          [
+            73.808887,
+            18.503282
+          ],
+          [
+            73.81054,
+            18.502016
+          ],
+          [
+            73.81211,
+            18.502167
+          ],
+          [
+            73.815204,
+            18.502142
+          ],
+          [
+            73.814248,
+            18.500913
+          ],
+          [
+            73.813758,
+            18.49856
+          ],
+          [
+            73.813627,
+            18.496406
+          ],
+          [
+            73.81394,
+            18.493824
+          ],
+          [
+            73.815269,
+            18.49163
+          ],
+          [
+            73.812456,
+            18.48677
+          ],
+          [
+            73.809755,
+            18.483713
+          ],
+          [
+            73.809214,
+            18.485466
+          ],
+          [
+            73.806325,
+            18.486977
+          ],
+          [
+            73.803882,
+            18.487171
+          ]
         ]
       },
       "properties": {
         "road_id": "R06",
-        "road_name": "Tilak Road (Deccan to Swargate)",
-        "from_node": "N_DECCAN",
-        "to_node": "N_SWARGATE",
-        "road_type": "primary",
-        "distance_km": 2.4,
-        "estimated_speed_kmph": 30,
-        "base_elevation_m": 559,
-        "slope_pct": 0.7,
-        "drainage_condition": "moderate",
-        "accessibility": "all_vehicles",
+        "road_name": "Mumbai-Bengaluru Bypass (Chandani - Warje)",
+        "from_node": "N_CHANDANI",
+        "to_node": "N_WARJE",
+        "road_type": "trunk",
+        "distance_km": 7.39,
+        "estimated_speed_kmph": 65,
+        "base_elevation_m": 574,
+        "midpoint_elevation_m": 574,
+        "slope_pct": 0.77,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
         "one_way": false,
-        "flood_risk_level": "moderate",
-        "flood_risk_score": 45
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "concrete",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -182,26 +981,104 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.8580, 18.5018],
-          [73.8550, 18.4720],
-          [73.8520, 18.4520]
+          [
+            73.803882,
+            18.487171
+          ],
+          [
+            73.805607,
+            18.486932
+          ],
+          [
+            73.806677,
+            18.486954
+          ],
+          [
+            73.807729,
+            18.487123
+          ],
+          [
+            73.808689,
+            18.486224
+          ],
+          [
+            73.809346,
+            18.485263
+          ],
+          [
+            73.810165,
+            18.484257
+          ],
+          [
+            73.810931,
+            18.485223
+          ],
+          [
+            73.812207,
+            18.486706
+          ],
+          [
+            73.813475,
+            18.488186
+          ],
+          [
+            73.814883,
+            18.48981
+          ],
+          [
+            73.815141,
+            18.491636
+          ],
+          [
+            73.815123,
+            18.49293
+          ],
+          [
+            73.815323,
+            18.493209
+          ],
+          [
+            73.8173,
+            18.493747
+          ],
+          [
+            73.817947,
+            18.494258
+          ],
+          [
+            73.818988,
+            18.494396
+          ],
+          [
+            73.821166,
+            18.496004
+          ],
+          [
+            73.821291,
+            18.496816
+          ]
         ]
       },
       "properties": {
         "road_id": "R07",
-        "road_name": "Satara Road (Swargate to Katraj)",
-        "from_node": "N_SWARGATE",
-        "to_node": "N_KATRAJ",
-        "road_type": "primary",
-        "distance_km": 5.6,
-        "estimated_speed_kmph": 45,
-        "base_elevation_m": 585,
-        "slope_pct": 3.0,
+        "road_name": "Warje - Anand Nagar Canal Link",
+        "from_node": "N_WARJE",
+        "to_node": "N_SINHAGAD_RD",
+        "road_type": "secondary",
+        "distance_km": 2.92,
+        "estimated_speed_kmph": 35,
+        "base_elevation_m": 567,
+        "midpoint_elevation_m": 573,
+        "slope_pct": 0.75,
         "drainage_condition": "moderate",
-        "accessibility": "all_vehicles",
+        "access_restriction": "all_vehicles",
         "one_way": false,
-        "flood_risk_level": "low",
-        "flood_risk_score": 25
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -210,26 +1087,120 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.8446, 18.5314],
-          [73.8680, 18.5280],
-          [73.8790, 18.5340]
+          [
+            73.837651,
+            18.518627
+          ],
+          [
+            73.835516,
+            18.518139
+          ],
+          [
+            73.833663,
+            18.518381
+          ],
+          [
+            73.83229,
+            18.518889
+          ],
+          [
+            73.830378,
+            18.519011
+          ],
+          [
+            73.829555,
+            18.517093
+          ],
+          [
+            73.82872,
+            18.514535
+          ],
+          [
+            73.828834,
+            18.512871
+          ],
+          [
+            73.829762,
+            18.510353
+          ],
+          [
+            73.830371,
+            18.508088
+          ],
+          [
+            73.828053,
+            18.506936
+          ],
+          [
+            73.82664,
+            18.50626
+          ],
+          [
+            73.825331,
+            18.505757
+          ],
+          [
+            73.82296,
+            18.505035
+          ],
+          [
+            73.821136,
+            18.504152
+          ],
+          [
+            73.819444,
+            18.503078
+          ],
+          [
+            73.816222,
+            18.502134
+          ],
+          [
+            73.816227,
+            18.500874
+          ],
+          [
+            73.816177,
+            18.498835
+          ],
+          [
+            73.815735,
+            18.496998
+          ],
+          [
+            73.816994,
+            18.495821
+          ],
+          [
+            73.820047,
+            18.496128
+          ],
+          [
+            73.821291,
+            18.496816
+          ]
         ]
       },
       "properties": {
         "road_id": "R08",
-        "road_name": "Pune Station to Bund Garden Road",
-        "from_node": "N_SHIVAJINAGAR",
-        "to_node": "N_BUND_GARDEN",
+        "road_name": "Sinhagad Road (Dandekar Bridge - Anand Nagar)",
+        "from_node": "N_DECCAN",
+        "to_node": "N_SINHAGAD_RD",
         "road_type": "primary",
-        "distance_km": 3.6,
-        "estimated_speed_kmph": 35,
-        "base_elevation_m": 551,
-        "slope_pct": 0.5,
-        "drainage_condition": "moderate",
-        "accessibility": "all_vehicles",
+        "distance_km": 5.39,
+        "estimated_speed_kmph": 30,
+        "base_elevation_m": 567,
+        "midpoint_elevation_m": 582,
+        "slope_pct": 0.11,
+        "drainage_condition": "poor",
+        "access_restriction": "all_vehicles",
         "one_way": false,
-        "flood_risk_level": "high",
-        "flood_risk_score": 68
+        "is_bridge": true,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Mutha River / Ambil Odha",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -238,26 +1209,120 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.8790, 18.5340],
-          [73.8920, 18.5520],
-          [73.9197, 18.5822]
+          [
+            73.821291,
+            18.496816
+          ],
+          [
+            73.822325,
+            18.497151
+          ],
+          [
+            73.821915,
+            18.495007
+          ],
+          [
+            73.821304,
+            18.492275
+          ],
+          [
+            73.822854,
+            18.490958
+          ],
+          [
+            73.824207,
+            18.490334
+          ],
+          [
+            73.826078,
+            18.489996
+          ],
+          [
+            73.826775,
+            18.489216
+          ],
+          [
+            73.829207,
+            18.487771
+          ],
+          [
+            73.828246,
+            18.485826
+          ],
+          [
+            73.827512,
+            18.483294
+          ],
+          [
+            73.826706,
+            18.4822
+          ],
+          [
+            73.825401,
+            18.480477
+          ],
+          [
+            73.824138,
+            18.47844
+          ],
+          [
+            73.822896,
+            18.475939
+          ],
+          [
+            73.82117,
+            18.471988
+          ],
+          [
+            73.820371,
+            18.470056
+          ],
+          [
+            73.81982,
+            18.468919
+          ],
+          [
+            73.818702,
+            18.467544
+          ],
+          [
+            73.817583,
+            18.46654
+          ],
+          [
+            73.816404,
+            18.465509
+          ],
+          [
+            73.816014,
+            18.463665
+          ],
+          [
+            73.816246,
+            18.463498
+          ]
         ]
       },
       "properties": {
         "road_id": "R09",
-        "road_name": "Yerawada - Airport Road",
-        "from_node": "N_BUND_GARDEN",
-        "to_node": "N_AIRPORT",
-        "road_type": "trunk",
-        "distance_km": 6.8,
-        "estimated_speed_kmph": 50,
-        "base_elevation_m": 568,
-        "slope_pct": 1.4,
-        "drainage_condition": "good",
-        "accessibility": "all_vehicles",
+        "road_name": "Sinhagad Road (Ekta Nagari - Dhayari)",
+        "from_node": "N_SINHAGAD_RD",
+        "to_node": "N_DHAYARI",
+        "road_type": "primary",
+        "distance_km": 5.04,
+        "estimated_speed_kmph": 35,
+        "base_elevation_m": 562,
+        "midpoint_elevation_m": 562,
+        "slope_pct": 0.22,
+        "drainage_condition": "poor",
+        "access_restriction": "all_vehicles",
         "one_way": false,
-        "flood_risk_level": "low",
-        "flood_risk_score": 22
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Mutha River",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -266,26 +1331,120 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.8446, 18.5314],
-          [73.8180, 18.5580],
-          [73.8050, 18.5620]
+          [
+            73.816246,
+            18.463498
+          ],
+          [
+            73.814734,
+            18.462462
+          ],
+          [
+            73.814007,
+            18.4617
+          ],
+          [
+            73.813744,
+            18.461658
+          ],
+          [
+            73.814649,
+            18.46241
+          ],
+          [
+            73.815606,
+            18.464359
+          ],
+          [
+            73.816455,
+            18.465747
+          ],
+          [
+            73.817858,
+            18.465494
+          ],
+          [
+            73.818837,
+            18.464348
+          ],
+          [
+            73.820209,
+            18.462797
+          ],
+          [
+            73.821559,
+            18.461561
+          ],
+          [
+            73.823863,
+            18.459868
+          ],
+          [
+            73.824183,
+            18.459601
+          ],
+          [
+            73.82561,
+            18.458761
+          ],
+          [
+            73.828513,
+            18.45752
+          ],
+          [
+            73.8306,
+            18.456765
+          ],
+          [
+            73.836327,
+            18.454872
+          ],
+          [
+            73.841597,
+            18.453263
+          ],
+          [
+            73.84417,
+            18.452502
+          ],
+          [
+            73.848821,
+            18.451098
+          ],
+          [
+            73.851248,
+            18.450649
+          ],
+          [
+            73.851084,
+            18.451964
+          ],
+          [
+            73.85199,
+            18.452123
+          ]
         ]
       },
       "properties": {
         "road_id": "R10",
-        "road_name": "Ganeshkhind Road (Univ to Aundh)",
-        "from_node": "N_SHIVAJINAGAR",
-        "to_node": "N_AUNDH",
-        "road_type": "primary",
-        "distance_km": 4.5,
-        "estimated_speed_kmph": 40,
-        "base_elevation_m": 565,
-        "slope_pct": 1.1,
-        "drainage_condition": "good",
-        "accessibility": "all_vehicles",
+        "road_name": "Dhayari - Katraj Bypass (NH48)",
+        "from_node": "N_DHAYARI",
+        "to_node": "N_KATRAJ",
+        "road_type": "trunk",
+        "distance_km": 5.5,
+        "estimated_speed_kmph": 55,
+        "base_elevation_m": 578,
+        "midpoint_elevation_m": 589,
+        "slope_pct": 1.73,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
         "one_way": false,
-        "flood_risk_level": "low",
-        "flood_risk_score": 20
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "concrete",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -294,26 +1453,116 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.8050, 18.5620],
-          [73.7850, 18.5680],
-          [73.7650, 18.5980]
+          [
+            73.803882,
+            18.487171
+          ],
+          [
+            73.806158,
+            18.485638
+          ],
+          [
+            73.806824,
+            18.483909
+          ],
+          [
+            73.807023,
+            18.481657
+          ],
+          [
+            73.805907,
+            18.48046
+          ],
+          [
+            73.804671,
+            18.480194
+          ],
+          [
+            73.806984,
+            18.477586
+          ],
+          [
+            73.810071,
+            18.474015
+          ],
+          [
+            73.812189,
+            18.47188
+          ],
+          [
+            73.81207,
+            18.471435
+          ],
+          [
+            73.812172,
+            18.470871
+          ],
+          [
+            73.812256,
+            18.469906
+          ],
+          [
+            73.81343,
+            18.468114
+          ],
+          [
+            73.814491,
+            18.467217
+          ],
+          [
+            73.815428,
+            18.467515
+          ],
+          [
+            73.81689,
+            18.468389
+          ],
+          [
+            73.818319,
+            18.468492
+          ],
+          [
+            73.820166,
+            18.469736
+          ],
+          [
+            73.81958,
+            18.468585
+          ],
+          [
+            73.817749,
+            18.466661
+          ],
+          [
+            73.816404,
+            18.465509
+          ],
+          [
+            73.816246,
+            18.463498
+          ]
         ]
       },
       "properties": {
         "road_id": "R11",
-        "road_name": "Aundh-Baner-Wakad Highway",
-        "from_node": "N_AUNDH",
-        "to_node": "N_WAKAD",
+        "road_name": "NH48 Vadgaon Bridge - Dhayari",
+        "from_node": "N_WARJE",
+        "to_node": "N_DHAYARI",
         "road_type": "trunk",
-        "distance_km": 5.8,
-        "estimated_speed_kmph": 55,
-        "base_elevation_m": 574,
-        "slope_pct": 1.3,
-        "drainage_condition": "good",
-        "accessibility": "all_vehicles",
+        "distance_km": 4.96,
+        "estimated_speed_kmph": 60,
+        "base_elevation_m": 567,
+        "midpoint_elevation_m": 567,
+        "slope_pct": 0.22,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
         "one_way": false,
-        "flood_risk_level": "very_low",
-        "flood_risk_score": 14
+        "is_bridge": true,
+        "is_tunnel": false,
+        "surface": "concrete",
+        "has_historical_flood": false,
+        "waterway_proximity": "Mutha River Crossing",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -322,26 +1571,116 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.7650, 18.5980],
-          [73.7380, 18.5910],
-          [73.7180, 18.5890]
+          [
+            73.837651,
+            18.518627
+          ],
+          [
+            73.838751,
+            18.51795
+          ],
+          [
+            73.840175,
+            18.51775
+          ],
+          [
+            73.841216,
+            18.517603
+          ],
+          [
+            73.842454,
+            18.517397
+          ],
+          [
+            73.843147,
+            18.517098
+          ],
+          [
+            73.842566,
+            18.516141
+          ],
+          [
+            73.842223,
+            18.515631
+          ],
+          [
+            73.842388,
+            18.51473
+          ],
+          [
+            73.842489,
+            18.514406
+          ],
+          [
+            73.843773,
+            18.512879
+          ],
+          [
+            73.843892,
+            18.512349
+          ],
+          [
+            73.844174,
+            18.511884
+          ],
+          [
+            73.845071,
+            18.511465
+          ],
+          [
+            73.847148,
+            18.509771
+          ],
+          [
+            73.8497,
+            18.508287
+          ],
+          [
+            73.851252,
+            18.507238
+          ],
+          [
+            73.852276,
+            18.506419
+          ],
+          [
+            73.853409,
+            18.505635
+          ],
+          [
+            73.855365,
+            18.503962
+          ],
+          [
+            73.85769,
+            18.501809
+          ],
+          [
+            73.857857,
+            18.501658
+          ]
         ]
       },
       "properties": {
         "road_id": "R12",
-        "road_name": "Wakad to Hinjawadi IT Park Phase 1",
-        "from_node": "N_WAKAD",
-        "to_node": "N_HINJAWADI",
+        "road_name": "Tilak Road (Alka Talkies - Swargate)",
+        "from_node": "N_DECCAN",
+        "to_node": "N_SWARGATE",
         "road_type": "primary",
-        "distance_km": 4.2,
-        "estimated_speed_kmph": 45,
-        "base_elevation_m": 578,
-        "slope_pct": 0.9,
-        "drainage_condition": "good",
-        "accessibility": "all_vehicles",
+        "distance_km": 3.19,
+        "estimated_speed_kmph": 30,
+        "base_elevation_m": 555,
+        "midpoint_elevation_m": 555,
+        "slope_pct": 0.22,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
         "one_way": false,
-        "flood_risk_level": "low",
-        "flood_risk_score": 19
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Ambil Odha",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -350,26 +1689,116 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.7650, 18.5980],
-          [73.7880, 18.6180],
-          [73.8131, 18.6279]
+          [
+            73.829194,
+            18.507796
+          ],
+          [
+            73.830883,
+            18.508351
+          ],
+          [
+            73.829254,
+            18.507535
+          ],
+          [
+            73.828053,
+            18.506936
+          ],
+          [
+            73.827335,
+            18.506588
+          ],
+          [
+            73.826065,
+            18.506023
+          ],
+          [
+            73.825331,
+            18.505757
+          ],
+          [
+            73.82436,
+            18.50545
+          ],
+          [
+            73.822387,
+            18.504786
+          ],
+          [
+            73.821136,
+            18.504152
+          ],
+          [
+            73.819821,
+            18.503256
+          ],
+          [
+            73.818524,
+            18.502751
+          ],
+          [
+            73.816222,
+            18.502134
+          ],
+          [
+            73.816179,
+            18.50109
+          ],
+          [
+            73.816228,
+            18.500299
+          ],
+          [
+            73.816177,
+            18.498835
+          ],
+          [
+            73.81583,
+            18.497745
+          ],
+          [
+            73.81579,
+            18.496725
+          ],
+          [
+            73.816994,
+            18.495821
+          ],
+          [
+            73.818344,
+            18.494542
+          ],
+          [
+            73.821166,
+            18.496004
+          ],
+          [
+            73.821291,
+            18.496816
+          ]
         ]
       },
       "properties": {
         "road_id": "R13",
-        "road_name": "Wakad - Pimple Saudagar - Pimpri Link",
-        "from_node": "N_WAKAD",
-        "to_node": "N_PIMPRI",
-        "road_type": "primary",
-        "distance_km": 5.4,
-        "estimated_speed_kmph": 40,
-        "base_elevation_m": 562,
-        "slope_pct": 0.7,
+        "road_name": "Rajaram Bridge Link (Erandwane - Sinhagad Rd)",
+        "from_node": "N_NAL_STOP",
+        "to_node": "N_SINHAGAD_RD",
+        "road_type": "secondary",
+        "distance_km": 3.49,
+        "estimated_speed_kmph": 30,
+        "base_elevation_m": 567,
+        "midpoint_elevation_m": 576,
+        "slope_pct": 0.23,
         "drainage_condition": "moderate",
-        "accessibility": "all_vehicles",
+        "access_restriction": "all_vehicles",
         "one_way": false,
-        "flood_risk_level": "moderate",
-        "flood_risk_score": 48
+        "is_bridge": true,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Mutha River Bridge",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -378,26 +1807,112 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.8131, 18.6279],
-          [73.7997, 18.6298],
-          [73.7850, 18.6420]
+          [
+            73.857857,
+            18.501658
+          ],
+          [
+            73.858618,
+            18.500768
+          ],
+          [
+            73.859778,
+            18.500568
+          ],
+          [
+            73.861497,
+            18.500271
+          ],
+          [
+            73.863434,
+            18.49999
+          ],
+          [
+            73.865153,
+            18.50005
+          ],
+          [
+            73.866045,
+            18.500303
+          ],
+          [
+            73.867222,
+            18.500926
+          ],
+          [
+            73.869127,
+            18.501583
+          ],
+          [
+            73.869435,
+            18.500479
+          ],
+          [
+            73.869414,
+            18.498431
+          ],
+          [
+            73.869271,
+            18.496044
+          ],
+          [
+            73.869243,
+            18.492926
+          ],
+          [
+            73.86963,
+            18.491383
+          ],
+          [
+            73.870142,
+            18.48941
+          ],
+          [
+            73.871473,
+            18.483907
+          ],
+          [
+            73.871919,
+            18.482086
+          ],
+          [
+            73.870794,
+            18.480395
+          ],
+          [
+            73.868399,
+            18.480644
+          ],
+          [
+            73.866364,
+            18.480758
+          ],
+          [
+            73.865023,
+            18.48058
+          ]
         ]
       },
       "properties": {
         "road_id": "R14",
-        "road_name": "Pimpri - Chinchwad Grade Separator",
-        "from_node": "N_PIMPRI",
-        "to_node": "N_CHINCHWAD",
-        "road_type": "trunk",
-        "distance_km": 3.1,
-        "estimated_speed_kmph": 50,
-        "base_elevation_m": 566,
-        "slope_pct": 0.5,
-        "drainage_condition": "good",
-        "accessibility": "all_vehicles",
+        "road_name": "Satara Road (Swargate - Market Yard)",
+        "from_node": "N_SWARGATE",
+        "to_node": "N_BIBWEWADI",
+        "road_type": "primary",
+        "distance_km": 4.46,
+        "estimated_speed_kmph": 40,
+        "base_elevation_m": 580,
+        "midpoint_elevation_m": 580,
+        "slope_pct": 0.81,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
         "one_way": false,
-        "flood_risk_level": "low",
-        "flood_risk_score": 26
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Ambil Odha",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -406,26 +1921,120 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.8446, 18.5314],
-          [73.8320, 18.5720],
-          [73.8131, 18.6279]
+          [
+            73.865023,
+            18.48058
+          ],
+          [
+            73.862338,
+            18.480853
+          ],
+          [
+            73.861425,
+            18.479942
+          ],
+          [
+            73.86089,
+            18.478597
+          ],
+          [
+            73.859537,
+            18.478551
+          ],
+          [
+            73.857321,
+            18.478576
+          ],
+          [
+            73.857246,
+            18.477384
+          ],
+          [
+            73.856776,
+            18.476687
+          ],
+          [
+            73.856375,
+            18.475714
+          ],
+          [
+            73.856445,
+            18.473714
+          ],
+          [
+            73.857087,
+            18.470987
+          ],
+          [
+            73.857883,
+            18.467275
+          ],
+          [
+            73.858236,
+            18.463278
+          ],
+          [
+            73.858111,
+            18.460636
+          ],
+          [
+            73.858086,
+            18.45929
+          ],
+          [
+            73.858476,
+            18.457122
+          ],
+          [
+            73.858763,
+            18.455487
+          ],
+          [
+            73.8587,
+            18.454404
+          ],
+          [
+            73.858326,
+            18.454301
+          ],
+          [
+            73.854811,
+            18.454516
+          ],
+          [
+            73.853732,
+            18.452818
+          ],
+          [
+            73.853105,
+            18.452183
+          ],
+          [
+            73.85199,
+            18.452123
+          ]
         ]
       },
       "properties": {
         "road_id": "R15",
-        "road_name": "Old Mumbai-Pune Highway (Shivajinagar-Pimpri)",
-        "from_node": "N_SHIVAJINAGAR",
-        "to_node": "N_PIMPRI",
-        "road_type": "trunk",
-        "distance_km": 11.2,
-        "estimated_speed_kmph": 55,
-        "base_elevation_m": 560,
-        "slope_pct": 0.8,
+        "road_name": "Satara Road (Bibwewadi - Katraj)",
+        "from_node": "N_BIBWEWADI",
+        "to_node": "N_KATRAJ",
+        "road_type": "primary",
+        "distance_km": 4.86,
+        "estimated_speed_kmph": 45,
+        "base_elevation_m": 616,
+        "midpoint_elevation_m": 624,
+        "slope_pct": 1.17,
         "drainage_condition": "good",
-        "accessibility": "all_vehicles",
+        "access_restriction": "all_vehicles",
         "one_way": false,
-        "flood_risk_level": "low",
-        "flood_risk_score": 24
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     },
     {
@@ -434,26 +2043,3632 @@
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [73.8210, 18.4980],
-          [73.8400, 18.4750],
-          [73.8520, 18.4520]
+          [
+            73.84462,
+            18.531382
+          ],
+          [
+            73.846544,
+            18.531091
+          ],
+          [
+            73.847756,
+            18.530747
+          ],
+          [
+            73.84884,
+            18.530485
+          ],
+          [
+            73.850483,
+            18.530045
+          ],
+          [
+            73.851409,
+            18.529828
+          ],
+          [
+            73.852822,
+            18.529477
+          ],
+          [
+            73.853494,
+            18.529815
+          ],
+          [
+            73.854177,
+            18.530245
+          ],
+          [
+            73.855337,
+            18.530349
+          ],
+          [
+            73.857202,
+            18.529874
+          ],
+          [
+            73.858126,
+            18.529576
+          ],
+          [
+            73.859534,
+            18.529741
+          ],
+          [
+            73.862664,
+            18.529779
+          ],
+          [
+            73.86332,
+            18.529732
+          ],
+          [
+            73.863463,
+            18.527949
+          ],
+          [
+            73.86402,
+            18.527397
+          ],
+          [
+            73.865931,
+            18.526393
+          ],
+          [
+            73.868381,
+            18.526022
+          ],
+          [
+            73.871896,
+            18.527493
+          ],
+          [
+            73.873223,
+            18.52809
+          ],
+          [
+            73.873832,
+            18.528475
+          ],
+          [
+            73.874415,
+            18.528648
+          ]
         ]
       },
       "properties": {
         "road_id": "R16",
-        "road_name": "Sinhagad Road - Dhayari - Katraj Dehu Road Bypass",
-        "from_node": "N_SINHAGAD_RD",
-        "to_node": "N_KATRAJ",
+        "road_name": "Raja Bahadur Mill / Sangamwadi Link",
+        "from_node": "N_SHIVAJINAGAR",
+        "to_node": "N_PUNE_STN",
+        "road_type": "primary",
+        "distance_km": 3.59,
+        "estimated_speed_kmph": 35,
+        "base_elevation_m": 554,
+        "midpoint_elevation_m": 554,
+        "slope_pct": 0.17,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": true,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Mutha River",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R17",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.857857,
+            18.501658
+          ],
+          [
+            73.858618,
+            18.500768
+          ],
+          [
+            73.859778,
+            18.500568
+          ],
+          [
+            73.861497,
+            18.500271
+          ],
+          [
+            73.863434,
+            18.49999
+          ],
+          [
+            73.865153,
+            18.50005
+          ],
+          [
+            73.866045,
+            18.500303
+          ],
+          [
+            73.868517,
+            18.501336
+          ],
+          [
+            73.871312,
+            18.501873
+          ],
+          [
+            73.874704,
+            18.501947
+          ],
+          [
+            73.875291,
+            18.502061
+          ],
+          [
+            73.876535,
+            18.502305
+          ],
+          [
+            73.878558,
+            18.502788
+          ],
+          [
+            73.878698,
+            18.503073
+          ],
+          [
+            73.878451,
+            18.504148
+          ],
+          [
+            73.878457,
+            18.50529
+          ],
+          [
+            73.878569,
+            18.505754
+          ],
+          [
+            73.879258,
+            18.507321
+          ],
+          [
+            73.879679,
+            18.509104
+          ],
+          [
+            73.880067,
+            18.510579
+          ],
+          [
+            73.879968,
+            18.512066
+          ],
+          [
+            73.879692,
+            18.513621
+          ],
+          [
+            73.879514,
+            18.514197
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R17",
+        "road_name": "Jawaharlal Nehru / Seven Loves Road",
+        "from_node": "N_SWARGATE",
+        "to_node": "N_CAMP",
+        "road_type": "primary",
+        "distance_km": 3.64,
+        "estimated_speed_kmph": 35,
+        "base_elevation_m": 574,
+        "midpoint_elevation_m": 581,
+        "slope_pct": 0.16,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R18",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.879514,
+            18.514197
+          ],
+          [
+            73.878821,
+            18.515625
+          ],
+          [
+            73.878941,
+            18.517548
+          ],
+          [
+            73.877057,
+            18.519044
+          ],
+          [
+            73.876158,
+            18.519318
+          ],
+          [
+            73.874734,
+            18.519757
+          ],
+          [
+            73.873169,
+            18.52024
+          ],
+          [
+            73.872559,
+            18.520433
+          ],
+          [
+            73.871749,
+            18.520777
+          ],
+          [
+            73.871159,
+            18.521996
+          ],
+          [
+            73.870334,
+            18.523543
+          ],
+          [
+            73.870309,
+            18.524246
+          ],
+          [
+            73.871092,
+            18.524613
+          ],
+          [
+            73.871739,
+            18.525185
+          ],
+          [
+            73.872575,
+            18.52636
+          ],
+          [
+            73.87335,
+            18.527818
+          ],
+          [
+            73.873573,
+            18.528333
+          ],
+          [
+            73.874202,
+            18.528594
+          ],
+          [
+            73.874415,
+            18.528648
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R18",
+        "road_name": "Dr Ambedkar / Sadhu Vaswani Road",
+        "from_node": "N_CAMP",
+        "to_node": "N_PUNE_STN",
+        "road_type": "primary",
+        "distance_km": 2.65,
+        "estimated_speed_kmph": 35,
+        "base_elevation_m": 558,
+        "midpoint_elevation_m": 564,
+        "slope_pct": 0.6,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R19",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.879514,
+            18.514197
+          ],
+          [
+            73.879834,
+            18.514087
+          ],
+          [
+            73.880162,
+            18.510682
+          ],
+          [
+            73.879456,
+            18.507893
+          ],
+          [
+            73.880729,
+            18.50672
+          ],
+          [
+            73.884233,
+            18.506486
+          ],
+          [
+            73.885003,
+            18.506688
+          ],
+          [
+            73.889769,
+            18.506493
+          ],
+          [
+            73.892441,
+            18.50617
+          ],
+          [
+            73.897556,
+            18.507025
+          ],
+          [
+            73.898347,
+            18.506846
+          ],
+          [
+            73.900283,
+            18.506596
+          ],
+          [
+            73.903072,
+            18.506572
+          ],
+          [
+            73.906923,
+            18.50654
+          ],
+          [
+            73.910792,
+            18.506416
+          ],
+          [
+            73.91431,
+            18.506097
+          ],
+          [
+            73.921173,
+            18.504176
+          ],
+          [
+            73.923402,
+            18.503576
+          ],
+          [
+            73.925268,
+            18.503065
+          ],
+          [
+            73.927212,
+            18.502483
+          ],
+          [
+            73.925522,
+            18.502833
+          ],
+          [
+            73.926433,
+            18.501111
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R19",
+        "road_name": "Solapur Highway (Pulgate - Hadapsar)",
+        "from_node": "N_CAMP",
+        "to_node": "N_HADAPSAR",
+        "road_type": "trunk",
+        "distance_km": 6.49,
+        "estimated_speed_kmph": 50,
+        "base_elevation_m": 572,
+        "midpoint_elevation_m": 584,
+        "slope_pct": 0.03,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Bhairoba Nullah",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R20",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.874415,
+            18.528648
+          ],
+          [
+            73.874914,
+            18.528654
+          ],
+          [
+            73.875073,
+            18.528566
+          ],
+          [
+            73.875637,
+            18.52804
+          ],
+          [
+            73.876204,
+            18.528143
+          ],
+          [
+            73.876075,
+            18.52895
+          ],
+          [
+            73.875661,
+            18.530598
+          ],
+          [
+            73.875554,
+            18.530776
+          ],
+          [
+            73.875742,
+            18.530955
+          ],
+          [
+            73.876107,
+            18.531319
+          ],
+          [
+            73.876811,
+            18.53195
+          ],
+          [
+            73.877997,
+            18.532983
+          ],
+          [
+            73.878723,
+            18.533604
+          ],
+          [
+            73.87897,
+            18.533853
+          ],
+          [
+            73.879299,
+            18.534333
+          ],
+          [
+            73.879539,
+            18.534692
+          ],
+          [
+            73.879811,
+            18.534915
+          ],
+          [
+            73.880466,
+            18.535876
+          ],
+          [
+            73.880802,
+            18.536371
+          ],
+          [
+            73.880914,
+            18.536556
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R20",
+        "road_name": "Bund Garden Road",
+        "from_node": "N_PUNE_STN",
+        "to_node": "N_BUND_GARDEN",
+        "road_type": "primary",
+        "distance_km": 1.38,
+        "estimated_speed_kmph": 35,
+        "base_elevation_m": 558,
+        "midpoint_elevation_m": 562,
+        "slope_pct": 0.14,
+        "drainage_condition": "clogged",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": true,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Mula-Mutha Confluence",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R21",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.880914,
+            18.536556
+          ],
+          [
+            73.881147,
+            18.536944
+          ],
+          [
+            73.881724,
+            18.537863
+          ],
+          [
+            73.882192,
+            18.53856
+          ],
+          [
+            73.883518,
+            18.540754
+          ],
+          [
+            73.883829,
+            18.541093
+          ],
+          [
+            73.88401,
+            18.541271
+          ],
+          [
+            73.883305,
+            18.54471
+          ],
+          [
+            73.883033,
+            18.544951
+          ],
+          [
+            73.882036,
+            18.544382
+          ],
+          [
+            73.880669,
+            18.544037
+          ],
+          [
+            73.879507,
+            18.54369
+          ],
+          [
+            73.878911,
+            18.543677
+          ],
+          [
+            73.877729,
+            18.544372
+          ],
+          [
+            73.877227,
+            18.545235
+          ],
+          [
+            73.878853,
+            18.550547
+          ],
+          [
+            73.879547,
+            18.55251
+          ],
+          [
+            73.879689,
+            18.552937
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R21",
+        "road_name": "Bund Garden Bridge - Yerawada",
+        "from_node": "N_BUND_GARDEN",
+        "to_node": "N_YERAWADA",
+        "road_type": "primary",
+        "distance_km": 2.72,
+        "estimated_speed_kmph": 40,
+        "base_elevation_m": 557,
+        "midpoint_elevation_m": 573,
+        "slope_pct": 0.11,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": true,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Mula-Mutha River",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R22",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.879689,
+            18.552937
+          ],
+          [
+            73.884165,
+            18.553439
+          ],
+          [
+            73.886617,
+            18.553052
+          ],
+          [
+            73.892598,
+            18.552568
+          ],
+          [
+            73.89518,
+            18.552447
+          ],
+          [
+            73.896689,
+            18.552389
+          ],
+          [
+            73.899134,
+            18.553144
+          ],
+          [
+            73.902939,
+            18.55434
+          ],
+          [
+            73.904101,
+            18.554656
+          ],
+          [
+            73.90631,
+            18.555407
+          ],
+          [
+            73.907259,
+            18.556244
+          ],
+          [
+            73.908189,
+            18.556898
+          ],
+          [
+            73.910437,
+            18.558297
+          ],
+          [
+            73.91167,
+            18.558785
+          ],
+          [
+            73.913639,
+            18.559609
+          ],
+          [
+            73.913947,
+            18.563176
+          ],
+          [
+            73.914067,
+            18.564323
+          ],
+          [
+            73.914172,
+            18.565179
+          ],
+          [
+            73.914097,
+            18.566109
+          ],
+          [
+            73.914211,
+            18.566979
+          ],
+          [
+            73.914299,
+            18.567887
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R22",
+        "road_name": "Pune-Ahmednagar Highway (Yerawada - Viman Nagar)",
+        "from_node": "N_YERAWADA",
+        "to_node": "N_VIMAN_NAGAR",
+        "road_type": "trunk",
+        "distance_km": 4.74,
+        "estimated_speed_kmph": 55,
+        "base_elevation_m": 557,
+        "midpoint_elevation_m": 560,
+        "slope_pct": 0.51,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R23",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.914299,
+            18.567887
+          ],
+          [
+            73.914706,
+            18.567853
+          ],
+          [
+            73.915659,
+            18.567772
+          ],
+          [
+            73.916459,
+            18.567705
+          ],
+          [
+            73.917834,
+            18.567567
+          ],
+          [
+            73.918555,
+            18.567502
+          ],
+          [
+            73.918665,
+            18.567958
+          ],
+          [
+            73.918805,
+            18.568883
+          ],
+          [
+            73.919091,
+            18.570679
+          ],
+          [
+            73.91906,
+            18.572085
+          ],
+          [
+            73.92035,
+            18.572864
+          ],
+          [
+            73.920597,
+            18.574588
+          ],
+          [
+            73.920705,
+            18.57554
+          ],
+          [
+            73.920243,
+            18.57605
+          ],
+          [
+            73.919497,
+            18.576717
+          ],
+          [
+            73.919396,
+            18.576847
+          ],
+          [
+            73.919295,
+            18.578651
+          ],
+          [
+            73.919285,
+            18.580126
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R23",
+        "road_name": "Symbiosis - Lohegaon Airport Road",
+        "from_node": "N_VIMAN_NAGAR",
+        "to_node": "N_AIRPORT",
+        "road_type": "primary",
+        "distance_km": 2.09,
+        "estimated_speed_kmph": 45,
+        "base_elevation_m": 581,
+        "midpoint_elevation_m": 584,
+        "slope_pct": 0.48,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R24",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.914299,
+            18.567887
+          ],
+          [
+            73.916121,
+            18.567728
+          ],
+          [
+            73.9181,
+            18.567543
+          ],
+          [
+            73.918512,
+            18.566754
+          ],
+          [
+            73.918363,
+            18.565739
+          ],
+          [
+            73.918157,
+            18.563116
+          ],
+          [
+            73.918469,
+            18.561141
+          ],
+          [
+            73.920113,
+            18.56154
+          ],
+          [
+            73.922124,
+            18.562076
+          ],
+          [
+            73.924689,
+            18.562697
+          ],
+          [
+            73.927847,
+            18.562942
+          ],
+          [
+            73.933363,
+            18.563411
+          ],
+          [
+            73.935076,
+            18.563307
+          ],
+          [
+            73.93801,
+            18.56231
+          ],
+          [
+            73.938653,
+            18.561741
+          ],
+          [
+            73.938276,
+            18.558559
+          ],
+          [
+            73.937797,
+            18.555548
+          ],
+          [
+            73.937568,
+            18.553749
+          ],
+          [
+            73.937826,
+            18.552211
+          ],
+          [
+            73.939096,
+            18.551237
+          ],
+          [
+            73.940704,
+            18.551272
+          ],
+          [
+            73.940921,
+            18.551502
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R24",
+        "road_name": "Nagar Road - Kharadi Bypass",
+        "from_node": "N_VIMAN_NAGAR",
+        "to_node": "N_KHARADI",
+        "road_type": "trunk",
+        "distance_km": 4.89,
+        "estimated_speed_kmph": 55,
+        "base_elevation_m": 561,
+        "midpoint_elevation_m": 570,
+        "slope_pct": 0.41,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R25",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.940921,
+            18.551502
+          ],
+          [
+            73.939034,
+            18.551315
+          ],
+          [
+            73.937334,
+            18.551675
+          ],
+          [
+            73.936749,
+            18.54891
+          ],
+          [
+            73.935951,
+            18.545499
+          ],
+          [
+            73.935428,
+            18.543386
+          ],
+          [
+            73.934826,
+            18.540503
+          ],
+          [
+            73.93425,
+            18.537295
+          ],
+          [
+            73.933426,
+            18.53423
+          ],
+          [
+            73.932507,
+            18.531926
+          ],
+          [
+            73.932437,
+            18.530052
+          ],
+          [
+            73.932399,
+            18.528206
+          ],
+          [
+            73.932266,
+            18.523684
+          ],
+          [
+            73.932144,
+            18.521468
+          ],
+          [
+            73.93256,
+            18.5199
+          ],
+          [
+            73.932972,
+            18.516754
+          ],
+          [
+            73.932632,
+            18.514788
+          ],
+          [
+            73.932297,
+            18.51123
+          ],
+          [
+            73.929548,
+            18.508132
+          ],
+          [
+            73.927844,
+            18.506121
+          ],
+          [
+            73.927519,
+            18.502563
+          ],
+          [
+            73.92573,
+            18.502771
+          ],
+          [
+            73.926433,
+            18.501111
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R25",
+        "road_name": "Magarpatta / Mundhwa - Hadapsar Bridge",
+        "from_node": "N_KHARADI",
+        "to_node": "N_HADAPSAR",
+        "road_type": "primary",
+        "distance_km": 6.72,
+        "estimated_speed_kmph": 45,
+        "base_elevation_m": 550,
+        "midpoint_elevation_m": 550,
+        "slope_pct": 0.16,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": true,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Mula-Mutha River",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R26",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.84462,
+            18.531382
+          ],
+          [
+            73.844163,
+            18.531497
+          ],
+          [
+            73.842499,
+            18.532263
+          ],
+          [
+            73.84068,
+            18.533498
+          ],
+          [
+            73.838655,
+            18.534883
+          ],
+          [
+            73.838334,
+            18.535102
+          ],
+          [
+            73.837293,
+            18.53584
+          ],
+          [
+            73.836136,
+            18.536763
+          ],
+          [
+            73.835674,
+            18.537061
+          ],
+          [
+            73.834991,
+            18.53758
+          ],
+          [
+            73.833054,
+            18.53909
+          ],
+          [
+            73.83144,
+            18.540187
+          ],
+          [
+            73.829365,
+            18.541621
+          ],
+          [
+            73.828808,
+            18.541998
+          ],
+          [
+            73.82816,
+            18.542471
+          ],
+          [
+            73.827271,
+            18.543331
+          ],
+          [
+            73.826486,
+            18.544468
+          ],
+          [
+            73.825807,
+            18.545806
+          ],
+          [
+            73.826224,
+            18.54661
+          ],
+          [
+            73.826598,
+            18.547274
+          ],
+          [
+            73.826888,
+            18.548505
+          ],
+          [
+            73.827715,
+            18.5496
+          ],
+          [
+            73.826326,
+            18.552686
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R26",
+        "road_name": "Ganeshkhind Road (Shivajinagar - Univ Circle)",
+        "from_node": "N_SHIVAJINAGAR",
+        "to_node": "N_UNIV_CIRCLE",
+        "road_type": "primary",
+        "distance_km": 3.52,
+        "estimated_speed_kmph": 40,
+        "base_elevation_m": 564,
+        "midpoint_elevation_m": 587,
+        "slope_pct": 0.51,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R27",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.826326,
+            18.552686
+          ],
+          [
+            73.827715,
+            18.5496
+          ],
+          [
+            73.826882,
+            18.548754
+          ],
+          [
+            73.826673,
+            18.547559
+          ],
+          [
+            73.826469,
+            18.546969
+          ],
+          [
+            73.826181,
+            18.54645
+          ],
+          [
+            73.825807,
+            18.545806
+          ],
+          [
+            73.824724,
+            18.546904
+          ],
+          [
+            73.821162,
+            18.55182
+          ],
+          [
+            73.819191,
+            18.554541
+          ],
+          [
+            73.817952,
+            18.556272
+          ],
+          [
+            73.816417,
+            18.558312
+          ],
+          [
+            73.815122,
+            18.560028
+          ],
+          [
+            73.814857,
+            18.560336
+          ],
+          [
+            73.813721,
+            18.560739
+          ],
+          [
+            73.812335,
+            18.560626
+          ],
+          [
+            73.81127,
+            18.560592
+          ],
+          [
+            73.809621,
+            18.560551
+          ],
+          [
+            73.809083,
+            18.560556
+          ],
+          [
+            73.80707,
+            18.560444
+          ],
+          [
+            73.805193,
+            18.560348
+          ],
+          [
+            73.804647,
+            18.561664
+          ],
+          [
+            73.804634,
+            18.561987
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R27",
+        "road_name": "Aundh Road (Univ Circle - Parihar Chowk)",
+        "from_node": "N_UNIV_CIRCLE",
+        "to_node": "N_AUNDH",
+        "road_type": "primary",
+        "distance_km": 4.25,
+        "estimated_speed_kmph": 40,
+        "base_elevation_m": 567,
+        "midpoint_elevation_m": 568,
+        "slope_pct": 0.35,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R28",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.826326,
+            18.552686
+          ],
+          [
+            73.826888,
+            18.548505
+          ],
+          [
+            73.826305,
+            18.546792
+          ],
+          [
+            73.826605,
+            18.544547
+          ],
+          [
+            73.829278,
+            18.541987
+          ],
+          [
+            73.832298,
+            18.539617
+          ],
+          [
+            73.829,
+            18.541869
+          ],
+          [
+            73.826683,
+            18.541781
+          ],
+          [
+            73.824822,
+            18.541637
+          ],
+          [
+            73.822784,
+            18.541201
+          ],
+          [
+            73.817776,
+            18.540005
+          ],
+          [
+            73.811434,
+            18.539439
+          ],
+          [
+            73.807109,
+            18.538436
+          ],
+          [
+            73.804588,
+            18.53778
+          ],
+          [
+            73.800653,
+            18.538011
+          ],
+          [
+            73.796443,
+            18.537733
+          ],
+          [
+            73.796246,
+            18.537733
+          ],
+          [
+            73.793998,
+            18.537041
+          ],
+          [
+            73.793943,
+            18.537343
+          ],
+          [
+            73.793896,
+            18.539443
+          ],
+          [
+            73.793493,
+            18.540789
+          ],
+          [
+            73.792411,
+            18.541642
+          ],
+          [
+            73.792741,
+            18.543446
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R28",
+        "road_name": "Pashan Road (NCL - Pashan Circle)",
+        "from_node": "N_UNIV_CIRCLE",
+        "to_node": "N_PASHAN",
+        "road_type": "primary",
+        "distance_km": 6.94,
+        "estimated_speed_kmph": 45,
+        "base_elevation_m": 582,
+        "midpoint_elevation_m": 596,
+        "slope_pct": 0.03,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R29",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.78242,
+            18.508217
+          ],
+          [
+            73.782373,
+            18.509134
+          ],
+          [
+            73.782202,
+            18.512199
+          ],
+          [
+            73.782585,
+            18.514131
+          ],
+          [
+            73.781976,
+            18.515653
+          ],
+          [
+            73.780974,
+            18.517188
+          ],
+          [
+            73.778967,
+            18.519009
+          ],
+          [
+            73.77886,
+            18.520194
+          ],
+          [
+            73.779996,
+            18.522806
+          ],
+          [
+            73.781396,
+            18.525515
+          ],
+          [
+            73.783313,
+            18.527227
+          ],
+          [
+            73.785879,
+            18.527013
+          ],
+          [
+            73.788693,
+            18.526276
+          ],
+          [
+            73.791131,
+            18.527908
+          ],
+          [
+            73.792917,
+            18.532334
+          ],
+          [
+            73.796185,
+            18.53747
+          ],
+          [
+            73.794042,
+            18.537074
+          ],
+          [
+            73.793943,
+            18.537078
+          ],
+          [
+            73.793876,
+            18.538202
+          ],
+          [
+            73.793839,
+            18.540199
+          ],
+          [
+            73.792456,
+            18.541297
+          ],
+          [
+            73.792741,
+            18.543446
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R29",
+        "road_name": "NH48 Bavdhan - Pashan Link",
+        "from_node": "N_CHANDANI",
+        "to_node": "N_PASHAN",
+        "road_type": "trunk",
+        "distance_km": 5.7,
+        "estimated_speed_kmph": 65,
+        "base_elevation_m": 584,
+        "midpoint_elevation_m": 602,
+        "slope_pct": 1.09,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "concrete",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R30",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.792741,
+            18.543446
+          ],
+          [
+            73.79298,
+            18.544919
+          ],
+          [
+            73.7933,
+            18.546058
+          ],
+          [
+            73.79384,
+            18.546219
+          ],
+          [
+            73.796628,
+            18.546156
+          ],
+          [
+            73.797788,
+            18.547113
+          ],
+          [
+            73.798185,
+            18.547759
+          ],
+          [
+            73.798292,
+            18.549381
+          ],
+          [
+            73.798115,
+            18.551466
+          ],
+          [
+            73.797187,
+            18.552543
+          ],
+          [
+            73.797153,
+            18.55335
+          ],
+          [
+            73.797667,
+            18.554906
+          ],
+          [
+            73.796655,
+            18.554871
+          ],
+          [
+            73.795562,
+            18.555243
+          ],
+          [
+            73.794689,
+            18.556062
+          ],
+          [
+            73.793867,
+            18.557142
+          ],
+          [
+            73.792324,
+            18.558286
+          ],
+          [
+            73.79153,
+            18.55879
+          ],
+          [
+            73.789885,
+            18.559403
+          ],
+          [
+            73.788841,
+            18.559868
+          ],
+          [
+            73.788023,
+            18.559811
+          ],
+          [
+            73.786995,
+            18.559391
+          ],
+          [
+            73.786734,
+            18.559332
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R30",
+        "road_name": "Sus - Baner Link Road",
+        "from_node": "N_PASHAN",
+        "to_node": "N_BANER",
         "road_type": "secondary",
+        "distance_km": 3.15,
+        "estimated_speed_kmph": 40,
+        "base_elevation_m": 564,
+        "midpoint_elevation_m": 564,
+        "slope_pct": 0.35,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R31",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.804634,
+            18.561987
+          ],
+          [
+            73.804605,
+            18.560318
+          ],
+          [
+            73.803126,
+            18.560186
+          ],
+          [
+            73.802949,
+            18.560768
+          ],
+          [
+            73.802882,
+            18.561503
+          ],
+          [
+            73.802813,
+            18.56212
+          ],
+          [
+            73.802594,
+            18.563746
+          ],
+          [
+            73.802386,
+            18.565199
+          ],
+          [
+            73.801472,
+            18.565437
+          ],
+          [
+            73.799906,
+            18.565275
+          ],
+          [
+            73.796451,
+            18.563379
+          ],
+          [
+            73.793409,
+            18.561904
+          ],
+          [
+            73.792149,
+            18.561462
+          ],
+          [
+            73.792942,
+            18.56005
+          ],
+          [
+            73.791761,
+            18.558651
+          ],
+          [
+            73.791135,
+            18.558967
+          ],
+          [
+            73.789571,
+            18.55954
+          ],
+          [
+            73.788898,
+            18.559875
+          ],
+          [
+            73.788182,
+            18.559936
+          ],
+          [
+            73.787669,
+            18.559754
+          ],
+          [
+            73.786995,
+            18.559391
+          ],
+          [
+            73.786734,
+            18.559332
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R31",
+        "road_name": "Baner Road (Aundh - Balewadi Phata)",
+        "from_node": "N_AUNDH",
+        "to_node": "N_BANER",
+        "road_type": "primary",
+        "distance_km": 3.13,
+        "estimated_speed_kmph": 45,
+        "base_elevation_m": 558,
+        "midpoint_elevation_m": 558,
+        "slope_pct": 0.19,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Ramnadi Stream",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R32",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.786734,
+            18.559332
+          ],
+          [
+            73.788182,
+            18.559936
+          ],
+          [
+            73.788203,
+            18.560587
+          ],
+          [
+            73.788901,
+            18.562759
+          ],
+          [
+            73.786987,
+            18.564475
+          ],
+          [
+            73.789787,
+            18.565268
+          ],
+          [
+            73.790584,
+            18.568361
+          ],
+          [
+            73.78974,
+            18.574026
+          ],
+          [
+            73.787558,
+            18.577227
+          ],
+          [
+            73.785447,
+            18.579627
+          ],
+          [
+            73.783079,
+            18.582905
+          ],
+          [
+            73.781564,
+            18.585402
+          ],
+          [
+            73.779213,
+            18.588551
+          ],
+          [
+            73.77574,
+            18.58907
+          ],
+          [
+            73.773018,
+            18.589969
+          ],
+          [
+            73.768714,
+            18.590039
+          ],
+          [
+            73.766454,
+            18.591119
+          ],
+          [
+            73.764705,
+            18.592054
+          ],
+          [
+            73.762878,
+            18.592945
+          ],
+          [
+            73.763414,
+            18.594824
+          ],
+          [
+            73.763707,
+            18.596447
+          ],
+          [
+            73.764995,
+            18.597866
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R32",
+        "road_name": "NH48 Baner - Wakad Highway",
+        "from_node": "N_BANER",
+        "to_node": "N_WAKAD",
+        "road_type": "trunk",
+        "distance_km": 6.87,
+        "estimated_speed_kmph": 65,
+        "base_elevation_m": 560,
+        "midpoint_elevation_m": 560,
+        "slope_pct": 0,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": true,
+        "is_tunnel": false,
+        "surface": "concrete",
+        "has_historical_flood": false,
+        "waterway_proximity": "Mula River Bridge",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R33",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.764995,
+            18.597866
+          ],
+          [
+            73.763494,
+            18.594787
+          ],
+          [
+            73.762876,
+            18.592665
+          ],
+          [
+            73.761184,
+            18.592393
+          ],
+          [
+            73.757061,
+            18.591971
+          ],
+          [
+            73.754022,
+            18.591757
+          ],
+          [
+            73.751638,
+            18.590749
+          ],
+          [
+            73.749303,
+            18.590874
+          ],
+          [
+            73.747954,
+            18.590707
+          ],
+          [
+            73.745211,
+            18.591009
+          ],
+          [
+            73.742301,
+            18.590979
+          ],
+          [
+            73.740254,
+            18.591034
+          ],
+          [
+            73.738444,
+            18.589808
+          ],
+          [
+            73.735439,
+            18.586161
+          ],
+          [
+            73.733866,
+            18.585805
+          ],
+          [
+            73.731709,
+            18.584824
+          ],
+          [
+            73.730397,
+            18.584013
+          ],
+          [
+            73.727718,
+            18.582827
+          ],
+          [
+            73.723717,
+            18.58131
+          ],
+          [
+            73.720673,
+            18.58062
+          ],
+          [
+            73.718735,
+            18.58498
+          ],
+          [
+            73.71798,
+            18.588266
+          ],
+          [
+            73.717973,
+            18.589001
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R33",
+        "road_name": "Wakad Flyover - Hinjawadi Phase 1",
+        "from_node": "N_WAKAD",
+        "to_node": "N_HINJAWADI",
+        "road_type": "primary",
+        "distance_km": 6.77,
+        "estimated_speed_kmph": 45,
+        "base_elevation_m": 573,
+        "midpoint_elevation_m": 580,
+        "slope_pct": 0.35,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R34",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.764995,
+            18.597866
+          ],
+          [
+            73.763603,
+            18.595328
+          ],
+          [
+            73.763148,
+            18.593432
+          ],
+          [
+            73.763583,
+            18.592216
+          ],
+          [
+            73.765938,
+            18.591707
+          ],
+          [
+            73.768529,
+            18.590362
+          ],
+          [
+            73.770616,
+            18.590175
+          ],
+          [
+            73.773865,
+            18.590018
+          ],
+          [
+            73.77591,
+            18.589249
+          ],
+          [
+            73.777122,
+            18.589201
+          ],
+          [
+            73.778987,
+            18.59011
+          ],
+          [
+            73.780972,
+            18.591545
+          ],
+          [
+            73.782266,
+            18.592184
+          ],
+          [
+            73.784516,
+            18.591888
+          ],
+          [
+            73.785609,
+            18.592967
+          ],
+          [
+            73.78814,
+            18.595334
+          ],
+          [
+            73.78968,
+            18.596843
+          ],
+          [
+            73.790355,
+            18.597357
+          ],
+          [
+            73.790597,
+            18.597162
+          ],
+          [
+            73.79496,
+            18.59691
+          ],
+          [
+            73.797424,
+            18.598128
+          ],
+          [
+            73.797664,
+            18.598644
+          ],
+          [
+            73.79751,
+            18.598625
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R34",
+        "road_name": "Wakad - Pimple Saudagar Kokane Chowk",
+        "from_node": "N_WAKAD",
+        "to_node": "N_PIMPLE_SAUDAGAR",
+        "road_type": "primary",
+        "distance_km": 5.02,
+        "estimated_speed_kmph": 40,
+        "base_elevation_m": 566,
+        "midpoint_elevation_m": 566,
+        "slope_pct": 0.14,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R35",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.804634,
+            18.561987
+          ],
+          [
+            73.805475,
+            18.560419
+          ],
+          [
+            73.806503,
+            18.560469
+          ],
+          [
+            73.807419,
+            18.561682
+          ],
+          [
+            73.807456,
+            18.564147
+          ],
+          [
+            73.807456,
+            18.56507
+          ],
+          [
+            73.807438,
+            18.566453
+          ],
+          [
+            73.807572,
+            18.567602
+          ],
+          [
+            73.808186,
+            18.570866
+          ],
+          [
+            73.807437,
+            18.572126
+          ],
+          [
+            73.806533,
+            18.573242
+          ],
+          [
+            73.80671,
+            18.573802
+          ],
+          [
+            73.80787,
+            18.574092
+          ],
+          [
+            73.808369,
+            18.575178
+          ],
+          [
+            73.811917,
+            18.576228
+          ],
+          [
+            73.811979,
+            18.577688
+          ],
+          [
+            73.812212,
+            18.579062
+          ],
+          [
+            73.812338,
+            18.580151
+          ],
+          [
+            73.812515,
+            18.581693
+          ],
+          [
+            73.8141,
+            18.582123
+          ],
+          [
+            73.816001,
+            18.581696
+          ],
+          [
+            73.816784,
+            18.581802
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R35",
+        "road_name": "Aundh - Sangvi New Bridge",
+        "from_node": "N_AUNDH",
+        "to_node": "N_SANGVI",
+        "road_type": "primary",
+        "distance_km": 3.83,
+        "estimated_speed_kmph": 35,
+        "base_elevation_m": 560,
+        "midpoint_elevation_m": 562,
+        "slope_pct": 0.18,
+        "drainage_condition": "poor",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": true,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Pavana / Mula Confluence",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R36",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.816784,
+            18.581802
+          ],
+          [
+            73.815741,
+            18.583412
+          ],
+          [
+            73.81602,
+            18.584541
+          ],
+          [
+            73.816848,
+            18.589929
+          ],
+          [
+            73.818002,
+            18.591553
+          ],
+          [
+            73.818946,
+            18.593509
+          ],
+          [
+            73.818757,
+            18.594251
+          ],
+          [
+            73.81753,
+            18.595205
+          ],
+          [
+            73.815268,
+            18.597034
+          ],
+          [
+            73.812016,
+            18.598676
+          ],
+          [
+            73.810759,
+            18.599264
+          ],
+          [
+            73.809215,
+            18.599316
+          ],
+          [
+            73.807039,
+            18.598893
+          ],
+          [
+            73.805569,
+            18.597839
+          ],
+          [
+            73.804285,
+            18.59732
+          ],
+          [
+            73.802723,
+            18.597361
+          ],
+          [
+            73.802122,
+            18.597453
+          ],
+          [
+            73.800177,
+            18.597898
+          ],
+          [
+            73.798121,
+            18.598091
+          ],
+          [
+            73.79779,
+            18.598557
+          ],
+          [
+            73.79751,
+            18.598625
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R36",
+        "road_name": "Sangvi - Pimple Saudagar Road",
+        "from_node": "N_SANGVI",
+        "to_node": "N_PIMPLE_SAUDAGAR",
+        "road_type": "secondary",
+        "distance_km": 4.48,
+        "estimated_speed_kmph": 35,
+        "base_elevation_m": 560,
+        "midpoint_elevation_m": 560,
+        "slope_pct": 0.13,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Pavana River",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R37",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.826326,
+            18.552686
+          ],
+          [
+            73.827113,
+            18.55419
+          ],
+          [
+            73.828358,
+            18.555187
+          ],
+          [
+            73.830434,
+            18.555721
+          ],
+          [
+            73.833046,
+            18.557164
+          ],
+          [
+            73.838433,
+            18.560325
+          ],
+          [
+            73.836489,
+            18.562022
+          ],
+          [
+            73.835562,
+            18.56211
+          ],
+          [
+            73.83287,
+            18.562392
+          ],
+          [
+            73.830292,
+            18.562972
+          ],
+          [
+            73.830826,
+            18.564375
+          ],
+          [
+            73.83142,
+            18.566497
+          ],
+          [
+            73.832088,
+            18.568509
+          ],
+          [
+            73.832794,
+            18.570647
+          ],
+          [
+            73.833342,
+            18.571687
+          ],
+          [
+            73.831916,
+            18.575217
+          ],
+          [
+            73.831098,
+            18.575518
+          ],
+          [
+            73.830137,
+            18.577164
+          ],
+          [
+            73.829453,
+            18.578657
+          ],
+          [
+            73.830152,
+            18.580473
+          ],
+          [
+            73.831809,
+            18.580519
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R37",
+        "road_name": "Bopodi - Harris Bridge (Old Mumbai-Pune Hwy)",
+        "from_node": "N_UNIV_CIRCLE",
+        "to_node": "N_DAPODI",
+        "road_type": "trunk",
+        "distance_km": 5.5,
+        "estimated_speed_kmph": 50,
+        "base_elevation_m": 559,
+        "midpoint_elevation_m": 561,
+        "slope_pct": 0.42,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": true,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Mula River Bridge",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R38",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.84462,
+            18.531382
+          ],
+          [
+            73.846614,
+            18.531073
+          ],
+          [
+            73.848267,
+            18.530629
+          ],
+          [
+            73.849793,
+            18.530249
+          ],
+          [
+            73.851232,
+            18.529817
+          ],
+          [
+            73.852738,
+            18.529481
+          ],
+          [
+            73.853494,
+            18.529815
+          ],
+          [
+            73.854703,
+            18.530279
+          ],
+          [
+            73.854361,
+            18.531056
+          ],
+          [
+            73.853617,
+            18.531906
+          ],
+          [
+            73.855007,
+            18.532438
+          ],
+          [
+            73.8598,
+            18.53292
+          ],
+          [
+            73.861143,
+            18.534007
+          ],
+          [
+            73.861792,
+            18.535634
+          ],
+          [
+            73.863729,
+            18.537795
+          ],
+          [
+            73.86492,
+            18.538913
+          ],
+          [
+            73.868253,
+            18.540896
+          ],
+          [
+            73.876083,
+            18.543567
+          ],
+          [
+            73.878637,
+            18.550057
+          ],
+          [
+            73.879619,
+            18.552794
+          ],
+          [
+            73.879689,
+            18.552937
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R38",
+        "road_name": "Holkar Bridge / Khadki - Yerawada Link",
+        "from_node": "N_SHIVAJINAGAR",
+        "to_node": "N_YERAWADA",
+        "road_type": "secondary",
+        "distance_km": 5.37,
+        "estimated_speed_kmph": 35,
+        "base_elevation_m": 544,
+        "midpoint_elevation_m": 544,
+        "slope_pct": 0.13,
+        "drainage_condition": "poor",
+        "access_restriction": "no_heavy_vehicles",
+        "one_way": false,
+        "is_bridge": true,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Mula River (Holkar Bridge)",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R39",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.831809,
+            18.580519
+          ],
+          [
+            73.82985,
+            18.582157
+          ],
+          [
+            73.829853,
+            18.582482
+          ],
+          [
+            73.829951,
+            18.58443
+          ],
+          [
+            73.830147,
+            18.584838
+          ],
+          [
+            73.830568,
+            18.585099
+          ],
+          [
+            73.833238,
+            18.585278
+          ],
+          [
+            73.832275,
+            18.588476
+          ],
+          [
+            73.830731,
+            18.591939
+          ],
+          [
+            73.828769,
+            18.596251
+          ],
+          [
+            73.825647,
+            18.602814
+          ],
+          [
+            73.823944,
+            18.605096
+          ],
+          [
+            73.822176,
+            18.607468
+          ],
+          [
+            73.824042,
+            18.612844
+          ],
+          [
+            73.825658,
+            18.617305
+          ],
+          [
+            73.826934,
+            18.618213
+          ],
+          [
+            73.830014,
+            18.619158
+          ],
+          [
+            73.830161,
+            18.619622
+          ],
+          [
+            73.830346,
+            18.621044
+          ],
+          [
+            73.836833,
+            18.620621
+          ],
+          [
+            73.83772,
+            18.620836
+          ],
+          [
+            73.835452,
+            18.62416
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R39",
+        "road_name": "Dapodi - Nashik Phata Grade Separator",
+        "from_node": "N_DAPODI",
+        "to_node": "N_BHOSARI",
+        "road_type": "trunk",
+        "distance_km": 6.94,
+        "estimated_speed_kmph": 55,
+        "base_elevation_m": 559,
+        "midpoint_elevation_m": 561,
+        "slope_pct": 0.42,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "concrete",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R40",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.831809,
+            18.580519
+          ],
+          [
+            73.829844,
+            18.582171
+          ],
+          [
+            73.829876,
+            18.583275
+          ],
+          [
+            73.830018,
+            18.584646
+          ],
+          [
+            73.830419,
+            18.585043
+          ],
+          [
+            73.833112,
+            18.585271
+          ],
+          [
+            73.832275,
+            18.588476
+          ],
+          [
+            73.830695,
+            18.592017
+          ],
+          [
+            73.826318,
+            18.601612
+          ],
+          [
+            73.825391,
+            18.603174
+          ],
+          [
+            73.822003,
+            18.607203
+          ],
+          [
+            73.815255,
+            18.615021
+          ],
+          [
+            73.80604,
+            18.625615
+          ],
+          [
+            73.805462,
+            18.626344
+          ],
+          [
+            73.805607,
+            18.626484
+          ],
+          [
+            73.806188,
+            18.626869
+          ],
+          [
+            73.807142,
+            18.628081
+          ],
+          [
+            73.80821,
+            18.62918
+          ],
+          [
+            73.810127,
+            18.629312
+          ],
+          [
+            73.812633,
+            18.628998
+          ],
+          [
+            73.812571,
+            18.627784
+          ],
+          [
+            73.813011,
+            18.627719
+          ],
+          [
+            73.813162,
+            18.62782
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R40",
+        "road_name": "Old Mumbai-Pune Hwy (Dapodi - Pimpri)",
+        "from_node": "N_DAPODI",
+        "to_node": "N_PIMPRI",
+        "road_type": "trunk",
+        "distance_km": 7.64,
+        "estimated_speed_kmph": 50,
+        "base_elevation_m": 559,
+        "midpoint_elevation_m": 566,
+        "slope_pct": 0.33,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R41",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.79751,
+            18.598625
+          ],
+          [
+            73.798337,
+            18.598237
+          ],
+          [
+            73.801153,
+            18.597828
+          ],
+          [
+            73.803546,
+            18.59751
+          ],
+          [
+            73.805487,
+            18.59796
+          ],
+          [
+            73.807998,
+            18.599291
+          ],
+          [
+            73.811718,
+            18.599447
+          ],
+          [
+            73.817043,
+            18.602587
+          ],
+          [
+            73.820631,
+            18.60505
+          ],
+          [
+            73.820566,
+            18.605443
+          ],
+          [
+            73.821125,
+            18.605971
+          ],
+          [
+            73.81968,
+            18.609007
+          ],
+          [
+            73.81747,
+            18.611089
+          ],
+          [
+            73.816359,
+            18.613556
+          ],
+          [
+            73.811088,
+            18.619672
+          ],
+          [
+            73.805499,
+            18.626231
+          ],
+          [
+            73.805546,
+            18.626466
+          ],
+          [
+            73.806188,
+            18.626869
+          ],
+          [
+            73.807952,
+            18.629054
+          ],
+          [
+            73.809641,
+            18.629323
+          ],
+          [
+            73.811537,
+            18.629232
+          ],
+          [
+            73.812585,
+            18.627766
+          ],
+          [
+            73.813162,
+            18.62782
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R41",
+        "road_name": "Pimple Saudagar - Pimpri Bridge",
+        "from_node": "N_PIMPLE_SAUDAGAR",
+        "to_node": "N_PIMPRI",
+        "road_type": "primary",
+        "distance_km": 6.94,
+        "estimated_speed_kmph": 40,
+        "base_elevation_m": 558,
+        "midpoint_elevation_m": 558,
+        "slope_pct": 0.26,
+        "drainage_condition": "moderate",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": true,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Pavana River",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R42",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.835452,
+            18.62416
+          ],
+          [
+            73.833902,
+            18.625836
+          ],
+          [
+            73.832943,
+            18.626871
+          ],
+          [
+            73.832344,
+            18.627526
+          ],
+          [
+            73.831057,
+            18.628935
+          ],
+          [
+            73.829918,
+            18.630181
+          ],
+          [
+            73.829331,
+            18.630823
+          ],
+          [
+            73.82716,
+            18.632434
+          ],
+          [
+            73.826029,
+            18.631433
+          ],
+          [
+            73.825645,
+            18.631093
+          ],
+          [
+            73.825383,
+            18.630845
+          ],
+          [
+            73.825356,
+            18.630806
+          ],
+          [
+            73.82531,
+            18.630787
+          ],
+          [
+            73.825261,
+            18.630796
+          ],
+          [
+            73.825053,
+            18.630778
+          ],
+          [
+            73.823535,
+            18.630535
+          ],
+          [
+            73.821292,
+            18.630123
+          ],
+          [
+            73.819678,
+            18.629678
+          ],
+          [
+            73.819318,
+            18.629545
+          ],
+          [
+            73.815532,
+            18.62852
+          ],
+          [
+            73.814273,
+            18.628686
+          ],
+          [
+            73.813162,
+            18.62782
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R42",
+        "road_name": "Nashik Phata - Pimpri Spine Link",
+        "from_node": "N_BHOSARI",
+        "to_node": "N_PIMPRI",
+        "road_type": "primary",
+        "distance_km": 2.95,
+        "estimated_speed_kmph": 45,
+        "base_elevation_m": 580,
+        "midpoint_elevation_m": 580,
+        "slope_pct": 0.14,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R43",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.813162,
+            18.62782
+          ],
+          [
+            73.812585,
+            18.627766
+          ],
+          [
+            73.812394,
+            18.628959
+          ],
+          [
+            73.810127,
+            18.629312
+          ],
+          [
+            73.808145,
+            18.629167
+          ],
+          [
+            73.807101,
+            18.628029
+          ],
+          [
+            73.805773,
+            18.626394
+          ],
+          [
+            73.805702,
+            18.626195
+          ],
+          [
+            73.805481,
+            18.626256
+          ],
+          [
+            73.80314,
+            18.629019
+          ],
+          [
+            73.802335,
+            18.629965
+          ],
+          [
+            73.798933,
+            18.63396
+          ],
+          [
+            73.7973,
+            18.635868
+          ],
+          [
+            73.795043,
+            18.638534
+          ],
+          [
+            73.793582,
+            18.64023
+          ],
+          [
+            73.790933,
+            18.643341
+          ],
+          [
+            73.790436,
+            18.642871
+          ],
+          [
+            73.786836,
+            18.644265
+          ],
+          [
+            73.784674,
+            18.646294
+          ],
+          [
+            73.784005,
+            18.643787
+          ],
+          [
+            73.784554,
+            18.642026
+          ],
+          [
+            73.784981,
+            18.641927
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R43",
+        "road_name": "Old Mumbai-Pune Hwy (Pimpri - Chinchwad)",
+        "from_node": "N_PIMPRI",
+        "to_node": "N_CHINCHWAD",
+        "road_type": "trunk",
+        "distance_km": 5.13,
+        "estimated_speed_kmph": 50,
+        "base_elevation_m": 567,
+        "midpoint_elevation_m": 567,
+        "slope_pct": 0.1,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R44",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.784981,
+            18.641927
+          ],
+          [
+            73.783783,
+            18.643049
+          ],
+          [
+            73.784063,
+            18.64412
+          ],
+          [
+            73.784674,
+            18.646294
+          ],
+          [
+            73.78378,
+            18.645314
+          ],
+          [
+            73.781983,
+            18.645479
+          ],
+          [
+            73.780702,
+            18.645543
+          ],
+          [
+            73.780127,
+            18.645527
+          ],
+          [
+            73.777824,
+            18.645051
+          ],
+          [
+            73.776793,
+            18.645992
+          ],
+          [
+            73.776151,
+            18.64893
+          ],
+          [
+            73.775077,
+            18.648845
+          ],
+          [
+            73.77384,
+            18.648806
+          ],
+          [
+            73.770641,
+            18.649053
+          ],
+          [
+            73.769074,
+            18.649257
+          ],
+          [
+            73.767988,
+            18.64997
+          ],
+          [
+            73.767282,
+            18.650708
+          ],
+          [
+            73.767223,
+            18.65078
+          ],
+          [
+            73.766199,
+            18.651878
+          ],
+          [
+            73.765999,
+            18.6517
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R44",
+        "road_name": "Chinchwad - Nigdi Pradhikaran Hwy",
+        "from_node": "N_CHINCHWAD",
+        "to_node": "N_NIGDI",
+        "road_type": "trunk",
+        "distance_km": 3.27,
+        "estimated_speed_kmph": 55,
+        "base_elevation_m": 579,
+        "midpoint_elevation_m": 590,
+        "slope_pct": 0.55,
+        "drainage_condition": "good",
+        "access_restriction": "all_vehicles",
+        "one_way": false,
+        "is_bridge": false,
+        "is_tunnel": false,
+        "surface": "concrete",
+        "has_historical_flood": false,
+        "waterway_proximity": null,
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R45",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.764995,
+            18.597866
+          ],
+          [
+            73.763825,
+            18.599991
+          ],
+          [
+            73.764446,
+            18.60244
+          ],
+          [
+            73.764792,
+            18.60443
+          ],
+          [
+            73.76482,
+            18.606188
+          ],
+          [
+            73.765045,
+            18.607829
+          ],
+          [
+            73.765305,
+            18.610405
+          ],
+          [
+            73.76592,
+            18.613131
+          ],
+          [
+            73.765263,
+            18.615207
+          ],
+          [
+            73.766982,
+            18.617026
+          ],
+          [
+            73.771214,
+            18.620817
+          ],
+          [
+            73.77486,
+            18.62383
+          ],
+          [
+            73.775651,
+            18.624933
+          ],
+          [
+            73.775454,
+            18.627513
+          ],
+          [
+            73.775211,
+            18.628895
+          ],
+          [
+            73.775562,
+            18.629177
+          ],
+          [
+            73.777668,
+            18.631144
+          ],
+          [
+            73.778442,
+            18.630967
+          ],
+          [
+            73.781309,
+            18.629726
+          ],
+          [
+            73.781745,
+            18.634029
+          ],
+          [
+            73.782166,
+            18.63682
+          ],
+          [
+            73.783243,
+            18.641509
+          ],
+          [
+            73.784981,
+            18.641927
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R45",
+        "road_name": "Wakad - Dange Chowk - Chinchwad Link",
+        "from_node": "N_WAKAD",
+        "to_node": "N_CHINCHWAD",
+        "road_type": "primary",
         "distance_km": 6.5,
         "estimated_speed_kmph": 40,
-        "base_elevation_m": 580,
-        "slope_pct": 2.4,
+        "base_elevation_m": 570,
+        "midpoint_elevation_m": 570,
+        "slope_pct": 0.09,
         "drainage_condition": "moderate",
-        "accessibility": "all_vehicles",
+        "access_restriction": "all_vehicles",
         "one_way": false,
-        "flood_risk_level": "moderate",
-        "flood_risk_score": 36
+        "is_bridge": true,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Pavana River",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "R46",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            73.837651,
+            18.518627
+          ],
+          [
+            73.83966,
+            18.517827
+          ],
+          [
+            73.841496,
+            18.517581
+          ],
+          [
+            73.841108,
+            18.520522
+          ],
+          [
+            73.840918,
+            18.522404
+          ],
+          [
+            73.841404,
+            18.524829
+          ],
+          [
+            73.841817,
+            18.526203
+          ],
+          [
+            73.842761,
+            18.527974
+          ],
+          [
+            73.843557,
+            18.529392
+          ],
+          [
+            73.845625,
+            18.531324
+          ],
+          [
+            73.848267,
+            18.530629
+          ],
+          [
+            73.850483,
+            18.530045
+          ],
+          [
+            73.852608,
+            18.529499
+          ],
+          [
+            73.85378,
+            18.530112
+          ],
+          [
+            73.855337,
+            18.530349
+          ],
+          [
+            73.857734,
+            18.529694
+          ],
+          [
+            73.861704,
+            18.529717
+          ],
+          [
+            73.86332,
+            18.529732
+          ],
+          [
+            73.863565,
+            18.527746
+          ],
+          [
+            73.867349,
+            18.525647
+          ],
+          [
+            73.871896,
+            18.527493
+          ],
+          [
+            73.873669,
+            18.528363
+          ],
+          [
+            73.874415,
+            18.528648
+          ]
+        ]
+      },
+      "properties": {
+        "road_id": "R46",
+        "road_name": "Bhide / Lakdi Bridge - Riverside - Station",
+        "from_node": "N_DECCAN",
+        "to_node": "N_PUNE_STN",
+        "road_type": "secondary",
+        "distance_km": 5.69,
+        "estimated_speed_kmph": 25,
+        "base_elevation_m": 558,
+        "midpoint_elevation_m": 562,
+        "slope_pct": 0.26,
+        "drainage_condition": "poor",
+        "access_restriction": "no_heavy_vehicles",
+        "one_way": false,
+        "is_bridge": true,
+        "is_tunnel": false,
+        "surface": "asphalt",
+        "has_historical_flood": true,
+        "waterway_proximity": "Mutha River Causeway",
+        "geometry_source": "OpenStreetMap via OSRM Driving Network"
       }
     }
   ]

@@ -1,7 +1,18 @@
 export type Language = 'en' | 'hi' | 'mr';
 
-export type UserRole = 'CITIZEN' | 'EXPERT' | 'ADMIN';
+export type UserRole = 'CITIZEN' | 'EXPERT';
 export type AccountStatus = 'ACTIVE' | 'PENDING_APPROVAL' | 'REJECTED' | 'SUSPENDED';
+
+export type RoadStatus =
+  | 'OPEN'
+  | 'REPORTED_WATERLOGGING'
+  | 'VERIFIED_HAZARD'
+  | 'CLOSED'
+  | 'UNKNOWN';
+
+export type RiskCategory = 'Low' | 'Moderate' | 'High' | 'Severe' | 'Unknown';
+
+export type DataFreshness = 'LIVE' | 'OBSERVED_RECENT' | 'FORECAST' | 'DELAYED' | 'HISTORICAL' | 'UNAVAILABLE';
 
 export interface User {
   id: string;
@@ -47,6 +58,18 @@ export interface AuditLog {
   timestamp: string;
 }
 
+export interface AppNotification {
+  id: string;
+  userId?: string; // null/undefined = broadcast to all citizens
+  title: string;
+  message: string;
+  severity: 'info' | 'warning' | 'critical';
+  relatedRoadId?: string;
+  relatedReportId?: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
 export interface EvacuationPreferences {
   hasChildren: boolean;
   hasElderly: boolean;
@@ -59,7 +82,8 @@ export interface RoadNode {
   name: string;
   lat: number;
   lng: number;
-  elevationM: number;
+  elevationM: number | null;
+  sector?: string;
 }
 
 export interface RoadSegment {
@@ -69,14 +93,27 @@ export interface RoadSegment {
   to: string;
   distanceKm: number;
   speedKmph: number;
-  roadType: 'primary' | 'secondary' | 'trunk';
-  baseElevationM: number;
-  slopePct: number;
-  drainageCondition: 'good' | 'moderate' | 'poor' | 'clogged';
-  riskScore: number; // 0-100
-  status: 'open' | 'caution' | 'blocked' | 'critical_waterlogged';
+  roadType: 'trunk' | 'primary' | 'secondary' | 'tertiary';
+  baseElevationM: number | null;
+  slopePct: number | null;
+  drainageCondition: 'good' | 'moderate' | 'poor' | 'clogged' | 'unknown';
+  isOneWay: boolean;
+  accessRestriction: 'all_vehicles' | 'no_heavy_vehicles' | 'emergency_only';
+  isBridge?: boolean;
+  isTunnel?: boolean;
+  surface?: string;
+  hasHistoricalFlood: boolean;
+  waterwayProximity?: string | null;
+  riskScore: number | null; // 0-100 or null when unknown
+  riskCategory: RiskCategory;
+  confidenceScore: number; // 0-1 completeness/confidence
+  status: RoadStatus;
   coordinates: [number, number][]; // [lat, lng][] for Leaflet polyline
+  geometrySource?: string;
   lastUpdated?: string;
+  verifiedBy?: string;
+  statusReason?: string;
+  expiresAt?: string | null;
 }
 
 export interface Shelter {
@@ -124,7 +161,15 @@ export interface CommunityReport {
   locationName: string;
   lat: number;
   lng: number;
-  reportType: 'Waterlogging' | 'Road flooded' | 'Road blocked' | 'Heavy rainfall' | 'Drainage overflow' | 'Fallen tree' | 'Traffic disruption' | 'Rescue required';
+  reportType:
+    | 'Waterlogging'
+    | 'Road flooded'
+    | 'Road blocked'
+    | 'Heavy rainfall'
+    | 'Drainage overflow'
+    | 'Fallen tree'
+    | 'Traffic disruption'
+    | 'Rescue required';
   description: string;
   severity: 'Low' | 'Moderate' | 'High' | 'Critical';
   timestamp: string;
@@ -132,6 +177,8 @@ export interface CommunityReport {
   confidenceScore: number;
   imageUrl?: string;
   reviewedBy?: string;
+  reviewNotes?: string;
+  reviewedAt?: string;
   resolvedAt?: string;
 }
 
@@ -165,10 +212,23 @@ export interface RainfallObservation {
   stationName: string;
   lat: number;
   lng: number;
-  rainfallMm: number;
+  observedPast24hMm: number | null;
+  currentHourMm: number | null;
+  forecastNext24hMm: number | null;
   durationHrs: number;
   source: string;
+  resolution: string;
+  dataType: DataFreshness;
   timestamp: string;
+  isAvailable: boolean;
+}
+
+export interface RainfallFeedMetadata {
+  lastSuccessfulUpdate: string | null;
+  openMeteoStatus: 'OK' | 'UNAVAILABLE';
+  imdApiStatus: 'CONFIGURED' | 'KEY_MISSING' | 'UNAVAILABLE';
+  imdNote: string;
+  observations: RainfallObservation[];
 }
 
 export interface HistoricalFlood {
@@ -180,5 +240,18 @@ export interface HistoricalFlood {
   severity: string;
   waterLevelM: number;
   roadAffected: string;
+  source: string;
+}
+
+export interface WaterwayFeature {
+  id: string;
+  name: string;
+  waterwayType: 'river' | 'stream' | 'canal' | 'drain' | 'culvert';
+  sector: string;
+  lat: number;
+  lng: number;
+  capacityKnown: boolean;
+  reportedCapacityCusecs: number | null;
+  maintenanceNote: string;
   source: string;
 }

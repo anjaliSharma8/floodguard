@@ -1,193 +1,208 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  RoadSegment, 
-  RoadNode, 
-  Shelter, 
-  Hospital, 
-  EmergencyFacility, 
-  CommunityReport, 
-  LivePoll, 
-  RouteFeedback, 
-  RainfallObservation,
+import {
+  RoadSegment,
+  RoadNode,
+  RoadStatus,
+  Shelter,
+  Hospital,
+  EmergencyFacility,
+  WaterwayFeature,
+  CommunityReport,
+  LivePoll,
+  RouteFeedback,
+  RainfallFeedMetadata,
+  AppNotification,
   Language,
   User,
   AuditLog
 } from './types';
-import { 
-  PUNE_ROAD_NODES, 
-  INITIAL_ROAD_SEGMENTS, 
-  INITIAL_SHELTERS, 
-  INITIAL_HOSPITALS, 
-  INITIAL_EMERGENCY_FACILITIES, 
-  INITIAL_COMMUNITY_REPORTS, 
-  INITIAL_POLLS,
-  INITIAL_RAINFALL
+import {
+  PUNE_ROAD_NODES,
+  INITIAL_ROAD_SEGMENTS,
+  INITIAL_SHELTERS,
+  INITIAL_HOSPITALS,
+  INITIAL_EMERGENCY_FACILITIES,
+  INITIAL_WATERWAYS,
+  INITIAL_COMMUNITY_REPORTS,
+  INITIAL_POLLS
 } from './data/puneData';
-import { RouteCalculationResult } from './utils/rules';
+import { MultiRouteResponse, RouteMode } from './utils/rules';
 import { WelcomePortal } from './components/WelcomePortal';
 import { AuthView } from './components/AuthView';
 import { CitizenView } from './components/CitizenView';
 import { ExpertView } from './components/ExpertView';
 import { ChatbotModal } from './components/ChatbotModal';
 import { OfflineGuideModal } from './components/OfflineGuideModal';
-import { startSpeechRecognition, speakText } from './utils/speech';
+import { startSpeechRecognition, speakText, isSpeechRecognitionSupported } from './utils/speech';
 
-const INITIAL_AUDIT_LOGS: AuditLog[] = [
-  {
-    id: 'LOG_01',
-    actorId: 'USR_EXPERT_01',
-    actorName: 'Dr. Rajiv Kulkarni',
-    actorRole: 'EXPERT',
-    action: 'ROAD_STATUS_CHANGE',
-    targetResource: 'R03 (Sinhagad Road)',
-    details: 'Status changed to critical_waterlogged due to 18,400 cusecs Khadakwasla Dam release',
-    timestamp: '2026-10-30T08:15:00Z'
-  },
-  {
-    id: 'LOG_02',
-    actorId: 'USR_EXPERT_01',
-    actorName: 'Dr. Rajiv Kulkarni',
-    actorRole: 'EXPERT',
-    action: 'REPORT_VERIFICATION',
-    targetResource: 'REP_101',
-    details: 'Verified citizen waterlogging report near Ekta Nagari',
-    timestamp: '2026-10-30T08:20:00Z'
-  }
-];
+const TOKEN_STORAGE_KEY = 'sanketsetu_token';
+const USER_STORAGE_KEY = 'sanketsetu_user';
 
 export function App() {
-  // Authentication & Session State
+  // Authentication & Session State (strictly CITIZEN | EXPERT)
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [authPortalType, setAuthPortalType] = useState<'CITIZEN' | 'EXPERT' | null>(null);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
 
   // App Configuration & General State
   const [lang, setLang] = useState<Language>('en');
   const [isOffline, setIsOffline] = useState<boolean>(false);
 
-  // Core Hydrological & Spatial Data
-  const [nodes] = useState<Record<string, RoadNode>>(PUNE_ROAD_NODES);
+  // Core Hydrological & Spatial Data (hydrated from backend APIs + offline fallback)
+  const [nodes, setNodes] = useState<Record<string, RoadNode>>(PUNE_ROAD_NODES);
   const [roads, setRoads] = useState<RoadSegment[]>(INITIAL_ROAD_SEGMENTS);
-  const [shelters] = useState<Shelter[]>(INITIAL_SHELTERS);
-  const [hospitals] = useState<Hospital[]>(INITIAL_HOSPITALS);
-  const [facilities] = useState<EmergencyFacility[]>(INITIAL_EMERGENCY_FACILITIES);
+  const [shelters, setShelters] = useState<Shelter[]>(INITIAL_SHELTERS);
+  const [hospitals, setHospitals] = useState<Hospital[]>(INITIAL_HOSPITALS);
+  const [facilities, setFacilities] = useState<EmergencyFacility[]>(INITIAL_EMERGENCY_FACILITIES);
+  const [waterways, setWaterways] = useState<WaterwayFeature[]>(INITIAL_WATERWAYS);
   const [reports, setReports] = useState<CommunityReport[]>(INITIAL_COMMUNITY_REPORTS);
   const [polls, setPolls] = useState<LivePoll[]>(INITIAL_POLLS);
-  const [routeFeedbacks, setRouteFeedbacks] = useState<RouteFeedback[]>([
-    {
-      id: 'FB_01',
-      userId: 'usr_pune_89',
-      routeName: 'Karve Road Alternative to Kothrud',
-      reachedSafely: true,
-      routeCondition: 'Clear with light puddles near Paud flyover',
-      waterLevelCategory: 'None / Minor',
-      travelTimeMins: 12,
-      rating: 5,
-      timestamp: new Date().toISOString()
-    }
-  ]);
-  const [rainfall] = useState<RainfallObservation[]>(INITIAL_RAINFALL);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(INITIAL_AUDIT_LOGS);
+  const [routeFeedbacks, setRouteFeedbacks] = useState<RouteFeedback[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [rainfallFeed, setRainfallFeed] = useState<RainfallFeedMetadata | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
-  // Routing State
-  const [activeCalculation, setActiveCalculation] = useState<{
-    shortest: RouteCalculationResult;
-    safest: RouteCalculationResult;
-  } | null>(null);
+  // Routing & Map Selection State
+  const [activeCalculation, setActiveCalculation] = useState<
+    (MultiRouteResponse & { activeMode: RouteMode; altIndex?: number }) | null
+  >(null);
   const [selectedRoad, setSelectedRoad] = useState<RoadSegment | null>(null);
+  const [externalOriginId, setExternalOriginId] = useState<string | undefined>(undefined);
+  const [externalDestId, setExternalDestId] = useState<string | undefined>(undefined);
+  const [citizenNavOverride, setCitizenNavOverride] = useState<
+    'dashboard' | 'routes' | 'community' | 'emergency' | 'my-reports' | 'alerts' | 'datasets' | 'profile' | undefined
+  >(undefined);
 
   // Modals & Voice State
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isOfflineGuideOpen, setIsOfflineGuideOpen] = useState(false);
   const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
 
-  // Fetch audit logs when expert or admin is active
   const fetchAuditLogs = useCallback(() => {
     if (!token) return;
     fetch('/api/expert/audit-logs', {
       headers: { Authorization: `Bearer ${token}` }
     })
-      .then(res => res.json())
+      .then(res => (res.ok ? res.json() : null))
       .then(data => {
-        if (Array.isArray(data)) {
-          setAuditLogs(data);
-        } else if (data.auditLogs) {
-          setAuditLogs(data.auditLogs);
-        }
+        if (data?.auditLogs) setAuditLogs(data.auditLogs);
       })
       .catch(() => {});
   }, [token]);
 
-  // Session restore & verification on initial load
+  const hydrateLiveData = useCallback((authToken?: string | null) => {
+    const authHeaders = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
+
+    fetch('/api/roads')
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        if (data?.nodes) setNodes(data.nodes);
+        if (data?.segments) setRoads(data.segments);
+        if (data?.rainfall) setRainfallFeed(data.rainfall);
+      })
+      .catch(() => {});
+
+    fetch('/api/shelters')
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => { if (Array.isArray(data)) setShelters(data); })
+      .catch(() => {});
+
+    fetch('/api/hospitals')
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => { if (Array.isArray(data)) setHospitals(data); })
+      .catch(() => {});
+
+    fetch('/api/emergency-facilities')
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => { if (Array.isArray(data)) setFacilities(data); })
+      .catch(() => {});
+
+    fetch('/api/waterways')
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => { if (Array.isArray(data)) setWaterways(data); })
+      .catch(() => {});
+
+    fetch('/api/reports')
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => { if (Array.isArray(data)) setReports(data); })
+      .catch(() => {});
+
+    fetch('/api/polls', { headers: authHeaders })
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => { if (Array.isArray(data)) setPolls(data); })
+      .catch(() => {});
+
+    fetch('/api/routes/feedback')
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => { if (Array.isArray(data)) setRouteFeedbacks(data); })
+      .catch(() => {});
+
+    fetch('/api/notifications', { headers: authHeaders })
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => { if (Array.isArray(data)) setNotifications(data); })
+      .catch(() => {});
+  }, []);
+
+  // Session restore on mount
   useEffect(() => {
-    const savedToken = localStorage.getItem('floodguard_token');
-    const savedUser = localStorage.getItem('floodguard_user');
+    const savedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+    const savedUser = localStorage.getItem(USER_STORAGE_KEY);
 
     if (savedToken && savedUser) {
       try {
         const parsed = JSON.parse(savedUser) as User;
         setToken(savedToken);
         setCurrentUser(parsed);
-        if (parsed.preferredLanguage) {
-          setLang(parsed.preferredLanguage);
-        }
+        if (parsed.preferredLanguage) setLang(parsed.preferredLanguage);
 
-        // Verify with backend
         fetch('/api/auth/me', {
           headers: { Authorization: `Bearer ${savedToken}` }
         })
-          .then(res => res.json())
+          .then(res => (res.ok ? res.json() : null))
           .then(data => {
-            if (data.success && data.user) {
+            if (data?.success && data.user) {
               setCurrentUser(data.user);
-              localStorage.setItem('floodguard_user', JSON.stringify(data.user));
+              localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data.user));
+              hydrateLiveData(savedToken);
             } else {
               handleLogout();
             }
           })
           .catch(() => {
-            // Keep local state on network error
+            hydrateLiveData(savedToken);
           })
-          .finally(() => {
-            setIsCheckingAuth(false);
-          });
+          .finally(() => setIsCheckingAuth(false));
       } catch {
         handleLogout();
         setIsCheckingAuth(false);
       }
     } else {
+      hydrateLiveData(null);
       setIsCheckingAuth(false);
     }
-  }, []);
+  }, [hydrateLiveData]);
 
-  // Fetch updated road segments from backend
+  // Sync audit logs & user-specific data whenever token changes
   useEffect(() => {
-    fetch('/api/roads')
-      .then(res => res.json())
-      .then(data => {
-        if (data.segments) setRoads(data.segments);
-      })
-      .catch(() => {});
-  }, []);
-
-  // Sync audit logs when user role is EXPERT or ADMIN
-  useEffect(() => {
-    if (currentUser && (currentUser.role === 'EXPERT' || currentUser.role === 'ADMIN') && token) {
-      fetchAuditLogs();
+    if (token) {
+      hydrateLiveData(token);
+      if (currentUser?.role === 'EXPERT') {
+        fetchAuditLogs();
+      }
     }
-  }, [currentUser, token, fetchAuditLogs]);
+  }, [token, currentUser?.role, hydrateLiveData, fetchAuditLogs]);
 
-  // Auth Handlers
   const handleAuthSuccess = (newToken: string, user: User) => {
     setToken(newToken);
     setCurrentUser(user);
     setAuthPortalType(null);
-    localStorage.setItem('floodguard_token', newToken);
-    localStorage.setItem('floodguard_user', JSON.stringify(user));
-    if (user.preferredLanguage) {
-      setLang(user.preferredLanguage);
-    }
+    setAuthNotice(null);
+    localStorage.setItem(TOKEN_STORAGE_KEY, newToken);
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+    if (user.preferredLanguage) setLang(user.preferredLanguage);
   };
 
   const handleLogout = () => {
@@ -197,27 +212,28 @@ export function App() {
     setToken(null);
     setCurrentUser(null);
     setAuthPortalType(null);
-    localStorage.removeItem('floodguard_token');
-    localStorage.removeItem('floodguard_user');
+    setActiveCalculation(null);
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY);
   };
 
-  // Quick Demo Login for instant Katathon evaluation
-  const handleQuickDemoLogin = async (email: string, pass: string, targetRole: 'CITIZEN' | 'EXPERT') => {
+  // Dev-only Quick Demo Login (zero passwords stored client-side)
+  const handleQuickDevLogin = async (account: 'citizen' | 'expert' | 'pending_expert') => {
+    setAuthNotice(null);
     try {
-      const endpoint = targetRole === 'CITIZEN' ? '/api/auth/citizen/login' : '/api/auth/expert/login';
-      const res = await fetch(endpoint, {
+      const res = await fetch('/api/auth/dev-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password: pass })
+        body: JSON.stringify({ account })
       });
       const data = await res.json();
-      
+
       if (!res.ok) {
         if (data.accountStatus === 'PENDING_APPROVAL') {
-          // Switch to Expert Auth screen so user sees clear "Application Awaiting Approval" screen
+          setAuthNotice(data.error || 'Expert application awaiting verification.');
           setAuthPortalType('EXPERT');
         } else {
-          console.warn('Quick login returned status:', data.error);
+          setAuthNotice(data.error || 'Demo sign-in unavailable.');
         }
         return;
       }
@@ -226,40 +242,89 @@ export function App() {
         handleAuthSuccess(data.token, data.user);
       }
     } catch (err) {
-      console.error('Quick demo login error:', err);
+      console.error('Quick dev login error:', err);
     }
   };
 
-  // Voice Assistant Activation
+  // Process Voice / Text Command
+  const handleRunCommand = (transcript: string) => {
+    const lower = transcript.toLowerCase();
+
+    if (lower.includes('kothrud') || lower.includes('कोथरूड') || lower.includes('कोथरूड')) {
+      setExternalOriginId('N_SHIVAJINAGAR');
+      setExternalDestId('N_KOTHRUD');
+      setCitizenNavOverride('routes');
+      const msg = 'Opening safest route toward Kothrud / Chandani Chowk.';
+      setVoiceFeedback(msg);
+      speakText(msg, lang);
+      return;
+    }
+
+    if (lower.includes('hinjewadi') || lower.includes('hinjawadi') || lower.includes('wakad') || lower.includes('pimpri') || lower.includes('पिंपरी')) {
+      setExternalOriginId('N_SHIVAJINAGAR');
+      setExternalDestId('N_WAKAD');
+      setCitizenNavOverride('routes');
+      const msg = 'Opening route corridor toward Wakad / Hinjawadi (PCMC).';
+      setVoiceFeedback(msg);
+      speakText(msg, lang);
+      return;
+    }
+
+    if (lower.includes('sinhagad') || lower.includes('सिंहगड')) {
+      const sinhagadRoad = roads.find(r => r.name.toLowerCase().includes('sinhagad'));
+      if (sinhagadRoad) setSelectedRoad(sinhagadRoad);
+      setCitizenNavOverride('routes');
+      const msg = `Sinhagad Road status: ${sinhagadRoad?.status || 'Checked'}. Risk score: ${sinhagadRoad?.riskScore ?? 'Unknown'}.`;
+      setVoiceFeedback(msg);
+      speakText(msg, lang);
+      return;
+    }
+
+    if (lower.includes('report') || lower.includes('waterlog') || lower.includes('पाणी') || lower.includes('जलभराव')) {
+      setCitizenNavOverride('community');
+      const msg = 'Opening Community Hazard Reporting feed.';
+      setVoiceFeedback(msg);
+      speakText(msg, lang);
+      return;
+    }
+
+    if (lower.includes('shelter') || lower.includes('sos') || lower.includes('help') || lower.includes('मदत') || lower.includes('आश्रय')) {
+      setCitizenNavOverride('emergency');
+      const msg = 'Opening Emergency SOS & verified shelters directory.';
+      setVoiceFeedback(msg);
+      speakText(msg, lang);
+      return;
+    }
+
+    const fallbackMsg = `Command heard: "${transcript}". Opening SanketSetu Emergency Assistant if you need detailed guidance.`;
+    setVoiceFeedback(fallbackMsg);
+    speakText(fallbackMsg, lang);
+  };
+
+  // Voice Assistant Activation (handles permission denial & unsupported browsers cleanly)
   const handleTriggerVoice = () => {
     if (isVoiceListening) {
       setIsVoiceListening(false);
       return;
     }
 
+    if (!isSpeechRecognitionSupported()) {
+      setVoiceFeedback('Browser voice recognition unavailable. Use the text command bar here instead.');
+      return;
+    }
+
     setIsVoiceListening(true);
-    speakText('FloodGuard listening. Please speak your destination or flood report.', lang);
+    setVoiceFeedback('Listening for Pune/PCMC command...');
+    speakText('SanketSetu listening. Speak your destination or command.', lang);
 
     startSpeechRecognition(lang, {
       onResult: (transcript) => {
         setIsVoiceListening(false);
-        const lower = transcript.toLowerCase();
-
-        if (lower.includes('kothrud') || lower.includes('कोथरूड')) {
-          speakText('Routing to Kothrud Chandani Chowk road. Safest path selected.', lang);
-        } else if (lower.includes('sinhagad') || lower.includes('सिंहगड')) {
-          speakText('Caution: Sinhagad Road has critical waterlogging reports. Showing safe detour.', lang);
-        } else if (lower.includes('report') || lower.includes('flood') || lower.includes('पाणी')) {
-          speakText('Opening community incident reporting desk.', lang);
-        } else if (lower.includes('shelter') || lower.includes('मदत') || lower.includes('आश्रय')) {
-          speakText('Opening emergency relief shelters.', lang);
-        } else {
-          speakText(`Heard: ${transcript}. Checking safety advisories.`, lang);
-        }
+        handleRunCommand(transcript);
       },
       onError: (err) => {
         setIsVoiceListening(false);
-        console.warn('Voice recognition notice:', err);
+        setVoiceFeedback(err);
       },
       onEnd: () => {
         setIsVoiceListening(false);
@@ -267,198 +332,216 @@ export function App() {
     });
   };
 
-  // Add Community Report (Citizen)
-  const handleAddReport = (newReportData: Partial<CommunityReport>) => {
-    const newReport: CommunityReport = {
-      id: `REP_${Date.now()}`,
-      userId: currentUser?.id || `usr_cit_${Math.floor(Math.random() * 900 + 100)}`,
-      locationName: newReportData.locationName || 'Pune Landmark',
-      lat: newReportData.lat || 18.5204,
-      lng: newReportData.lng || 73.8567,
-      reportType: newReportData.reportType || 'Waterlogging',
-      description: newReportData.description || 'Citizen reported water hazard',
-      severity: newReportData.severity || 'Moderate',
-      timestamp: new Date().toISOString(),
-      verificationStatus: 'Reported',
-      confidenceScore: 0.70
-    };
-
-    setReports(prev => [newReport, ...prev]);
-
-    fetch('/api/reports', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      },
-      body: JSON.stringify(newReport)
-    }).catch(() => {});
-  };
-
-  // Vote on Live Poll (Citizen)
-  const handleVotePoll = (pollId: string, option: string) => {
-    setPolls(prev => prev.map(p => {
-      if (p.id !== pollId) return p;
-      const currentVotes = p.votes[option] || 0;
-      return {
-        ...p,
-        votes: { ...p.votes, [option]: currentVotes + 1 },
-        totalVotes: p.totalVotes + 1
-      };
-    }));
-
-    fetch(`/api/polls/${pollId}/vote`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ option })
-    }).catch(() => {});
-  };
-
-  // Submit Route Feedback (Citizen)
-  const handleSubmitFeedback = (fbData: Partial<RouteFeedback>) => {
-    const newFb: RouteFeedback = {
-      id: `FB_${Date.now()}`,
-      userId: currentUser?.id || `usr_cit_${Math.floor(Math.random() * 900 + 100)}`,
-      routeName: fbData.routeName || 'Pune Route',
-      reachedSafely: fbData.reachedSafely ?? true,
-      routeCondition: fbData.routeCondition || 'Clear',
-      waterLevelCategory: fbData.waterLevelCategory || 'None',
-      travelTimeMins: fbData.travelTimeMins || 15,
-      rating: fbData.rating || 5,
-      timestamp: new Date().toISOString()
-    };
-
-    setRouteFeedbacks(prev => [newFb, ...prev]);
-
-    fetch('/api/routes/feedback', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newFb)
-    }).catch(() => {});
-  };
-
-  // Authority Action: Update Road Status (Open / Blocked / Waterlogged)
-  const handleUpdateRoadStatus = async (roadId: string, status: RoadSegment['status'], riskScore?: number) => {
-    setRoads(prev => prev.map(r => {
-      if (r.id !== roadId) return r;
-      return {
-        ...r,
-        status,
-        riskScore: typeof riskScore === 'number' ? riskScore : r.riskScore
-      };
-    }));
-
+  // Add Community Report (persisted in SQLite; NEVER auto-closes a road)
+  const handleAddReport = async (newReportData: Partial<CommunityReport>): Promise<{ ok: boolean; error?: string }> => {
     try {
-      await fetch(`/api/roads/${roadId}/status`, {
+      const res = await fetch('/api/reports', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(newReportData)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { ok: false, error: data.error || 'Could not submit report.' };
+      }
+      if (data.report) {
+        setReports(prev => [data.report, ...prev]);
+      }
+      if (Array.isArray(data.roads)) {
+        setRoads(data.roads);
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Network error while saving report.' };
+    }
+  };
+
+  // Vote on Live Poll (one vote per user per poll enforced server-side)
+  const handleVotePoll = async (pollId: string, option: string): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch(`/api/polls/${pollId}/vote`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ option })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { ok: false, error: data.error || 'Could not record vote.' };
+      }
+      if (data.poll) {
+        setPolls(prev => prev.map(p => (p.id === pollId ? data.poll : p)));
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Network error while voting.' };
+    }
+  };
+
+  // Submit Route Feedback
+  const handleSubmitFeedback = async (fbData: Partial<RouteFeedback>) => {
+    try {
+      const res = await fetch('/api/routes/feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(fbData)
+      });
+      const data = await res.json();
+      if (res.ok && data.feedback) {
+        setRouteFeedbacks(prev => [data.feedback, ...prev]);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // Mark notification read
+  const handleMarkNotificationRead = async (id: string) => {
+    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, isRead: true } : n)));
+    if (!token) return;
+    fetch(`/api/notifications/${id}/read`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` }
+    }).catch(() => {});
+  };
+
+  // Expert Action: Update Road Status (requires reason & supports expiry)
+  const handleUpdateRoadStatus = async (
+    roadId: string,
+    status: RoadStatus,
+    reason: string,
+    riskScore?: number,
+    expiresInHours?: number
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const res = await fetch(`/api/roads/${roadId}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ status, riskScore })
+        body: JSON.stringify({ status, reason, riskScore, expiresInHours })
       });
+      const data = await res.json();
+      if (!res.ok) {
+        return { ok: false, error: data.error || 'Failed to update road status.' };
+      }
+      if (data.updatedRoad) {
+        setRoads(prev => prev.map(r => (r.id === roadId ? data.updatedRoad : r)));
+      }
       fetchAuditLogs();
-    } catch (err) {
-      console.warn('Failed to update road status:', err);
+      hydrateLiveData(token);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Network error while updating road status.' };
     }
   };
 
-  // Authority Action: Verify Citizen Report
-  const handleVerifyReport = async (reportId: string, status: CommunityReport['verificationStatus'], action?: string) => {
-    setReports(prev => prev.map(rep => {
-      if (rep.id !== reportId) return rep;
-      return {
-        ...rep,
-        verificationStatus: status,
-        confidenceScore: status === 'Verified' ? 0.95 : (status === 'Rejected' ? 0.20 : rep.confidenceScore)
-      };
-    }));
-
+  // Expert Action: Verify / Reject / Resolve Citizen Report
+  const handleVerifyReport = async (
+    reportId: string,
+    verificationStatus: CommunityReport['verificationStatus'],
+    officialAction?: 'verify_hazard' | 'close_road',
+    reviewNotes?: string,
+    expiresInHours?: number
+  ): Promise<{ ok: boolean; error?: string }> => {
     try {
-      await fetch(`/api/reports/${reportId}/verify`, {
+      const res = await fetch(`/api/reports/${reportId}/verify`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ verificationStatus: status, officialAction: action })
+        body: JSON.stringify({ verificationStatus, officialAction, reviewNotes, expiresInHours })
       });
+      const data = await res.json();
+      if (!res.ok) {
+        return { ok: false, error: data.error || 'Failed to verify report.' };
+      }
+      if (data.report) {
+        setReports(prev => prev.map(rep => (rep.id === reportId ? data.report : rep)));
+      }
+      if (Array.isArray(data.roads)) {
+        setRoads(data.roads);
+      }
       fetchAuditLogs();
-    } catch (err) {
-      console.warn('Failed to verify report:', err);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Network error while verifying report.' };
     }
   };
 
-  // Pre-Flood Simulation: What-If cloudburst scenario
-  const handleSimulateRainfall = (simulatedMm: number) => {
-    setRoads(prev => prev.map(road => {
-      const elevPenalty = Math.max(0, (580 - road.baseElevationM) * 0.8);
-      const rainRisk = (simulatedMm / 150) * 60;
-      const drainPenalty = road.drainageCondition === 'poor' ? 30 : (road.drainageCondition === 'moderate' ? 15 : 5);
-      const newScore = Math.min(100, Math.round(rainRisk + elevPenalty + drainPenalty));
-
-      let newStatus = road.status;
-      if (newScore >= 85) newStatus = 'critical_waterlogged';
-      else if (newScore >= 60) newStatus = 'caution';
-
-      return {
-        ...road,
-        riskScore: newScore,
-        status: newStatus
-      };
-    }));
-  };
-
-  // While restoring session from localStorage/API, show quick clean loader
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-300">
         <div className="w-10 h-10 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-sm font-semibold tracking-wide text-cyan-400">Verifying FloodGuard Disaster Credentials...</p>
+        <p className="text-sm font-semibold tracking-wide text-cyan-400">Initializing SanketSetu System...</p>
       </div>
     );
   }
 
-  // GATEWAY 1: Not Logged In & No Role Selected -> Render Welcome Portal
+  // GATEWAY 1: Welcome Portal
   if (!currentUser && !authPortalType) {
     return (
       <WelcomePortal
-        onSelectRole={(role) => setAuthPortalType(role)}
-        onQuickDemoLogin={handleQuickDemoLogin}
+        onSelectRole={(role) => {
+          setAuthNotice(null);
+          setAuthPortalType(role);
+        }}
+        onQuickDevLogin={handleQuickDevLogin}
         lang={lang}
       />
     );
   }
 
-  // GATEWAY 2: Not Logged In & Role Selected -> Render Dedicated Auth View (Citizen or Expert)
+  // GATEWAY 2: Dedicated Auth View (Citizen or Expert)
   if (!currentUser && authPortalType) {
     return (
-      <AuthView
-        portalType={authPortalType}
-        onBackToPortal={() => setAuthPortalType(null)}
-        onAuthSuccess={handleAuthSuccess}
-        lang={lang}
-      />
+      <div className="min-h-screen bg-slate-950">
+        {authNotice && (
+          <div className="bg-amber-950/80 border-b border-amber-700 text-amber-200 text-xs text-center py-2 px-4">
+            {authNotice}
+          </div>
+        )}
+        <AuthView
+          portalType={authPortalType}
+          onBackToPortal={() => {
+            setAuthNotice(null);
+            setAuthPortalType(null);
+          }}
+          onAuthSuccess={handleAuthSuccess}
+          lang={lang}
+        />
+      </div>
     );
   }
 
-  // GATEWAY 3: Logged In as Citizen -> Dedicated Citizen Interface (NO AUTHORITY CONTROLS)
+  // GATEWAY 3: Citizen Interface (Zero Authority Controls)
   if (currentUser && currentUser.role === 'CITIZEN') {
     return (
       <>
         <CitizenView
           user={currentUser}
-          token={token || ''}
           onLogout={handleLogout}
           roads={roads}
           nodes={nodes}
           shelters={shelters}
           hospitals={hospitals}
           facilities={facilities}
+          waterways={waterways}
           reports={reports}
           polls={polls}
           routeFeedbacks={routeFeedbacks}
-          rainfall={rainfall}
+          notifications={notifications}
+          rainfallFeed={rainfallFeed}
           lang={lang}
           setLang={setLang}
           isOffline={isOffline}
@@ -466,17 +549,24 @@ export function App() {
           onOpenChat={() => setIsChatOpen(true)}
           onOpenOfflineGuide={() => setIsOfflineGuideOpen(true)}
           onTriggerVoice={handleTriggerVoice}
+          onRunCommand={handleRunCommand}
           isVoiceListening={isVoiceListening}
+          voiceFeedback={voiceFeedback}
           onAddReport={handleAddReport}
           onVotePoll={handleVotePoll}
           onSubmitFeedback={handleSubmitFeedback}
+          onMarkNotificationRead={handleMarkNotificationRead}
           activeCalculation={activeCalculation}
-          onRouteCalculated={(res) => setActiveCalculation(res)}
+          onRouteCalculated={setActiveCalculation}
           selectedRoad={selectedRoad}
-          onSelectRoad={(road) => setSelectedRoad(road)}
+          onSelectRoad={setSelectedRoad}
+          externalOriginId={externalOriginId}
+          externalDestId={externalDestId}
+          onGpsDetectedOrigin={nodeId => setExternalOriginId(nodeId)}
+          activeNavOverride={citizenNavOverride}
+          onClearNavOverride={() => setCitizenNavOverride(undefined)}
         />
 
-        {/* Floating Modals */}
         <ChatbotModal
           isOpen={isChatOpen}
           onClose={() => setIsChatOpen(false)}
@@ -491,8 +581,8 @@ export function App() {
     );
   }
 
-  // GATEWAY 4: Logged In as Expert / Admin -> Dedicated Expert Interface (FULL AUTHORITY & GIS DESK)
-  if (currentUser && (currentUser.role === 'EXPERT' || currentUser.role === 'ADMIN')) {
+  // GATEWAY 4: Expert Interface (Strictly EXPERT role only)
+  if (currentUser && currentUser.role === 'EXPERT') {
     return (
       <>
         <ExpertView
@@ -504,18 +594,17 @@ export function App() {
           shelters={shelters}
           hospitals={hospitals}
           facilities={facilities}
+          waterways={waterways}
           reports={reports}
-          rainfall={rainfall}
+          rainfallFeed={rainfallFeed}
           auditLogs={auditLogs}
           onUpdateRoadStatus={handleUpdateRoadStatus}
           onVerifyReport={handleVerifyReport}
-          onSimulateRainfall={handleSimulateRainfall}
           selectedRoad={selectedRoad}
-          onSelectRoad={(road) => setSelectedRoad(road)}
+          onSelectRoad={setSelectedRoad}
           onRefreshAuditLogs={fetchAuditLogs}
         />
 
-        {/* Floating Modals */}
         <ChatbotModal
           isOpen={isChatOpen}
           onClose={() => setIsChatOpen(false)}
@@ -530,11 +619,10 @@ export function App() {
     );
   }
 
-  // Fallback (Safe default to Welcome Portal)
   return (
     <WelcomePortal
       onSelectRole={(role) => setAuthPortalType(role)}
-      onQuickDemoLogin={handleQuickDemoLogin}
+      onQuickDevLogin={handleQuickDevLogin}
       lang={lang}
     />
   );

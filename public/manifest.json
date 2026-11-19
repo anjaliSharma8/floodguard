@@ -1,11 +1,11 @@
 {
-  "name": "FloodGuard – Flood Risk Intelligence",
-  "short_name": "FloodGuard",
+  "name": "SanketSetu – Flood Risk & Safe-Route System",
+  "short_name": "SanketSetu",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#020617",
   "theme_color": "#0f172a",
-  "description": "AI-powered, community-driven flood risk intelligence and emergency safe-route management system for Pune & PCMC.",
+  "description": "Smart flood risk assessment and emergency safe-route management system for Pune & PCMC.",
   "icons": [
     {
       "src": "/favicon.ico",
