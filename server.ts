@@ -35,6 +35,38 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 app.use(express.json());
 
+
+// Allow Flutter Web to access the Express API
+const allowedOrigins = [
+  'http://localhost:8080',
+  'http://127.0.0.1:8080',
+];
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const origin = req.headers.origin;
+
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+
+  res.setHeader('Vary', 'Origin');
+  res.setHeader(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+  );
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization'
+  );
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+
+  next();
+});
+
+
 import { hashPassword, verifyPassword, generateToken, decodeToken } from './src/utils/auth';
 
 // ----------------- Database State -----------------
