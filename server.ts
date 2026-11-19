@@ -1,9 +1,10 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { FunctionDeclaration, GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
+import { createServer as createHttpServer } from 'node:http';
+import { createServer as createTcpServer } from 'node:net';
 import { resolve } from 'node:path';
 import {
-  PUNE_ROAD_NODES,
   INITIAL_HOSPITALS,
   INITIAL_EMERGENCY_FACILITIES,
   INITIAL_HISTORICAL_FLOODS,
@@ -11,6 +12,13 @@ import {
 } from './src/data/puneData';
 import { SanketSetuDatabase } from './src/db/database';
 import { getLiveRainfallFeed, recomputeRoadRisksFromTelemetry } from './src/services/weatherService';
+import { getSegmentTrafficSpeed, getTrafficFeedStatus } from './src/services/trafficService';
+import {
+  startScheduledOsmSync,
+  executeOsmSynchronization,
+  registerGraphUpdateListener,
+  stopScheduledOsmSync
+} from './src/services/osmSyncService';
 import {
   calculateFloodRisk,
   calculateDijkstraRoute,
@@ -29,6 +37,7 @@ import {
 import {
   CommunityReport,
   ExpertApplication,
+  RoadNode,
   RoadSegment,
   RoadStatus,
   RouteFeedback,
@@ -48,6 +57,7 @@ const PUNE_BOUNDS = {
   minLng: 73.58,
   maxLng: 74.12
 };
+const MAX_TOMTOM_SEGMENTS_PER_ROUTE = 12;
 
 function isValidPuneCoordinate(lat: number, lng: number): boolean {
   return (
@@ -96,6 +106,14 @@ function createRateLimiter(windowMs: number, maxRequests: number) {
 export function createSanketSetuApp(dbPath?: string) {
   const app = express();
   const db = new SanketSetuDatabase(dbPath);
+
+  // Maintain active road network nodes dynamically in memory
+  let activeNodes: Record<string, RoadNode> = db.getRoadNodes();
+
+  // Refresh and validate the bundled OSM-derived graph on the scheduled interval.
+  startScheduledOsmSync(db, (updatedNodes) => {
+    activeNodes = updatedNodes;
+  });
 
   const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -199,7 +217,7 @@ export function createSanketSetuApp(dbPath?: string) {
     const reports = db.getReports();
     const computed = recomputeRoadRisksFromTelemetry(
       storedRoads,
-      PUNE_ROAD_NODES,
+      activeNodes,
       rainfall.observations,
       reports
     );
@@ -508,7 +526,7 @@ export function createSanketSetuApp(dbPath?: string) {
     const force = req.query.refresh === 'true';
     const { roads, rainfall } = await getAuthoritativeRoads(force);
     res.json({
-      nodes: PUNE_ROAD_NODES,
+      nodes: activeNodes,
       segments: roads,
       rainfall,
       lastUpdated: new Date().toISOString()
@@ -578,6 +596,40 @@ export function createSanketSetuApp(dbPath?: string) {
     res.json({ success: true, updatedRoad });
   });
 
+  app.get('/api/traffic/status', (_req: Request, res: Response) => {
+    res.json(getTrafficFeedStatus());
+  });
+
+  app.get('/api/network/status', (_req: Request, res: Response) => {
+    const latestSync = db.getLatestOsmSync();
+    res.json({
+      provider: 'OpenStreetMap ODbL-derived bundled road snapshot',
+      syncMode: 'LOCAL_CANONICAL_SNAPSHOT_REFRESH',
+      externalFetchEnabled: false,
+      statusMessage: 'The scheduled task refreshes and validates the bundled road graph; it does not fetch current data from Overpass.',
+      syncIntervalHours: parseFloat(process.env.OSM_SYNC_INTERVAL_HOURS || '24'),
+      syncEnabled: process.env.OSM_SYNC_ENABLED !== 'false',
+      nodesCount: Object.keys(activeNodes).length,
+      edgesCount: db.getRoadSegments().length,
+      lastSync: latestSync,
+      lastValidation: latestSync,
+      recentLogs: db.getOsmSyncLogs(5),
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  app.post('/api/expert/network/sync', writeLimiter, authenticateToken, requireRoles(['EXPERT']), async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const result = await executeOsmSynchronization(db, 'MANUAL', req.user);
+      if (!result.success) {
+        return res.status(400).json({ error: result.message, details: result.error });
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to refresh the bundled OSM-derived road graph: ' + (err.message || String(err)) });
+    }
+  });
+
   app.post('/api/routes/snap', async (req: Request, res: Response) => {
     const lat = Number(req.body?.lat);
     const lng = Number(req.body?.lng);
@@ -587,7 +639,7 @@ export function createSanketSetuApp(dbPath?: string) {
       });
     }
     const { roads } = await getAuthoritativeRoads(false);
-    const snapped = snapCoordinateToRoadNetwork(lat, lng, PUNE_ROAD_NODES, roads);
+    const snapped = snapCoordinateToRoadNetwork(lat, lng, activeNodes, roads);
     res.json({ success: true, ...snapped });
   });
 
@@ -598,7 +650,7 @@ export function createSanketSetuApp(dbPath?: string) {
     }
 
     const lower = q.toLowerCase();
-    const localMatches = Object.values(PUNE_ROAD_NODES)
+    const localMatches = Object.values(activeNodes)
       .filter(n => n.name.toLowerCase().includes(lower) || (n.sector || '').toLowerCase().includes(lower))
       .slice(0, 6)
       .map(n => ({
@@ -627,7 +679,7 @@ export function createSanketSetuApp(dbPath?: string) {
           .map(item => {
             const lat = Number(item.lat);
             const lng = Number(item.lon);
-            const snapped = snapCoordinateToRoadNetwork(lat, lng, PUNE_ROAD_NODES, roads);
+            const snapped = snapCoordinateToRoadNetwork(lat, lng, activeNodes, roads);
             return {
               label: item.display_name.split(',').slice(0, 3).join(','),
               sector: snapped.nearestNode.name,
@@ -664,7 +716,7 @@ export function createSanketSetuApp(dbPath?: string) {
       vehicleType = 'car'
     } = req.body || {};
 
-    const { roads } = await getAuthoritativeRoads(false);
+    const { roads, rainfall } = await getAuthoritativeRoads(false);
 
     let effectiveStartId = startNodeId;
     let effectiveTargetId = targetNodeId;
@@ -677,7 +729,7 @@ export function createSanketSetuApp(dbPath?: string) {
       if (!isValidPuneCoordinate(lat, lng)) {
         return res.status(400).json({ error: 'Origin coordinates outside Pune/PCMC coverage.' });
       }
-      snappedOrigin = snapCoordinateToRoadNetwork(lat, lng, PUNE_ROAD_NODES, roads);
+      snappedOrigin = snapCoordinateToRoadNetwork(lat, lng, activeNodes, roads);
       effectiveStartId = snappedOrigin.nearestNode.id;
     }
 
@@ -687,11 +739,11 @@ export function createSanketSetuApp(dbPath?: string) {
       if (!isValidPuneCoordinate(lat, lng)) {
         return res.status(400).json({ error: 'Destination coordinates outside Pune/PCMC coverage.' });
       }
-      snappedDest = snapCoordinateToRoadNetwork(lat, lng, PUNE_ROAD_NODES, roads);
+      snappedDest = snapCoordinateToRoadNetwork(lat, lng, activeNodes, roads);
       effectiveTargetId = snappedDest.nearestNode.id;
     }
 
-    if (!effectiveStartId || !effectiveTargetId || !PUNE_ROAD_NODES[effectiveStartId] || !PUNE_ROAD_NODES[effectiveTargetId]) {
+    if (!effectiveStartId || !effectiveTargetId || !activeNodes[effectiveStartId] || !activeNodes[effectiveTargetId]) {
       return res.status(400).json({ error: 'Valid origin and destination nodes or Pune coordinates are required.' });
     }
 
@@ -701,23 +753,98 @@ export function createSanketSetuApp(dbPath?: string) {
 
     const rawLambda = Number(lambdaRisk);
     const parsedLambda = Number.isFinite(rawLambda) ? Math.max(0, Math.min(5.0, rawLambda)) : 1.5;
-    const graphEdges: GraphEdge[] = roads.map(r => ({
-      id: r.id,
-      from: r.from,
-      to: r.to,
-      name: r.name,
-      distanceKm: r.distanceKm,
-      speedKmph: r.speedKmph,
-      riskScore: r.riskScore,
-      status: r.status,
-      baseElevationM: r.baseElevationM,
-      isOneWay: r.isOneWay,
-      accessRestriction: r.accessRestriction,
-      coordinates: r.coordinates
+
+    const baseGraphEdges: GraphEdge[] = roads.map(road => ({
+      id: road.id,
+      from: road.from,
+      to: road.to,
+      name: road.name,
+      distanceKm: road.distanceKm,
+      speedKmph: road.speedKmph,
+      riskScore: road.riskScore,
+      status: road.status,
+      baseElevationM: road.baseElevationM,
+      isOneWay: road.isOneWay,
+      accessRestriction: road.accessRestriction,
+      coordinates: road.coordinates
     }));
 
+    const initialShortest = calculateDijkstraRoute(
+      activeNodes,
+      baseGraphEdges,
+      effectiveStartId,
+      effectiveTargetId,
+      'shortest',
+      parsedLambda,
+      new Set(),
+      new Set(),
+      effectiveVehicleType
+    );
+    const initialFastest = calculateDijkstraRoute(
+      activeNodes,
+      baseGraphEdges,
+      effectiveStartId,
+      effectiveTargetId,
+      'fastest',
+      parsedLambda,
+      new Set(),
+      new Set(),
+      effectiveVehicleType
+    );
+    const initialSafestAlternatives = calculateKShortestPaths(
+      activeNodes,
+      baseGraphEdges,
+      effectiveStartId,
+      effectiveTargetId,
+      'safest',
+      parsedLambda,
+      3,
+      effectiveVehicleType
+    );
+    const candidateRoutes = [
+      initialFastest,
+      initialShortest,
+      ...initialSafestAlternatives
+    ];
+    const candidateRoadIds = new Set<string>();
+    for (let routePosition = 0; candidateRoadIds.size < MAX_TOMTOM_SEGMENTS_PER_ROUTE; routePosition++) {
+      let foundCandidate = false;
+      for (const candidateRoute of candidateRoutes) {
+        const edge = candidateRoute.edges[routePosition];
+        if (!edge) continue;
+        foundCandidate = true;
+        candidateRoadIds.add(edge.id);
+        if (candidateRoadIds.size >= MAX_TOMTOM_SEGMENTS_PER_ROUTE) break;
+      }
+      if (!foundCandidate) break;
+    }
+
+    // Sample only roads on the estimated candidate routes, never the entire network.
+    const roadsById = new Map(roads.map(road => [road.id, road]));
+    const candidateRoads = [...candidateRoadIds]
+      .map(roadId => roadsById.get(roadId))
+      .filter((road): road is RoadSegment => road !== undefined);
+    const trafficResults = await Promise.all(candidateRoads.map(async road => ({
+      roadId: road.id,
+      traffic: await getSegmentTrafficSpeed(
+        road.id,
+        road.roadType,
+        road.speedKmph,
+        road.coordinates
+      )
+    })));
+    const trafficByRoadId = new Map(
+      trafficResults.map(result => [result.roadId, result.traffic])
+    );
+    const graphEdges: GraphEdge[] = baseGraphEdges.map(edge => {
+      const traffic = trafficByRoadId.get(edge.id);
+      return traffic
+        ? { ...edge, speedKmph: traffic.currentSpeedKmph }
+        : edge;
+    });
+
     const shortest = calculateDijkstraRoute(
-      PUNE_ROAD_NODES,
+      activeNodes,
       graphEdges,
       effectiveStartId,
       effectiveTargetId,
@@ -729,7 +856,7 @@ export function createSanketSetuApp(dbPath?: string) {
     );
 
     const fastest = calculateDijkstraRoute(
-      PUNE_ROAD_NODES,
+      activeNodes,
       graphEdges,
       effectiveStartId,
       effectiveTargetId,
@@ -741,7 +868,7 @@ export function createSanketSetuApp(dbPath?: string) {
     );
 
     const safestAlternatives = calculateKShortestPaths(
-      PUNE_ROAD_NODES,
+      activeNodes,
       graphEdges,
       effectiveStartId,
       effectiveTargetId,
@@ -754,7 +881,7 @@ export function createSanketSetuApp(dbPath?: string) {
     const safest =
       safestAlternatives[0] ||
       calculateDijkstraRoute(
-        PUNE_ROAD_NODES,
+        activeNodes,
         graphEdges,
         effectiveStartId,
         effectiveTargetId,
@@ -765,16 +892,45 @@ export function createSanketSetuApp(dbPath?: string) {
         effectiveVehicleType
       );
 
+    const trafficStatus = getTrafficFeedStatus();
+    const liveTrafficSegments = trafficResults.filter(
+      result => result.traffic.isLive
+    ).length;
+    const warnings = [
+      rainfall.openMeteoStatus === 'OK'
+        ? 'Flood-risk scores use gridded Open-Meteo rainfall data, not street-level sensor measurements.'
+        : 'Open-Meteo rainfall is unavailable; rainfall-dependent risk is handled as unknown.',
+      liveTrafficSegments === 0
+        ? 'No successful live TomTom response was confirmed for this calculation; estimated road-class speeds were used.'
+        : `Live TomTom speeds cover ${liveTrafficSegments} of ${roads.length} road segments; estimated speeds were used for the rest.`
+    ];
+
     res.json({
-      originNode: PUNE_ROAD_NODES[effectiveStartId],
-      targetNode: PUNE_ROAD_NODES[effectiveTargetId],
+      originNode: activeNodes[effectiveStartId],
+      targetNode: activeNodes[effectiveTargetId],
       snappedOrigin,
       snappedDest,
       lambdaRisk: parsedLambda,
       shortest,
       fastest,
       safest,
-      alternatives: safestAlternatives
+      alternatives: safestAlternatives,
+      dataQuality: {
+        weather: {
+          provider: rainfall.observations.find(observation => observation.source)?.source
+            ?? 'Open-Meteo Forecast API',
+          status: rainfall.openMeteoStatus,
+          lastSuccessfulUpdate: rainfall.lastSuccessfulUpdate
+        },
+        traffic: {
+          provider: trafficStatus.provider,
+          liveSegments: liveTrafficSegments,
+          sampledSegments: candidateRoads.length,
+          networkSegments: roads.length,
+          lastSuccessfulUpdate: trafficStatus.lastSuccessfulUpdate
+        },
+        warnings
+      }
     });
   });
 
@@ -873,7 +1029,7 @@ export function createSanketSetuApp(dbPath?: string) {
     const currentRoads = db.getRoadSegments();
     let targetRoadId = roadId ? String(roadId) : undefined;
     if (!targetRoadId) {
-      const snapped = snapCoordinateToRoadNetwork(parsedLat, parsedLng, PUNE_ROAD_NODES, currentRoads);
+      const snapped = snapCoordinateToRoadNetwork(parsedLat, parsedLng, activeNodes, currentRoads);
       targetRoadId = snapped.nearestRoad?.id;
     }
 
@@ -1111,7 +1267,7 @@ export function createSanketSetuApp(dbPath?: string) {
       if (name === 'findSafeRouteBetweenNodes') {
         const qOrigin = String(args.originQuery || '').toLowerCase();
         const qDest = String(args.destinationQuery || '').toLowerCase();
-        const nodesList = Object.values(PUNE_ROAD_NODES);
+        const nodesList = Object.values(activeNodes);
         const oNode = nodesList.find(n => n.name.toLowerCase().includes(qOrigin) || n.id.toLowerCase() === qOrigin);
         const dNode = nodesList.find(n => n.name.toLowerCase().includes(qDest) || n.id.toLowerCase() === qDest);
         if (!oNode || !dNode) {
@@ -1133,9 +1289,9 @@ export function createSanketSetuApp(dbPath?: string) {
           isOneWay: r.isOneWay,
           accessRestriction: r.accessRestriction
         }));
-        const safest = calculateDijkstraRoute(PUNE_ROAD_NODES, graphEdges, oNode.id, dNode.id, 'safest', 1.8);
-        const fastest = calculateDijkstraRoute(PUNE_ROAD_NODES, graphEdges, oNode.id, dNode.id, 'fastest', 1.8);
-        const shortest = calculateDijkstraRoute(PUNE_ROAD_NODES, graphEdges, oNode.id, dNode.id, 'shortest', 1.8);
+        const safest = calculateDijkstraRoute(activeNodes, graphEdges, oNode.id, dNode.id, 'safest', 1.8);
+        const fastest = calculateDijkstraRoute(activeNodes, graphEdges, oNode.id, dNode.id, 'fastest', 1.8);
+        const shortest = calculateDijkstraRoute(activeNodes, graphEdges, oNode.id, dNode.id, 'shortest', 1.8);
         return {
           origin: oNode.name,
           destination: dNode.name,
@@ -1316,31 +1472,163 @@ STRICT GROUNDING RULES:
   return { app, db };
 }
 
-async function startServer() {
-  const PORT = Number(process.env.PORT) || 3000;
-  const { app } = createSanketSetuApp();
-  const isDev = process.env.NODE_ENV !== 'production';
+async function isPortAvailable(port: number, host: string): Promise<boolean> {
+  const probe = createTcpServer();
 
-  if (isDev) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa'
+  return new Promise<boolean>((resolve, reject) => {
+    probe.once('error', error => {
+      if ('code' in error && error.code === 'EADDRINUSE') {
+        resolve(false);
+        return;
+      }
+      reject(error);
     });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(resolve('dist')));
-    app.get('*', (_req, res) => {
-      res.sendFile(resolve('dist/index.html'));
+
+    probe.listen(port, host, () => {
+      probe.close(error => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(true);
+      });
     });
+  });
+}
+
+async function isHealthyFloodGuard(port: number): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/health`, {
+      signal: controller.signal
+    });
+    if (!response.ok) return false;
+
+    const health: unknown = await response.json();
+    return (
+      typeof health === 'object' &&
+      health !== null &&
+      'status' in health &&
+      health.status === 'ok' &&
+      'service' in health &&
+      health.service === 'SanketSetu Intelligence Platform'
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[FloodGuard] Existing listener health check failed: ${message}`);
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function startServer(): Promise<void> {
+  const port = Number(process.env.PORT ?? 3000);
+  const host = process.env.HOST || '0.0.0.0';
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`PORT must be an integer from 1 to 65535; received "${process.env.PORT}".`);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`SanketSetu Secure Server running on http://0.0.0.0:${PORT}`);
-  });
+  if (!(await isPortAvailable(port, host))) {
+    if (await isHealthyFloodGuard(port)) {
+      console.log(`[FloodGuard] Frontend already serving at http://localhost:${port}/.`);
+      console.log(`[FloodGuard] Backend API is healthy at http://localhost:${port}/api/health.`);
+      console.log('[FloodGuard] Duplicate development launch skipped; the existing server was left untouched.');
+      return;
+    }
+
+    console.error(`[FloodGuard] Port ${port} is already occupied by a service that did not identify itself as FloodGuard.`);
+    console.error('[FloodGuard] No second server was started. Identify the listener with Get-NetTCPConnection and Get-CimInstance Win32_Process.');
+    process.exitCode = 1;
+    return;
+  }
+
+  const { app, db } = createSanketSetuApp();
+  const httpServer = createHttpServer(app);
+  const isDev = process.env.NODE_ENV !== 'production';
+  let closeVite: (() => Promise<void>) | undefined;
+  let isShuttingDown = false;
+
+  const cleanup = async (): Promise<void> => {
+    stopScheduledOsmSync();
+    if (closeVite) {
+      try {
+        await closeVite();
+      } catch (error) {
+        console.error('[FloodGuard] Failed to close Vite cleanly:', error);
+      }
+    }
+    if (httpServer.listening) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          httpServer.close(error => error ? reject(error) : resolve());
+        });
+      } catch (error) {
+        console.error('[FloodGuard] Failed to close the HTTP server cleanly:', error);
+      }
+    }
+    try {
+      db.close();
+    } catch (error) {
+      console.error('[FloodGuard] Failed to close SQLite cleanly:', error);
+    }
+  };
+
+  try {
+    if (isDev) {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          hmr: process.env.DISABLE_HMR === 'true'
+            ? false
+            : { server: httpServer }
+        },
+        appType: 'spa'
+      });
+      closeVite = () => vite.close();
+      app.use(vite.middlewares);
+    } else {
+      app.use(express.static(resolve('dist')));
+      app.get('*', (_req, res) => {
+        res.sendFile(resolve('dist/index.html'));
+      });
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => reject(error);
+      httpServer.once('error', onError);
+      httpServer.listen(port, host, () => {
+        httpServer.off('error', onError);
+        resolve();
+      });
+    });
+
+    console.log(`[FloodGuard] Backend API listening on http://${host}:${port}.`);
+    console.log(`[FloodGuard] ${isDev ? 'Vite frontend middleware' : 'Built frontend'} serving on http://localhost:${port}/.`);
+    console.log(`[FloodGuard] SQLite connected at ${db.dbPath}.`);
+
+    const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+      if (isShuttingDown) return;
+      isShuttingDown = true;
+      console.log(`[FloodGuard] ${signal} received; closing frontend, backend, OSM scheduler, and SQLite.`);
+      await cleanup();
+      console.log('[FloodGuard] Shutdown complete.');
+    };
+    process.once('SIGINT', () => { void shutdown('SIGINT'); });
+    process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
 }
 
 const isEntrypoint = Boolean(process.argv[1] && process.argv[1].endsWith('server.ts'));
 if (isEntrypoint && process.env.SANKETSETU_NO_LISTEN !== '1') {
-  startServer();
+  startServer().catch(error => {
+    console.error('[FloodGuard] Startup failed:', error);
+    process.exitCode = 1;
+  });
 }

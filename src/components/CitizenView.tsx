@@ -207,7 +207,7 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      {/* Citizen Alert Ticker (Real telemetry only — zero fabricated gauge numbers) */}
+      {/* Citizen alert ticker uses available estimates without fabricating gauge values */}
       <div className="bg-amber-600 text-slate-950 px-4 py-1.5 text-xs font-semibold flex items-center justify-between overflow-hidden">
         <div className="flex items-center space-x-2 truncate">
           <span className="bg-red-700 text-white px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold shrink-0">
@@ -223,7 +223,7 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
           <span>•</span>
           <span>
             IMD Feed:{' '}
-            <strong>{rainfallFeed?.imdApiStatus === 'CONFIGURED' ? 'Active' : 'Unavailable (No Key)'}</strong>
+            <strong>{rainfallFeed?.imdApiStatus === 'CONFIGURED' ? 'Configured (feed not queried)' : 'Unavailable (No Key)'}</strong>
           </span>
         </div>
       </div>
@@ -453,15 +453,21 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
                 <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">Personal Flood Safety Desk</span>
                 <h2 className="text-xl font-black text-white mt-0.5">Welcome, {user.fullName}</h2>
                 <p className="text-xs text-slate-300 mt-1 max-w-2xl">
-                  Directed safe-route engine over 32 Pune & Pimpri-Chinchwad junctions and 46 OSM corridors, fused with Open-Meteo precipitation and expert-verified road closures.
+                  Directed safe-route engine over 69 Pune & Pimpri-Chinchwad junctions and 108 OSM corridors, using gridded Open-Meteo precipitation estimates and expert-verified road closures.
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3 shrink-0 text-xs">
                 <div className="bg-slate-900/80 px-3 py-2 rounded-xl border border-slate-800">
-                  <span className="text-slate-400 text-[10px] block">Weather Feed</span>
-                  <span className={`font-bold ${rainfallFeed?.openMeteoStatus === 'OK' ? 'text-emerald-400' : 'text-amber-400'}`}>
-                    {rainfallFeed?.openMeteoStatus === 'OK' ? 'Open-Meteo Live' : 'Feed Delayed'}
+                  <span className="text-slate-400 text-[10px] block">Weather Estimates</span>
+                  <div className="flex items-center space-x-1.5">
+                    <span className={`w-2 h-2 rounded-full ${rainfallFeed?.openMeteoStatus === 'OK' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                    <span className={`font-bold ${rainfallFeed?.openMeteoStatus === 'OK' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {rainfallFeed?.openMeteoStatus === 'OK' ? 'Open-Meteo model data available' : 'Feed Unavailable'}
+                    </span>
+                  </div>
+                  <span className="text-[9px] text-slate-400 block mt-0.5">
+                    {rainfallFeed?.lastSuccessfulUpdate ? new Date(rainfallFeed.lastSuccessfulUpdate).toLocaleTimeString() : 'Awaiting update'}
                   </span>
                 </div>
                 <div className="bg-slate-900/80 px-3 py-2 rounded-xl border border-slate-800">
@@ -773,7 +779,7 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
 
         {/* VIEW 7: TRANSPARENT DATA SOURCES */}
         {activeNav === 'datasets' && (
-          <DatasetExplorer rainfallFeed={rainfallFeed} />
+          <DatasetExplorer rainfallFeed={rainfallFeed} user={user} />
         )}
 
         {/* VIEW 8: CITIZEN PROFILE */}

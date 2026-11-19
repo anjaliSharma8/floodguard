@@ -108,7 +108,10 @@ export const PUNE_MONITORING_STATIONS: MonitoringStationDef[] = [
   { stationId: 'PUN_LOHEGAON', stationName: 'Lohegaon Airport / East Pune', lat: 18.5822, lng: 73.9197 },
   { stationId: 'PCMC_CHINCHWAD', stationName: 'Pimpri-Chinchwad Basin', lat: 18.6298, lng: 73.7997 },
   { stationId: 'PUN_KHADAKWASLA', stationName: 'Khadakwasla / Sinhagad Catchment', lat: 18.4450, lng: 73.7750 },
-  { stationId: 'PUN_SWARGATE', stationName: 'Swargate / Katraj South', lat: 18.4806, lng: 73.8580 }
+  { stationId: 'PUN_SWARGATE', stationName: 'Swargate / Katraj South', lat: 18.4806, lng: 73.8580 },
+  { stationId: 'PUN_HADAPSAR', stationName: 'Hadapsar / Magarpatta East', lat: 18.5011, lng: 73.9261 },
+  { stationId: 'PCMC_BHOSARI', stationName: 'Bhosari / Moshi North PCMC', lat: 18.6242, lng: 73.8355 },
+  { stationId: 'PCMC_NIGDI', stationName: 'Nigdi / Talawade Industrial', lat: 18.6518, lng: 73.7659 }
 ];
 
 export const INITIAL_WATERWAYS: WaterwayFeature[] = [
@@ -264,6 +267,58 @@ export const INITIAL_SHELTERS: Shelter[] = [
     contact: '+91-20-26681020',
     address: 'Airport Road Junction, Yerawada',
     lastUpdated: '2026-10-30T08:30:00Z'
+  },
+  {
+    id: 'SH_07',
+    name: 'Hadapsar Magarpatta Relief Center',
+    lat: 18.5050,
+    lng: 73.9310,
+    capacity: 400,
+    currentOccupancy: 50,
+    petFriendly: true,
+    wheelchairAccessible: true,
+    contact: '+91-20-26870020',
+    address: 'Solapur Road, Hadapsar, Pune',
+    lastUpdated: '2026-10-30T08:30:00Z'
+  },
+  {
+    id: 'SH_08',
+    name: 'Baner-Balewadi Sports Complex Shelter',
+    lat: 18.5680,
+    lng: 73.7750,
+    capacity: 600,
+    currentOccupancy: 90,
+    petFriendly: true,
+    wheelchairAccessible: true,
+    contact: '+91-20-27290044',
+    address: 'Shiv Chhatrapati Sports Complex, Balewadi',
+    lastUpdated: '2026-10-30T08:30:00Z'
+  },
+  {
+    id: 'SH_09',
+    name: 'Bhosari PCMC Multipurpose Hall',
+    lat: 18.6250,
+    lng: 73.8410,
+    capacity: 350,
+    currentOccupancy: 45,
+    petFriendly: false,
+    wheelchairAccessible: true,
+    contact: '+91-20-27122001',
+    address: 'Alandi Road, Bhosari, PCMC',
+    lastUpdated: '2026-10-30T08:30:00Z'
+  },
+  {
+    id: 'SH_10',
+    name: 'Nigdi Pradhikaran Community Center',
+    lat: 18.6530,
+    lng: 73.7620,
+    capacity: 300,
+    currentOccupancy: 20,
+    petFriendly: true,
+    wheelchairAccessible: true,
+    contact: '+91-20-27651122',
+    address: 'Sector 24, Pradhikaran, Nigdi',
+    lastUpdated: '2026-10-30T08:30:00Z'
   }
 ];
 
@@ -332,6 +387,50 @@ export const INITIAL_HOSPITALS: Hospital[] = [
     contact: '+91-20-67213000',
     totalBeds: 200,
     availableIcu: 15,
+    hasTraumaCenter: true
+  },
+  {
+    id: 'HOSP_07',
+    name: 'Aditya Birla Memorial Hospital (Thergaon / Chinchwad)',
+    type: 'Super Speciality Hospital',
+    lat: 18.6200,
+    lng: 73.7820,
+    contact: '+91-20-30717500',
+    totalBeds: 500,
+    availableIcu: 32,
+    hasTraumaCenter: true
+  },
+  {
+    id: 'HOSP_08',
+    name: 'Noble Hospital (Hadapsar)',
+    type: 'Multispeciality Hospital',
+    lat: 18.5040,
+    lng: 73.9315,
+    contact: '+91-20-66285000',
+    totalBeds: 350,
+    availableIcu: 20,
+    hasTraumaCenter: true
+  },
+  {
+    id: 'HOSP_09',
+    name: 'Jupiter Hospital Pune (Baner)',
+    type: 'Tertiary Care Hospital',
+    lat: 18.5610,
+    lng: 73.7840,
+    contact: '+91-20-27992211',
+    totalBeds: 380,
+    availableIcu: 25,
+    hasTraumaCenter: true
+  },
+  {
+    id: 'HOSP_10',
+    name: 'Manipal Hospital (Kharadi)',
+    type: 'Multispeciality Hospital',
+    lat: 18.5520,
+    lng: 73.9380,
+    contact: '+91-20-61656666',
+    totalBeds: 300,
+    availableIcu: 18,
     hasTraumaCenter: true
   }
 ];

@@ -5,7 +5,8 @@ import {
   INITIAL_COMMUNITY_REPORTS,
   INITIAL_POLLS,
   INITIAL_ROAD_SEGMENTS,
-  INITIAL_SHELTERS
+  INITIAL_SHELTERS,
+  PUNE_ROAD_NODES
 } from '../data/puneData';
 import {
   AccountStatus,
@@ -15,11 +16,14 @@ import {
   ExpertApplication,
   LivePoll,
   RoadSegment,
+  RoadNode,
   RoadStatus,
   RouteFeedback,
   Shelter,
   User,
-  UserRole
+  UserRole,
+  OsmSyncLog,
+  OsmRoadMapping
 } from '../types';
 import { hashPassword } from '../utils/auth';
 
@@ -53,32 +57,64 @@ export class SanketSetuDatabase {
     const sql = fs.readFileSync(schemaPath, 'utf-8');
     this.db.exec(sql);
 
-    const existing = this.db
+    const existingV1 = this.db
       .prepare('SELECT version FROM schema_migrations WHERE version = 1')
       .get();
-    if (!existing) {
+    if (!existingV1) {
       this.db
         .prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
         .run(1, 'initial_sanketsetu_2role_schema', new Date().toISOString());
+    }
+
+    const existingV2 = this.db
+      .prepare('SELECT version FROM schema_migrations WHERE version = 2')
+      .get();
+    if (!existingV2) {
+      this.db
+        .prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
+        .run(2, 'v2_osm_road_nodes_and_sync_log', new Date().toISOString());
     }
   }
 
   private seedInitialData(): void {
     const now = new Date().toISOString();
 
-    // Seed roads from GeoJSON-backed INITIAL_ROAD_SEGMENTS if empty
-    const roadCount = (this.db.prepare('SELECT COUNT(*) as c FROM road_segments').get() as { c: number }).c;
-    if (roadCount === 0) {
-      const insertRoad = this.db.prepare(`
-        INSERT INTO road_segments (
-          road_id, road_name, from_node, to_node, road_type, distance_km, speed_kmph,
-          base_elevation_m, slope_pct, drainage_condition, is_one_way, access_restriction,
-          is_bridge, is_tunnel, surface, has_historical_flood, waterway_proximity,
-          risk_score, risk_category, confidence_score, status, coordinates_json,
-          geometry_source, verified_by, status_reason, expires_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    // 1. Seed road nodes if empty
+    const nodeCount = (this.db.prepare('SELECT COUNT(*) as c FROM road_nodes').get() as { c: number }).c;
+    if (nodeCount === 0) {
+      const insertNode = this.db.prepare(`
+        INSERT INTO road_nodes (node_id, node_name, latitude, longitude, sector, elevation_m, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
-      for (const r of INITIAL_ROAD_SEGMENTS) {
+      for (const node of Object.values(PUNE_ROAD_NODES)) {
+        insertNode.run(
+          node.id,
+          node.name,
+          node.lat,
+          node.lng,
+          node.sector ?? null,
+          node.elevationM ?? null,
+          now
+        );
+      }
+    }
+
+    // 2. Seed missing road segments from INITIAL_ROAD_SEGMENTS (preserving existing records & closures)
+    const existingRoadRows = this.db.prepare('SELECT road_id FROM road_segments').all() as Array<{ road_id: string }>;
+    const existingIds = new Set(existingRoadRows.map(r => r.road_id));
+
+    const insertRoad = this.db.prepare(`
+      INSERT INTO road_segments (
+        road_id, road_name, from_node, to_node, road_type, distance_km, speed_kmph,
+        base_elevation_m, slope_pct, drainage_condition, is_one_way, access_restriction,
+        is_bridge, is_tunnel, surface, has_historical_flood, waterway_proximity,
+        risk_score, risk_category, confidence_score, status, coordinates_json,
+        geometry_source, verified_by, status_reason, expires_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const r of INITIAL_ROAD_SEGMENTS) {
+      if (!existingIds.has(r.id)) {
         insertRoad.run(
           r.id,
           r.name,
@@ -548,6 +584,252 @@ export class SanketSetuDatabase {
       );
 
     return this.getRoadSegments().find(r => r.id === params.roadId) || null;
+  }
+
+  public getRoadNodes(): Record<string, RoadNode> {
+    const rows = this.db.prepare('SELECT * FROM road_nodes ORDER BY node_id ASC').all() as Record<string, unknown>[];
+    if (rows.length === 0) {
+      return { ...PUNE_ROAD_NODES };
+    }
+    const result: Record<string, RoadNode> = {};
+    for (const r of rows) {
+      result[String(r.node_id)] = {
+        id: String(r.node_id),
+        name: String(r.node_name),
+        lat: Number(r.latitude),
+        lng: Number(r.longitude),
+        sector: r.sector ? String(r.sector) : undefined,
+        elevationM: r.elevation_m === null ? null : Number(r.elevation_m)
+      };
+    }
+    return result;
+  }
+
+  public saveRoadNodes(nodes: Record<string, RoadNode> | RoadNode[]): void {
+    const list = Array.isArray(nodes) ? nodes : Object.values(nodes);
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO road_nodes (node_id, node_name, latitude, longitude, sector, elevation_m, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(node_id) DO UPDATE SET
+        node_name = excluded.node_name,
+        latitude = excluded.latitude,
+        longitude = excluded.longitude,
+        sector = excluded.sector,
+        elevation_m = excluded.elevation_m,
+        updated_at = excluded.updated_at
+    `);
+    for (const n of list) {
+      stmt.run(n.id, n.name, n.lat, n.lng, n.sector ?? null, n.elevationM ?? null, now);
+    }
+  }
+
+  public recordOsmSync(log: OsmSyncLog): void {
+    this.db.prepare(`
+      INSERT INTO osm_sync_log (
+        sync_id, sync_type, status, nodes_count, edges_count,
+        roads_preserved, roads_added, duration_ms, error_message, details_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      log.syncId,
+      log.syncType,
+      log.status,
+      log.nodesCount,
+      log.edgesCount,
+      log.roadsPreserved,
+      log.roadsAdded,
+      log.durationMs,
+      log.errorMessage ?? null,
+      log.detailsJson ?? null,
+      log.createdAt
+    );
+  }
+
+  public getLatestOsmSync(): OsmSyncLog | null {
+    const row = this.db.prepare('SELECT * FROM osm_sync_log ORDER BY created_at DESC LIMIT 1').get() as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      syncId: String(row.sync_id),
+      syncType: row.sync_type as OsmSyncLog['syncType'],
+      status: row.status as OsmSyncLog['status'],
+      nodesCount: Number(row.nodes_count),
+      edgesCount: Number(row.edges_count),
+      roadsPreserved: Number(row.roads_preserved),
+      roadsAdded: Number(row.roads_added),
+      durationMs: Number(row.duration_ms),
+      errorMessage: row.error_message ? String(row.error_message) : null,
+      detailsJson: row.details_json ? String(row.details_json) : null,
+      createdAt: String(row.created_at)
+    };
+  }
+
+  public getOsmSyncLogs(limit = 10): OsmSyncLog[] {
+    const rows = this.db.prepare('SELECT * FROM osm_sync_log ORDER BY created_at DESC LIMIT ?').all(limit) as Record<string, unknown>[];
+    return rows.map(row => ({
+      syncId: String(row.sync_id),
+      syncType: row.sync_type as OsmSyncLog['syncType'],
+      status: row.status as OsmSyncLog['status'],
+      nodesCount: Number(row.nodes_count),
+      edgesCount: Number(row.edges_count),
+      roadsPreserved: Number(row.roads_preserved),
+      roadsAdded: Number(row.roads_added),
+      durationMs: Number(row.duration_ms),
+      errorMessage: row.error_message ? String(row.error_message) : null,
+      detailsJson: row.details_json ? String(row.details_json) : null,
+      createdAt: String(row.created_at)
+    }));
+  }
+
+  public getOsmRoadMappings(): OsmRoadMapping[] {
+    const rows = this.db.prepare('SELECT * FROM osm_road_mappings').all() as Record<string, unknown>[];
+    return rows.map(r => ({
+      osmWayId: Number(r.osm_way_id),
+      segmentIndex: Number(r.segment_index),
+      mappedRoadId: String(r.mapped_road_id),
+      fromNode: String(r.from_node),
+      toNode: String(r.to_node),
+      confidence: Number(r.confidence),
+      createdAt: String(r.created_at)
+    }));
+  }
+
+  public saveOsmRoadMappings(mappings: OsmRoadMapping[]): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO osm_road_mappings (osm_way_id, segment_index, mapped_road_id, from_node, to_node, confidence, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(osm_way_id, segment_index) DO UPDATE SET
+        mapped_road_id = excluded.mapped_road_id,
+        from_node = excluded.from_node,
+        to_node = excluded.to_node,
+        confidence = excluded.confidence
+    `);
+    for (const m of mappings) {
+      stmt.run(m.osmWayId, m.segmentIndex, m.mappedRoadId, m.fromNode, m.toNode, m.confidence, m.createdAt);
+    }
+  }
+
+  /**
+   * Transactionally upsert the road network.
+   * STRICT GUARANTEES:
+   * 1. Preserves existing road IDs and foreign keys.
+   * 2. Preserves expert closures ('CLOSED'), verified hazards ('VERIFIED_HAZARD'),
+   *    verifiedBy, statusReason, and unexpired expiresAt.
+   * 3. Inserts new road segments with appropriate defaults.
+   * 4. Updates node geometries in road_nodes.
+   */
+  public upsertRoadNetwork(
+    nodes: Record<string, RoadNode>,
+    segments: RoadSegment[]
+  ): { preserved: number; added: number; updated: number } {
+    const now = new Date().toISOString();
+    let preserved = 0;
+    let added = 0;
+    let updated = 0;
+
+    const existingRows = this.db.prepare('SELECT * FROM road_segments').all() as Record<string, unknown>[];
+    const existingMap = new Map<string, Record<string, unknown>>();
+    for (const row of existingRows) {
+      existingMap.set(String(row.road_id), row);
+    }
+
+    this.db.exec('BEGIN TRANSACTION;');
+    try {
+      // 1. Save all nodes
+      this.saveRoadNodes(nodes);
+
+      // 2. Prepare statements for existing vs new segments
+      const updateStmt = this.db.prepare(`
+        UPDATE road_segments
+        SET road_name = ?, from_node = ?, to_node = ?, road_type = ?, distance_km = ?,
+            speed_kmph = ?, base_elevation_m = ?, slope_pct = ?, drainage_condition = ?,
+            is_one_way = ?, access_restriction = ?, is_bridge = ?, is_tunnel = ?,
+            surface = ?, has_historical_flood = ?, waterway_proximity = ?,
+            coordinates_json = ?, geometry_source = ?, updated_at = ?
+        WHERE road_id = ?
+      `);
+
+      const insertStmt = this.db.prepare(`
+        INSERT INTO road_segments (
+          road_id, road_name, from_node, to_node, road_type, distance_km, speed_kmph,
+          base_elevation_m, slope_pct, drainage_condition, is_one_way, access_restriction,
+          is_bridge, is_tunnel, surface, has_historical_flood, waterway_proximity,
+          risk_score, risk_category, confidence_score, status, coordinates_json,
+          geometry_source, verified_by, status_reason, expires_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const seg of segments) {
+        const existing = existingMap.get(seg.id);
+        if (existing) {
+          const isClosedOrHazard = existing.status === 'CLOSED' || existing.status === 'VERIFIED_HAZARD';
+          if (isClosedOrHazard) {
+            preserved++;
+          } else {
+            updated++;
+          }
+
+          updateStmt.run(
+            seg.name,
+            seg.from,
+            seg.to,
+            seg.roadType,
+            seg.distanceKm,
+            seg.speedKmph,
+            seg.baseElevationM,
+            seg.slopePct,
+            seg.drainageCondition,
+            seg.isOneWay ? 1 : 0,
+            seg.accessRestriction,
+            seg.isBridge ? 1 : 0,
+            seg.isTunnel ? 1 : 0,
+            seg.surface || 'asphalt',
+            seg.hasHistoricalFlood ? 1 : 0,
+            seg.waterwayProximity ?? null,
+            JSON.stringify(seg.coordinates),
+            seg.geometrySource || 'OpenStreetMap Sync',
+            now,
+            seg.id
+          );
+        } else {
+          added++;
+          insertStmt.run(
+            seg.id,
+            seg.name,
+            seg.from,
+            seg.to,
+            seg.roadType,
+            seg.distanceKm,
+            seg.speedKmph,
+            seg.baseElevationM,
+            seg.slopePct,
+            seg.drainageCondition,
+            seg.isOneWay ? 1 : 0,
+            seg.accessRestriction,
+            seg.isBridge ? 1 : 0,
+            seg.isTunnel ? 1 : 0,
+            seg.surface || 'asphalt',
+            seg.hasHistoricalFlood ? 1 : 0,
+            seg.waterwayProximity ?? null,
+            seg.riskScore,
+            seg.riskCategory,
+            seg.confidenceScore,
+            seg.status,
+            JSON.stringify(seg.coordinates),
+            seg.geometrySource || 'OpenStreetMap Sync',
+            seg.verifiedBy ?? null,
+            seg.statusReason ?? null,
+            seg.expiresAt ?? null,
+            now
+          );
+        }
+      }
+
+      this.db.exec('COMMIT;');
+      return { preserved, added, updated };
+    } catch (err) {
+      this.db.exec('ROLLBACK;');
+      throw err;
+    }
   }
 
   // ----------------- COMMUNITY REPORTS & VERIFIED HAZARDS -----------------

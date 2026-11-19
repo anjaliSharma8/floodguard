@@ -5,29 +5,25 @@
 
 ---
 
-## 1. Live & Forecast Precipitation
+## 1. Gridded Precipitation Estimates
 - **Primary Source:** [Open-Meteo Weather API](https://open-meteo.com/) (`https://api.open-meteo.com/v1/forecast`)
-- **Stations Polled (`src/services/weatherService.ts`):**
-  - Shivajinagar (`STN_SHIVAJI`: `18.5308, 73.8475`)
-  - Sinhagad Road / Vadgaon Bk (`STN_SINHAGAD`: `18.4785, 73.8220`)
-  - Pashan / Sus (`STN_PASHAN`: `18.5415, 73.7925`)
-  - Lohegaon / Pune Airport (`STN_LOHEGAON`: `18.5821, 73.9197`)
-  - Katraj (`STN_KATRAJ`: `18.4529, 73.8652`)
-  - Hadapsar (`STN_HADAPSAR`: `18.5089, 73.9259`)
-  - Pimpri-Chinchwad / Nigdi (`STN_PCMC`: `18.6298, 73.7997`)
-- **Variables:** Past 24-hour observed hourly precipitation (`past_days=1`), current-hour precipitation, and next 24-hour forecast (`forecast_days=1`).
-- **Cache & Freshness:** Cached in SQLite (`rainfall_cache` table) for 15 minutes. Every reading records `dataType` (`OBSERVED_RECENT`, `DELAYED`, `HISTORICAL`, or `UNAVAILABLE`) and timestamp.
-- **IMD Status:** Direct India Meteorological Department (IMD) AWS telemetry requires an institutional `IMD_API_KEY`. When `IMD_API_KEY` is not configured, the API and UI explicitly report `imdApiStatus: "KEY_MISSING"` and do **not** fabricate IMD station readings.
+- **Grid points (`src/data/puneData.ts`):** Shivajinagar (`18.5314, 73.8446`), Pashan (`18.5388, 73.7915`), Lohegaon (`18.5822, 73.9197`), Chinchwad (`18.6298, 73.7997`), Khadakwasla (`18.4450, 73.7750`), Swargate (`18.4806, 73.8580`), Hadapsar (`18.5011, 73.9261`), Bhosari (`18.6242, 73.8355`), and Nigdi (`18.6518, 73.7659`).
+- **Variables:** The service sums hourly precipitation estimates for the 24 hours before the current hour, reads the current-hour estimate, and sums the following 24-hour forecast. The requested grid resolution is approximately 11 km.
+- **Limitations:** These are gridded model estimates, not rain-gauge observations or street-level flood measurements. Successful values are labeled `MODEL_ESTIMATE`; unavailable responses are not replaced with invented rainfall.
+- **Cache & Freshness:** Successful or partially successful feeds are cached in process memory for 15 minutes. Failed stations are marked unavailable; an all-stations-failed response is not cached.
+- **IMD Status:** The service does not call the IMD API, even when `IMD_API_KEY` is configured. The key status is reported separately and is not evidence that IMD data was fetched.
 
 ---
 
 ## 2. Road Network Geometry & Graph
-- **File:** `datasets/processed/roads.geojson` (synced to `src/data/roads.json` for ESM bundling)
-- **Source:** OpenStreetMap (OSM) corridors & OSRM street-network routing geometry across Pune and Pimpri-Chinchwad.
-- **Coverage:** **32 intersections/junctions (`RoadNode`)** and **46 directed corridor segments (`RoadSegment`)**, including:
+- **File:** `src/data/roads.json` (GeoJSON FeatureCollection)
+- **Source:** OpenStreetMap (ODbL) road features with OSRM routing geometry across Pune and Pimpri-Chinchwad.
+- **Coverage:** **69 intersections/junctions (`RoadNode`)** and **108 directed corridor segments (`RoadSegment`)**, as reported by the running API, including:
   - Arterial highways, river bridges (Mula, Mutha, Pavana), causeways, and underpasses.
   - Attributes: `distanceKm`, `speedKmph`, `isOneWay`, `accessRestriction` (`all_vehicles`, `no_heavy_vehicles`, `emergency_only`), `isBridge`, `isTunnel`, `hasHistoricalFlood`, `waterwayProximity`.
+- **Coordinates:** GeoJSON geometry is `[longitude, latitude]`; the loader converts it to the application/Leaflet `[latitude, longitude]` order.
 - **Coordinate Snapping:** Arbitrary `(lat, lng)` GPS points or OpenStreetMap Nominatim geocoded addresses are snapped to the nearest road segment and intersection node (`snapCoordinateToRoadNetwork`). Haversine distance is used strictly for coordinate snapping, never as road travel distance.
+- **TomTom Traffic:** `GET /api/traffic/status` reports live traffic only after successful TomTom responses remain in the three-minute cache. Route calculations query at most 12 candidate-road segments; unsampled roads use estimated road-class speeds, and `/api/routes/find` includes `dataQuality.warnings` and coverage counts.
 
 ---
 

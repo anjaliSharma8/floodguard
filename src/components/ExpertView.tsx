@@ -785,11 +785,11 @@ export const ExpertView: React.FC<ExpertViewProps> = ({
         {/* VIEW 5: ANALYTICS */}
         {activeTab === 'analytics' && (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-5">
-            <h3 className="text-base font-bold text-white">Live Basin & Corridor Risk Analytics</h3>
+            <h3 className="text-base font-bold text-white">Current Basin & Corridor Risk Analytics</h3>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
               <div className="bg-slate-800/60 p-4 rounded-xl border border-slate-700 space-y-2">
-                <span className="text-slate-400 font-semibold block">Top Risk Corridors (Live Score)</span>
+                <span className="text-slate-400 font-semibold block">Top Risk Corridors (Current Score)</span>
                 <div className="space-y-1.5 text-[11px]">
                   {highestRiskRoads.map(r => (
                     <div key={r.id} className="flex justify-between gap-2">
@@ -806,18 +806,24 @@ export const ExpertView: React.FC<ExpertViewProps> = ({
               </div>
 
               <div className="bg-slate-800/60 p-4 rounded-xl border border-slate-700 space-y-2">
-                <span className="text-slate-400 font-semibold block">Open-Meteo Station Telemetry</span>
-                <div className="space-y-1.5 text-[11px]">
-                  {(rainfallFeed?.observations || []).slice(0, 5).map(obs => (
-                    <div key={obs.stationId} className="flex justify-between gap-2">
-                      <span className="truncate">{obs.stationName}:</span>
-                      <strong className="text-cyan-300">
-                        {obs.isAvailable && obs.observedPast24hMm !== null ? `${obs.observedPast24hMm.toFixed(1)} mm / 24h` : 'Unavailable'}
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 font-semibold block">Open-Meteo Gridded Estimates</span>
+                  <span className={`text-[10px] font-bold ${rainfallFeed?.openMeteoStatus === 'OK' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {rainfallFeed?.openMeteoStatus === 'OK' ? 'API responded (model data)' : 'Unavailable'}
+                  </span>
+                </div>
+                <div className="space-y-1.5 text-[11px] max-h-48 overflow-y-auto pr-1">
+                  {(rainfallFeed?.observations || []).map(obs => (
+                    <div key={obs.stationId} className="flex justify-between items-center gap-2 border-b border-slate-800/50 pb-1">
+                      <span className="truncate text-slate-300" title={obs.stationName}>{obs.stationName}:</span>
+                      <strong className="text-cyan-300 shrink-0">
+                        {obs.isAvailable && obs.observedPast24hMm !== null ? `${obs.observedPast24hMm.toFixed(1)} mm` : 'Unavailable'}
                       </strong>
                     </div>
                   ))}
-                  <div className="pt-1 border-t border-slate-700/70 text-[10px] text-slate-400">
-                    IMD Status: {rainfallFeed?.imdApiStatus || 'KEY_MISSING'}
+                  <div className="pt-1 text-[10px] text-slate-400 flex justify-between">
+                    <span>IMD Status: <strong className="text-slate-300">{rainfallFeed?.imdApiStatus === 'CONFIGURED' ? 'Configured (not queried)' : rainfallFeed?.imdApiStatus || 'KEY_MISSING'}</strong></span>
+                    <span>{rainfallFeed?.lastSuccessfulUpdate ? new Date(rainfallFeed.lastSuccessfulUpdate).toLocaleTimeString() : ''}</span>
                   </div>
                 </div>
               </div>
@@ -837,7 +843,12 @@ export const ExpertView: React.FC<ExpertViewProps> = ({
 
         {/* VIEW 6: DATASETS */}
         {activeTab === 'datasets' && (
-          <DatasetExplorer rainfallFeed={rainfallFeed} />
+          <DatasetExplorer
+            rainfallFeed={rainfallFeed}
+            user={user}
+            token={token}
+            onRefreshData={onRefreshAuditLogs}
+          />
         )}
 
         {/* VIEW 7: AUDIT LOGS */}

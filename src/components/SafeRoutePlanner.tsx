@@ -56,8 +56,8 @@ export const SafeRoutePlanner: React.FC<SafeRoutePlannerProps> = ({
   const t = TRANSLATIONS[lang];
   const nodeEntries = Object.values(nodes);
 
-  const [originId, setOriginId] = useState<string>(externalOriginId || 'N_SHIVAJINAGAR');
-  const [destId, setDestId] = useState<string>(externalDestId || 'N_SINHAGAD_RD');
+  const [originId, setOriginId] = useState<string>(externalOriginId || 'N_KOTHRUD');
+  const [destId, setDestId] = useState<string>(externalDestId || 'N_AUNDH');
   const [lambdaRisk, setLambdaRisk] = useState<number>(1.8);
   const [vehicleType, setVehicleType] = useState<'car' | 'two_wheeler' | 'heavy' | 'emergency'>('car');
 
@@ -88,6 +88,112 @@ export const SafeRoutePlanner: React.FC<SafeRoutePlannerProps> = ({
   useEffect(() => {
     if (externalDestId && nodes[externalDestId]) setDestId(externalDestId);
   }, [externalDestId, nodes]);
+
+  // Auto-calculate routes on first mount so users immediately see the three independent route types
+  useEffect(() => {
+    // Trigger initial calculation using the local graph engine (no button click needed)
+    const initOrigin = externalOriginId || 'N_KOTHRUD';
+    const initDest = externalDestId || 'N_AUNDH';
+    if (!nodes[initOrigin] || !nodes[initDest]) return;
+    const graphEdges = roads.map(r => ({
+      id: r.id,
+      from: r.from,
+      to: r.to,
+      name: r.name,
+      distanceKm: r.distanceKm,
+      speedKmph: r.speedKmph,
+      riskScore: r.riskScore,
+      status: r.status,
+      baseElevationM: r.baseElevationM,
+      isOneWay: r.isOneWay,
+      accessRestriction: r.accessRestriction,
+      coordinates: r.coordinates
+    }));
+    const shortest = calculateDijkstraRoute(nodes, graphEdges, initOrigin, initDest, 'shortest', lambdaRisk, new Set(), new Set(), vehicleType);
+    const fastest = calculateDijkstraRoute(nodes, graphEdges, initOrigin, initDest, 'fastest', lambdaRisk, new Set(), new Set(), vehicleType);
+    const alternatives = calculateKShortestPaths(nodes, graphEdges, initOrigin, initDest, 'safest', lambdaRisk, 3, vehicleType);
+    const safest =
+      alternatives[0] ||
+      calculateDijkstraRoute(nodes, graphEdges, initOrigin, initDest, 'safest', lambdaRisk, new Set(), new Set(), vehicleType);
+    const bundle: MultiRouteResponse = {
+      originNode: nodes[initOrigin],
+      targetNode: nodes[initDest],
+      lambdaRisk,
+      shortest,
+      fastest,
+      safest,
+      alternatives
+    };
+    setRouteBundle(bundle);
+    onRouteCalculated({ ...bundle, activeMode: 'safest', altIndex: 0 });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run only once on mount
+
+  // Dynamically recalculate safest route when risk-avoidance slider changes (preserving shortest & fastest unchanged)
+  useEffect(() => {
+    if (!routeBundle) return;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/routes/find', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            startNodeId: originId,
+            targetNodeId: destId,
+            lambdaRisk,
+            vehicleType
+          })
+        });
+        if (!res.ok) {
+          throw new Error(`Route refresh failed with HTTP ${res.status}`);
+        }
+        const data: MultiRouteResponse = await res.json();
+        setRouteError(null);
+        setRouteBundle(prev => {
+          if (!prev) return null;
+          const updated = {
+            ...prev,
+            lambdaRisk,
+            safest: data.safest,
+            alternatives: data.alternatives,
+            dataQuality: data.dataQuality
+          };
+          onRouteCalculated({
+            ...updated,
+            activeMode: selectedRouteType,
+            altIndex: selectedRouteType === 'safest' ? selectedAltIdx : undefined
+          });
+          return updated;
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn('[FloodGuard] Backend route refresh failed; using loaded road data:', message);
+        setRouteError(`Backend route refresh failed (${message}) — route recalculated locally; weather and traffic freshness could not be checked.`);
+        const graphEdges = roads.map(r => ({ ...r }));
+        const alternatives = calculateKShortestPaths(nodes, graphEdges, originId, destId, 'safest', lambdaRisk, 3, vehicleType);
+        const safest =
+          alternatives[0] ||
+          calculateDijkstraRoute(nodes, graphEdges, originId, destId, 'safest', lambdaRisk, new Set(), new Set(), vehicleType);
+        setRouteBundle(prev => {
+          if (!prev) return null;
+          const updated = {
+            ...prev,
+            lambdaRisk,
+            safest,
+            alternatives,
+            dataQuality: undefined
+          };
+          onRouteCalculated({
+            ...updated,
+            activeMode: selectedRouteType,
+            altIndex: selectedRouteType === 'safest' ? selectedAltIdx : undefined
+          });
+          return updated;
+        });
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [lambdaRisk]);
 
   useEffect(() => {
     if (!searchTarget || searchQuery.trim().length < 2) {
@@ -454,6 +560,20 @@ export const SafeRoutePlanner: React.FC<SafeRoutePlannerProps> = ({
         </div>
       )}
 
+      {routeBundle?.dataQuality?.warnings.length ? (
+        <div className="text-[11px] bg-amber-950/40 border border-amber-700/50 text-amber-200 px-3 py-2 rounded-xl space-y-1">
+          <div className="flex items-center gap-1.5 font-semibold">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span>Live data limitations</span>
+          </div>
+          <ul className="list-disc pl-5 text-amber-100/90">
+            {routeBundle.dataQuality.warnings.map(warning => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {/* Results */}
       {routeBundle && activeRoute && (
         <div className="space-y-3.5 pt-2 border-t border-slate-800">
@@ -497,14 +617,14 @@ export const SafeRoutePlanner: React.FC<SafeRoutePlannerProps> = ({
                   {data.feasible ? (
                     <div className="space-y-0.5 text-[11px]">
                       <div className="font-bold text-white">
-                        {data.totalDistanceKm} km • {data.travelTimeMins}m
+                        {data.totalDistanceKm} km • {data.travelTimeMins} mins
                       </div>
                       <div className="text-slate-400">
                         Risk: <strong className="text-slate-200">{data.averageRiskScore}</strong>
-                        <span className="text-slate-500"> (Peak {data.maxRiskScore})</span>
+                        <span className="text-slate-500"> ({data.safetyRating})</span>
                       </div>
                       <div className="text-[10px] text-slate-400">
-                        {data.hazardousSegmentCount} haz • {data.closuresAvoidedCount} avoided
+                        Peak {data.maxRiskScore} • {data.hazardousSegmentCount} haz • {data.closuresAvoidedCount} avoided
                       </div>
                     </div>
                   ) : (
@@ -520,8 +640,11 @@ export const SafeRoutePlanner: React.FC<SafeRoutePlannerProps> = ({
             routeBundle.shortest.feasible &&
             routeBundle.safest.edges.map(e => e.id).join(',') === routeBundle.fastest.edges.map(e => e.id).join(',') &&
             routeBundle.fastest.edges.map(e => e.id).join(',') === routeBundle.shortest.edges.map(e => e.id).join(',') && (
-              <div className="text-[11px] bg-slate-800/70 border border-slate-700 text-slate-300 px-3 py-2 rounded-xl">
-                Shortest, Fastest, and Safest independently converge on the same corridor here because it simultaneously minimizes distance, travel time, and C(e) = T(e) + λ·R_time(e).
+              <div className="text-[11px] bg-slate-800/80 border border-slate-700/80 text-slate-300 p-2.5 rounded-xl space-y-1">
+                <div className="font-semibold text-cyan-300">Mathematical Convergence Notice:</div>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  All three independent optimization objectives (minimum distance, minimum travel time, and risk-adjusted cost C(e) = T(e) + λ·R_time(e)) converge on this corridor ({routeBundle.shortest.edges.map(e => e.id).join(' → ')}) because it is the only viable direct path in the road network and strictly dominates all circuitous alternatives in distance, duration, and safety.
+                </p>
               </div>
             )}
 

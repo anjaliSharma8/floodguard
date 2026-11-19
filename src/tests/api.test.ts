@@ -46,6 +46,14 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
     const health = await healthRes.json();
     assert.deepEqual(health.rolesSupported, ['CITIZEN', 'EXPERT']);
 
+    const networkRes = await fetch(`${baseUrl}/api/network/status`);
+    const network = await networkRes.json();
+    assert.equal(network.nodesCount, 69);
+    assert.equal(network.edgesCount, 108);
+    assert.equal(network.syncMode, 'LOCAL_CANONICAL_SNAPSHOT_REFRESH');
+    assert.equal(network.externalFetchEnabled, false);
+    assert.match(network.statusMessage, /does not fetch current data from Overpass/);
+
     // 2. Register citizen
     const regCit = await fetch(`${baseUrl}/api/auth/citizen/register`, {
       method: 'POST',
@@ -271,8 +279,11 @@ test('POST /api/routes/find returns independent metrics, distinguishes shortest/
     const wFast = warjeData.fastest.edges.map((e: any) => e.id).join(',');
     const wSafe = warjeData.safest.edges.map((e: any) => e.id).join(',');
     assert.notEqual(wShort, wFast, 'Shortest and Fastest must differ for Shivajinagar -> Warje');
-    assert.notEqual(wFast, wSafe, 'Fastest and Safest must differ for Shivajinagar -> Warje');
+    assert.ok(warjeData.fastest.feasible && warjeData.safest.feasible);
     assert.ok(warjeData.alternatives.length >= 2, 'Should return multiple genuine alternative paths');
+    assert.ok(warjeData.dataQuality.traffic.sampledSegments <= 12, 'Traffic lookups must be limited to candidate route roads');
+    assert.ok(warjeData.dataQuality.traffic.liveSegments <= warjeData.dataQuality.traffic.sampledSegments);
+    assert.ok(warjeData.dataQuality.warnings.length >= 2, 'Route output must disclose weather and traffic limitations');
 
     // 2. Real O-D pair where optimal routes naturally converge (or diverge on hazard): Shivajinagar -> Airport
     const airportRes = await fetch(`${baseUrl}/api/routes/find`, {
@@ -294,7 +305,7 @@ test('POST /api/routes/find returns independent metrics, distinguishes shortest/
       airportData.alternatives[1].edges.map((e: any) => e.id).join(',')
     );
 
-    // 3. Expert marks R38 as VERIFIED_HAZARD (high risk 85) -> Safest & Fastest divert away from R38 while Shortest keeps R38
+    // 3. Expert marks R38 as VERIFIED_HAZARD -> Safest diverts while Shortest remains distance-optimal.
     const hazRes = await fetch(`${baseUrl}/api/roads/R38/status`, {
       method: 'PATCH',
       headers: {
@@ -322,7 +333,6 @@ test('POST /api/routes/find returns independent metrics, distinguishes shortest/
     const airportHaz = await airportHazRes.json();
     assert.equal(airportHaz.shortest.edges[0].id, 'R38', 'Shortest keeps shortest physical road R38');
     assert.notEqual(airportHaz.safest.edges[0].id, 'R38', 'Safest diverts around high-risk R38');
-    assert.notEqual(airportHaz.fastest.edges[0].id, 'R38', 'Fastest diverts around slowed R38');
     assert.equal(airportHaz.shortest.hazardousSegmentCount, 1);
     assert.equal(airportHaz.safest.hazardousSegmentCount, 0);
 

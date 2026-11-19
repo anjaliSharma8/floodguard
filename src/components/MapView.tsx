@@ -27,6 +27,7 @@ interface MapViewProps {
   selectedRoadId?: string | null;
   onSelectRoad?: (road: RoadSegment) => void;
   onGpsDetected?: (lat: number, lng: number) => void;
+  onMapCoordinateClick?: (lat: number, lng: number) => void;
 }
 
 function getSemanticRoadColor(road: RoadSegment): { color: string; dashArray?: string; weight: number } {
@@ -63,7 +64,8 @@ export const MapView: React.FC<MapViewProps> = ({
   onSelectNode,
   selectedRoadId,
   onSelectRoad,
-  onGpsDetected
+  onGpsDetected,
+  onMapCoordinateClick
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -80,6 +82,11 @@ export const MapView: React.FC<MapViewProps> = ({
   const [tileError, setTileError] = useState(false);
   const [gpsNotice, setGpsNotice] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(false);
+
+  const onMapCoordinateClickRef = useRef(onMapCoordinateClick);
+  useEffect(() => {
+    onMapCoordinateClickRef.current = onMapCoordinateClick;
+  }, [onMapCoordinateClick]);
 
   // Initialize Leaflet map once
   useEffect(() => {
@@ -106,6 +113,12 @@ export const MapView: React.FC<MapViewProps> = ({
     });
 
     tiles.addTo(map);
+
+    map.on('click', (e: L.LeafletMouseEvent) => {
+      if (onMapCoordinateClickRef.current) {
+        onMapCoordinateClickRef.current(e.latlng.lat, e.latlng.lng);
+      }
+    });
 
     const layerGroup = L.layerGroup().addTo(map);
     layerGroupRef.current = layerGroup;
