@@ -1,16 +1,12 @@
 import React, { useState } from 'react';
 import { Shelter, Hospital, EmergencyFacility, Language } from '../types';
 import { TRANSLATIONS } from '../utils/i18n';
-import { 
-  PhoneCall, 
-  ShieldCheck, 
-  Heart, 
-  Cross, 
-  MapPin, 
-  Check, 
-  AlertCircle, 
-  Filter, 
-  PawPrint, 
+import {
+  PhoneCall,
+  ShieldCheck,
+  Heart,
+  Cross,
+  PawPrint,
   Accessibility,
   Flame,
   LifeBuoy
@@ -45,15 +41,15 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-4">
         <div className="flex items-center space-x-2.5">
           <div className="p-2 bg-red-600/20 text-red-400 rounded-xl border border-red-500/30">
-            <LifeBuoy className="w-5 h-5 text-red-400 animate-spin" />
+            <LifeBuoy className="w-5 h-5 text-red-400" />
           </div>
           <div>
             <h2 className="text-base font-bold text-white tracking-wide">{t.emergencySOS}</h2>
-            <p className="text-xs text-slate-400">Section 16 Verified Helplines, Animal Rescue & Vulnerable Population Aid</p>
+            <p className="text-xs text-slate-400">Pune & PCMC Verified Helplines, Animal Rescue & Accessible Evacuation Support</p>
           </div>
         </div>
-        <span className="text-xs bg-red-600 text-white font-bold px-3 py-1 rounded-full animate-pulse self-start">
-          24x7 Active Dispatch
+        <span className="text-xs bg-red-600 text-white font-bold px-3 py-1 rounded-full self-start">
+          24x7 Dispatch Directory
         </span>
       </div>
 
@@ -87,7 +83,7 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
             <div className="truncate">
               <span className="text-xs font-bold text-white block">Central Fire & Water Rescue</span>
               <span className="text-xs text-amber-300 font-mono font-bold">101 / 020-26451707</span>
-              <span className="text-[10px] text-slate-400 block">Inflatable Boats & Tree Fall</span>
+              <span className="text-[10px] text-slate-400 block">Boat Dispatch & Tree Fall</span>
             </div>
           </a>
 
@@ -149,7 +145,7 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
         </div>
       </div>
 
-      {/* SECTION 16: VULNERABLE POPULATION & PET SUPPORT PROTOCOLS */}
+      {/* VULNERABLE POPULATION & PET SUPPORT PROTOCOLS */}
       <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700/80 space-y-2">
         <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center space-x-1.5">
           <Heart className="w-4 h-4 text-pink-400" />
@@ -157,16 +153,16 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
         </h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-slate-300 pt-1">
           <div className="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-            <span className="font-bold text-white block mb-1">👶 Children & Seniors</span>
+            <span className="font-bold text-white block mb-1">Children & Seniors</span>
             <p className="text-[11px] text-slate-400">Keep electrolyte sachets, warm clothes, and 3 days of chronic medications in waterproof ziplocs.</p>
           </div>
           <div className="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-            <span className="font-bold text-white block mb-1">♿ Persons with Disabilities</span>
-            <p className="text-[11px] text-slate-400">Identify step-free shelters (marked with wheelchair badge). Call PMC Disaster cell for assisted stretcher transport.</p>
+            <span className="font-bold text-white block mb-1">Persons with Disabilities</span>
+            <p className="text-[11px] text-slate-400">Select step-free shelters below (marked Wheelchair). Call PMC Disaster cell for assisted stretcher transport.</p>
           </div>
           <div className="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-            <span className="font-bold text-white block mb-1">🐾 Domestic Pets & Strays</span>
-            <p className="text-[11px] text-slate-400">Never leave dogs tied or birds caged during rising waters. Keep phone tags on collars. Call RESQ for boat animal pickup.</p>
+            <span className="font-bold text-white block mb-1">Domestic Pets & Strays</span>
+            <p className="text-[11px] text-slate-400">Never leave dogs tied or birds caged during rising waters. Keep phone tags on collars. Call RESQ for animal rescue.</p>
           </div>
         </div>
       </div>
@@ -178,7 +174,7 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
             <span>{t.shelters}</span>
           </h3>
 
-          <div className="flex items-center space-x-1.5 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
             <span className="text-slate-400 text-[11px]">Filter:</span>
             <button
               onClick={() => setShelterFilter('all')}
@@ -211,7 +207,9 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {filteredShelters.map(shelter => {
-            const occPct = Math.round((shelter.currentOccupancy / shelter.capacity) * 100);
+            const occPct = shelter.capacity > 0
+              ? Math.round((shelter.currentOccupancy / shelter.capacity) * 100)
+              : 0;
 
             return (
               <div key={shelter.id} className="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3.5 text-xs space-y-2">
@@ -222,10 +220,14 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
                   </div>
                   <div className="flex space-x-1 shrink-0">
                     {shelter.petFriendly && (
-                      <span className="p-1 bg-emerald-500/20 text-emerald-400 rounded" title={t.petFriendlyBadge}>🐾</span>
+                      <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 rounded text-[10px] font-semibold" title={t.petFriendlyBadge}>
+                        Pets OK
+                      </span>
                     )}
                     {shelter.wheelchairAccessible && (
-                      <span className="p-1 bg-blue-500/20 text-blue-400 rounded" title={t.wheelchairBadge}>♿</span>
+                      <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-300 rounded text-[10px] font-semibold" title={t.wheelchairBadge}>
+                        Step-Free
+                      </span>
                     )}
                   </div>
                 </div>
@@ -239,7 +241,7 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
                   <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
                     <div
                       className={`h-full ${occPct > 80 ? 'bg-red-500' : (occPct > 50 ? 'bg-amber-500' : 'bg-emerald-500')}`}
-                      style={{ width: `${occPct}%` }}
+                      style={{ width: `${Math.min(100, occPct)}%` }}
                     />
                   </div>
                 </div>
@@ -256,6 +258,28 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
         </div>
       </div>
 
+      {/* SPECIALIZED RESCUE FACILITIES */}
+      {emergencyFacilities.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Command Posts & Specialized Rescue Units</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {emergencyFacilities.map(fac => (
+              <div key={fac.id} className="bg-slate-800/60 border border-slate-700 rounded-xl p-3 text-xs space-y-1">
+                <h4 className="font-bold text-white truncate">{fac.name}</h4>
+                <p className="text-[11px] text-cyan-300">{fac.type}</p>
+                <p className="text-[11px] text-slate-400">{fac.specialization}</p>
+                <div className="pt-1 border-t border-slate-700/60 flex justify-between items-center text-[11px]">
+                  <span className="text-slate-400">{fac.serviceHours}</span>
+                  <a href={`tel:${fac.contact}`} className="text-cyan-400 font-mono font-bold">
+                    {fac.contact}
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* EMERGENCY HOSPITALS */}
       <div className="space-y-3">
         <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">{t.hospitals}</h3>
@@ -267,10 +291,10 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
               <p className="text-[11px] text-slate-400">{hosp.type}</p>
               <div className="flex justify-between text-[11px] text-slate-300 pt-1">
                 <span>Total Beds: <strong>{hosp.totalBeds}</strong></span>
-                <span className="text-emerald-400 font-semibold">ICU: {hosp.availableIcu} Avail</span>
+                <span className="text-emerald-400 font-semibold">ICU: {hosp.availableIcu} Beds</span>
               </div>
               <div className="pt-1 border-t border-slate-700/60 flex justify-between items-center text-[11px]">
-                <span className="text-red-400 font-bold">24x7 Trauma Ready</span>
+                <span className="text-red-400 font-bold">{hosp.hasTraumaCenter ? '24x7 Trauma Ready' : 'Emergency Desk'}</span>
                 <a href={`tel:${hosp.contact}`} className="text-cyan-400 font-mono font-bold">
                   Call Desk
                 </a>

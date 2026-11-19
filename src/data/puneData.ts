@@ -1,403 +1,188 @@
-import { RoadNode, RoadSegment, Shelter, Hospital, EmergencyFacility, CommunityReport, LivePoll, RainfallObservation, HistoricalFlood } from '../types';
+import roadsGeoJson from './roads.json' with { type: 'json' };
+import {
+  RoadNode,
+  RoadSegment,
+  Shelter,
+  Hospital,
+  EmergencyFacility,
+  CommunityReport,
+  LivePoll,
+  HistoricalFlood,
+  WaterwayFeature
+} from '../types';
+import { calculateFloodRisk } from '../utils/rules';
 
-export const PUNE_ROAD_NODES: Record<string, RoadNode> = {
-  N_SHIVAJINAGAR: {
-    id: 'N_SHIVAJINAGAR',
-    name: 'Shivajinagar Junction (Sancheti Chowk)',
-    lat: 18.5314,
-    lng: 73.8446,
-    elevationM: 560
-  },
-  N_DECCAN: {
-    id: 'N_DECCAN',
-    name: 'Deccan Gymkhana (Goodluck Chowk)',
-    lat: 18.5186,
-    lng: 73.8378,
-    elevationM: 558
-  },
-  N_SINHAGAD_RD: {
-    id: 'N_SINHAGAD_RD',
-    name: 'Sinhagad Road (Anand Nagar / Ekta Nagari)',
-    lat: 18.4980,
-    lng: 73.8210,
-    elevationM: 546
-  },
-  N_KOTHRUD: {
-    id: 'N_KOTHRUD',
-    name: 'Kothrud (Chandani Chowk Road)',
-    lat: 18.5020,
-    lng: 73.8060,
-    elevationM: 572
-  },
-  N_SWARGATE: {
-    id: 'N_SWARGATE',
-    name: 'Swargate (Jedhe Chowk Hub)',
-    lat: 18.5018,
-    lng: 73.8580,
-    elevationM: 559
-  },
-  N_KATRAJ: {
-    id: 'N_KATRAJ',
-    name: 'Katraj Junction',
-    lat: 18.4520,
-    lng: 73.8520,
-    elevationM: 585
-  },
-  N_BUND_GARDEN: {
-    id: 'N_BUND_GARDEN',
-    name: 'Bund Garden / Sangam Bridge',
-    lat: 18.5340,
-    lng: 73.8790,
-    elevationM: 551
-  },
-  N_AIRPORT: {
-    id: 'N_AIRPORT',
-    name: 'Lohegaon Airport Junction',
-    lat: 18.5822,
-    lng: 73.9197,
-    elevationM: 568
-  },
-  N_AUNDH: {
-    id: 'N_AUNDH',
-    name: 'Aundh Parihar Chowk',
-    lat: 18.5620,
-    lng: 73.8050,
-    elevationM: 565
-  },
-  N_WAKAD: {
-    id: 'N_WAKAD',
-    name: 'Wakad Bridge & Highway',
-    lat: 18.5980,
-    lng: 73.7650,
-    elevationM: 574
-  },
-  N_HINJAWADI: {
-    id: 'N_HINJAWADI',
-    name: 'Hinjawadi IT Park Phase 1',
-    lat: 18.5890,
-    lng: 73.7180,
-    elevationM: 578
-  },
-  N_PIMPRI: {
-    id: 'N_PIMPRI',
-    name: 'Pimpri Chhatrapati Shivaji Chowk',
-    lat: 18.6279,
-    lng: 73.8131,
-    elevationM: 562
-  },
-  N_CHINCHWAD: {
-    id: 'N_CHINCHWAD',
-    name: 'Chinchwad Station Junction',
-    lat: 18.6420,
-    lng: 73.7850,
-    elevationM: 566
-  }
+interface GeoJsonRoadFeature {
+  type: string;
+  id: string;
+  geometry: {
+    type: string;
+    coordinates: [number, number][]; // [lng, lat]
+  };
+  properties: {
+    road_id: string;
+    road_name: string;
+    from_node: string;
+    to_node: string;
+    road_type: 'trunk' | 'primary' | 'secondary' | 'tertiary';
+    distance_km: number;
+    estimated_speed_kmph: number;
+    base_elevation_m: number | null;
+    midpoint_elevation_m?: number | null;
+    slope_pct: number | null;
+    drainage_condition: 'good' | 'moderate' | 'poor' | 'clogged' | 'unknown';
+    access_restriction: 'all_vehicles' | 'no_heavy_vehicles' | 'emergency_only';
+    one_way: boolean;
+    is_bridge?: boolean;
+    is_tunnel?: boolean;
+    surface?: string;
+    has_historical_flood: boolean;
+    waterway_proximity?: string | null;
+    geometry_source?: string;
+  };
+}
+
+const rawGeo = roadsGeoJson as unknown as {
+  metadata: {
+    extracted_at: string;
+    nodes: Record<string, RoadNode>;
+  };
+  features: GeoJsonRoadFeature[];
 };
 
-export const INITIAL_ROAD_SEGMENTS: RoadSegment[] = [
+export const PUNE_ROAD_NODES: Record<string, RoadNode> = rawGeo.metadata.nodes;
+
+export const INITIAL_ROAD_SEGMENTS: RoadSegment[] = rawGeo.features.map((feat) => {
+  const p = feat.properties;
+  // Convert GeoJSON [lng, lat] -> Leaflet [lat, lng]
+  const leafletCoords: [number, number][] = feat.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+
+  // Compute honest baseline risk without pretending live rainfall telemetry yet (rainfallMm: null until weather feed resolves)
+  const baseline = calculateFloodRisk({
+    rainfallMm: null,
+    elevationM: p.base_elevation_m,
+    slopePct: p.slope_pct,
+    drainageCondition: p.drainage_condition,
+    hasHistoricalFlood: p.has_historical_flood,
+    communityRiskScore: p.has_historical_flood ? 40 : 10
+  });
+
+  return {
+    id: p.road_id,
+    name: p.road_name,
+    from: p.from_node,
+    to: p.to_node,
+    distanceKm: p.distance_km,
+    speedKmph: p.estimated_speed_kmph,
+    roadType: p.road_type,
+    baseElevationM: p.base_elevation_m,
+    slopePct: p.slope_pct,
+    drainageCondition: p.drainage_condition,
+    isOneWay: Boolean(p.one_way),
+    accessRestriction: p.access_restriction || 'all_vehicles',
+    isBridge: Boolean(p.is_bridge),
+    isTunnel: Boolean(p.is_tunnel),
+    surface: p.surface || 'asphalt',
+    hasHistoricalFlood: Boolean(p.has_historical_flood),
+    waterwayProximity: p.waterway_proximity ?? null,
+    riskScore: baseline.riskScore,
+    riskCategory: baseline.category,
+    confidenceScore: baseline.confidenceScore,
+    status: p.has_historical_flood ? 'REPORTED_WATERLOGGING' : 'OPEN',
+    coordinates: leafletCoords,
+    geometrySource: p.geometry_source || 'OpenStreetMap via OSRM',
+    lastUpdated: rawGeo.metadata.extracted_at
+  };
+});
+
+export interface MonitoringStationDef {
+  stationId: string;
+  stationName: string;
+  lat: number;
+  lng: number;
+}
+
+export const PUNE_MONITORING_STATIONS: MonitoringStationDef[] = [
+  { stationId: 'PUN_SHIVAJINAGAR', stationName: 'Shivajinagar / Central Pune', lat: 18.5314, lng: 73.8446 },
+  { stationId: 'PUN_PASHAN', stationName: 'Pashan / Baner West', lat: 18.5388, lng: 73.7915 },
+  { stationId: 'PUN_LOHEGAON', stationName: 'Lohegaon Airport / East Pune', lat: 18.5822, lng: 73.9197 },
+  { stationId: 'PCMC_CHINCHWAD', stationName: 'Pimpri-Chinchwad Basin', lat: 18.6298, lng: 73.7997 },
+  { stationId: 'PUN_KHADAKWASLA', stationName: 'Khadakwasla / Sinhagad Catchment', lat: 18.4450, lng: 73.7750 },
+  { stationId: 'PUN_SWARGATE', stationName: 'Swargate / Katraj South', lat: 18.4806, lng: 73.8580 }
+];
+
+export const INITIAL_WATERWAYS: WaterwayFeature[] = [
   {
-    id: 'R01',
-    name: 'Fergusson College (FC) Road',
-    from: 'N_SHIVAJINAGAR',
-    to: 'N_DECCAN',
-    distanceKm: 1.8,
-    speedKmph: 35,
-    roadType: 'primary',
-    baseElevationM: 560,
-    slopePct: 1.2,
-    drainageCondition: 'moderate',
-    riskScore: 42,
-    status: 'caution',
-    coordinates: [
-      [18.5314, 73.8446],
-      [18.5245, 73.8402],
-      [18.5186, 73.8378]
-    ]
+    id: 'DRN_01',
+    name: 'Ambil Odha Natural Nullah',
+    waterwayType: 'stream',
+    sector: 'Sinhagad Road / Sahakar Nagar',
+    lat: 18.4968,
+    lng: 73.8214,
+    capacityKnown: false,
+    reportedCapacityCusecs: null,
+    maintenanceNote: 'Natural storm nullah traversing Parvati-Sinhagad basin; historical bottleneck during intense cloudbursts.',
+    source: 'OpenStreetMap Waterways & PMC Flood Review'
   },
   {
-    id: 'R02',
-    name: 'Jangali Maharaj (JM) Road',
-    from: 'N_SHIVAJINAGAR',
-    to: 'N_DECCAN',
-    distanceKm: 1.9,
-    speedKmph: 40,
-    roadType: 'primary',
-    baseElevationM: 558,
-    slopePct: 0.8,
-    drainageCondition: 'good',
-    riskScore: 28,
-    status: 'open',
-    coordinates: [
-      [18.5314, 73.8446],
-      [18.5255, 73.8475],
-      [18.5186, 73.8378]
-    ]
+    id: 'DRN_02',
+    name: 'Mutha River Corridor (Bhide / Lakdi / Sangam)',
+    waterwayType: 'river',
+    sector: 'Deccan - Shivajinagar - Sangam',
+    lat: 18.5175,
+    lng: 73.8440,
+    capacityKnown: false,
+    reportedCapacityCusecs: null,
+    maintenanceNote: 'Regulated by upstream Khadakwasla Dam discharge; low-lying causeways submerge during heavy release.',
+    source: 'OpenStreetMap & Maharashtra Irrigation Dept Reference'
   },
   {
-    id: 'R03',
-    name: 'Sinhagad Road (Anand Nagar Stretch)',
-    from: 'N_DECCAN',
-    to: 'N_SINHAGAD_RD',
-    distanceKm: 3.8,
-    speedKmph: 25,
-    roadType: 'primary',
-    baseElevationM: 546,
-    slopePct: 0.4,
-    drainageCondition: 'poor',
-    riskScore: 88,
-    status: 'critical_waterlogged',
-    coordinates: [
-      [18.5186, 73.8378],
-      [18.5080, 73.8320],
-      [18.4980, 73.8210]
-    ]
+    id: 'DRN_03',
+    name: 'Mula-Mutha Confluence & Bund Garden Stretch',
+    waterwayType: 'river',
+    sector: 'Bund Garden / Yerawada',
+    lat: 18.5364,
+    lng: 73.8812,
+    capacityKnown: false,
+    reportedCapacityCusecs: null,
+    maintenanceNote: 'Confluence basin receiving combined Mula and Mutha river flows; capacity depends on upstream dam outflow.',
+    source: 'OpenStreetMap Waterways'
   },
   {
-    id: 'R04',
-    name: 'Karve Road (Deccan to Kothrud)',
-    from: 'N_DECCAN',
-    to: 'N_KOTHRUD',
-    distanceKm: 3.2,
-    speedKmph: 35,
-    roadType: 'primary',
-    baseElevationM: 572,
-    slopePct: 2.1,
-    drainageCondition: 'good',
-    riskScore: 18,
-    status: 'open',
-    coordinates: [
-      [18.5186, 73.8378],
-      [18.5075, 73.8240],
-      [18.5020, 73.8060]
-    ]
+    id: 'DRN_04',
+    name: 'Pavana River Basin (Sangvi - Pimpri - Chinchwad)',
+    waterwayType: 'river',
+    sector: 'Pimpri-Chinchwad',
+    lat: 18.5818,
+    lng: 73.8168,
+    capacityKnown: false,
+    reportedCapacityCusecs: null,
+    maintenanceNote: 'Low-lying riparian stretch near Old Sangvi & Dapodi; subject to backwater swelling from Pavana Dam release.',
+    source: 'OpenStreetMap & PCMC Flood Zone Reference'
   },
   {
-    id: 'R05',
-    name: 'Warje Bypass / Canal Link',
-    from: 'N_KOTHRUD',
-    to: 'N_SINHAGAD_RD',
-    distanceKm: 4.1,
-    speedKmph: 30,
-    roadType: 'secondary',
-    baseElevationM: 565,
-    slopePct: 1.5,
-    drainageCondition: 'moderate',
-    riskScore: 38,
-    status: 'open',
-    coordinates: [
-      [18.5020, 73.8060],
-      [18.4850, 73.8120],
-      [18.4980, 73.8210]
-    ]
+    id: 'DRN_05',
+    name: 'Mula River (Aundh - Baner - Wakad)',
+    waterwayType: 'river',
+    sector: 'Aundh / Baner / Wakad',
+    lat: 18.5620,
+    lng: 73.8050,
+    capacityKnown: false,
+    reportedCapacityCusecs: null,
+    maintenanceNote: 'Meandering river boundary between Pune & PCMC; approach roads near bridges vulnerable to runoff.',
+    source: 'OpenStreetMap Waterways'
   },
   {
-    id: 'R06',
-    name: 'Tilak Road (Deccan to Swargate)',
-    from: 'N_DECCAN',
-    to: 'N_SWARGATE',
-    distanceKm: 2.4,
-    speedKmph: 30,
-    roadType: 'primary',
-    baseElevationM: 559,
-    slopePct: 0.7,
-    drainageCondition: 'moderate',
-    riskScore: 45,
-    status: 'caution',
-    coordinates: [
-      [18.5186, 73.8378],
-      [18.5100, 73.8480],
-      [18.5018, 73.8580]
-    ]
-  },
-  {
-    id: 'R07',
-    name: 'Satara Road (Swargate to Katraj)',
-    from: 'N_SWARGATE',
-    to: 'N_KATRAJ',
-    distanceKm: 5.6,
-    speedKmph: 45,
-    roadType: 'primary',
-    baseElevationM: 585,
-    slopePct: 3.0,
-    drainageCondition: 'moderate',
-    riskScore: 25,
-    status: 'open',
-    coordinates: [
-      [18.5018, 73.8580],
-      [18.4720, 73.8550],
-      [18.4520, 73.8520]
-    ]
-  },
-  {
-    id: 'R08',
-    name: 'Pune Station to Bund Garden Road',
-    from: 'N_SHIVAJINAGAR',
-    to: 'N_BUND_GARDEN',
-    distanceKm: 3.6,
-    speedKmph: 35,
-    roadType: 'primary',
-    baseElevationM: 551,
-    slopePct: 0.5,
-    drainageCondition: 'moderate',
-    riskScore: 68,
-    status: 'caution',
-    coordinates: [
-      [18.5314, 73.8446],
-      [18.5280, 73.8680],
-      [18.5340, 73.8790]
-    ]
-  },
-  {
-    id: 'R09',
-    name: 'Yerawada - Airport Road',
-    from: 'N_BUND_GARDEN',
-    to: 'N_AIRPORT',
-    distanceKm: 6.8,
-    speedKmph: 50,
-    roadType: 'trunk',
-    baseElevationM: 568,
-    slopePct: 1.4,
-    drainageCondition: 'good',
-    riskScore: 22,
-    status: 'open',
-    coordinates: [
-      [18.5340, 73.8790],
-      [18.5520, 73.8920],
-      [18.5822, 73.9197]
-    ]
-  },
-  {
-    id: 'R10',
-    name: 'Ganeshkhind Road (Univ to Aundh)',
-    from: 'N_SHIVAJINAGAR',
-    to: 'N_AUNDH',
-    distanceKm: 4.5,
-    speedKmph: 40,
-    roadType: 'primary',
-    baseElevationM: 565,
-    slopePct: 1.1,
-    drainageCondition: 'good',
-    riskScore: 20,
-    status: 'open',
-    coordinates: [
-      [18.5314, 73.8446],
-      [18.5580, 73.8180],
-      [18.5620, 73.8050]
-    ]
-  },
-  {
-    id: 'R11',
-    name: 'Aundh-Baner-Wakad Highway',
-    from: 'N_AUNDH',
-    to: 'N_WAKAD',
-    distanceKm: 5.8,
-    speedKmph: 55,
-    roadType: 'trunk',
-    baseElevationM: 574,
-    slopePct: 1.3,
-    drainageCondition: 'good',
-    riskScore: 14,
-    status: 'open',
-    coordinates: [
-      [18.5620, 73.8050],
-      [18.5680, 73.7850],
-      [18.5980, 73.7650]
-    ]
-  },
-  {
-    id: 'R12',
-    name: 'Wakad to Hinjawadi IT Park Phase 1',
-    from: 'N_WAKAD',
-    to: 'N_HINJAWADI',
-    distanceKm: 4.2,
-    speedKmph: 45,
-    roadType: 'primary',
-    baseElevationM: 578,
-    slopePct: 0.9,
-    drainageCondition: 'good',
-    riskScore: 19,
-    status: 'open',
-    coordinates: [
-      [18.5980, 73.7650],
-      [18.5910, 73.7380],
-      [18.5890, 73.7180]
-    ]
-  },
-  {
-    id: 'R13',
-    name: 'Wakad - Pimple Saudagar - Pimpri Link',
-    from: 'N_WAKAD',
-    to: 'N_PIMPRI',
-    distanceKm: 5.4,
-    speedKmph: 40,
-    roadType: 'primary',
-    baseElevationM: 562,
-    slopePct: 0.7,
-    drainageCondition: 'moderate',
-    riskScore: 48,
-    status: 'caution',
-    coordinates: [
-      [18.5980, 73.7650],
-      [18.6180, 73.7880],
-      [18.6279, 73.8131]
-    ]
-  },
-  {
-    id: 'R14',
-    name: 'Pimpri - Chinchwad Grade Separator',
-    from: 'N_PIMPRI',
-    to: 'N_CHINCHWAD',
-    distanceKm: 3.1,
-    speedKmph: 50,
-    roadType: 'trunk',
-    baseElevationM: 566,
-    slopePct: 0.5,
-    drainageCondition: 'good',
-    riskScore: 26,
-    status: 'open',
-    coordinates: [
-      [18.6279, 73.8131],
-      [18.6298, 73.7997],
-      [18.6420, 73.7850]
-    ]
-  },
-  {
-    id: 'R15',
-    name: 'Old Pune-Mumbai Highway (Shivajinagar-Pimpri)',
-    from: 'N_SHIVAJINAGAR',
-    to: 'N_PIMPRI',
-    distanceKm: 11.2,
-    speedKmph: 55,
-    roadType: 'trunk',
-    baseElevationM: 560,
-    slopePct: 0.8,
-    drainageCondition: 'good',
-    riskScore: 24,
-    status: 'open',
-    coordinates: [
-      [18.5314, 73.8446],
-      [18.5720, 73.8320],
-      [18.6279, 73.8131]
-    ]
-  },
-  {
-    id: 'R16',
-    name: 'Sinhagad Road - Dhayari - Katraj Bypass',
-    from: 'N_SINHAGAD_RD',
-    to: 'N_KATRAJ',
-    distanceKm: 6.5,
-    speedKmph: 40,
-    roadType: 'secondary',
-    baseElevationM: 580,
-    slopePct: 2.4,
-    drainageCondition: 'moderate',
-    riskScore: 36,
-    status: 'open',
-    coordinates: [
-      [18.4980, 73.8210],
-      [18.4750, 73.8400],
-      [18.4520, 73.8520]
-    ]
+    id: 'DRN_06',
+    name: 'Nagzari Nullah Corridor',
+    waterwayType: 'drain',
+    sector: 'Camp / Pune Railway Station',
+    lat: 18.5289,
+    lng: 73.8744,
+    capacityKnown: false,
+    reportedCapacityCusecs: null,
+    maintenanceNote: 'Urban stormwater nullah; discharge capacity not publicly instrumented in open telemetry.',
+    source: 'OpenStreetMap Waterways'
   }
 ];
 
@@ -408,7 +193,7 @@ export const INITIAL_SHELTERS: Shelter[] = [
     lat: 18.5320,
     lng: 73.8460,
     capacity: 250,
-    currentOccupancy: 65,
+    currentOccupancy: 40,
     petFriendly: true,
     wheelchairAccessible: true,
     contact: '+91-20-25501001',
@@ -421,7 +206,7 @@ export const INITIAL_SHELTERS: Shelter[] = [
     lat: 18.5080,
     lng: 73.8070,
     capacity: 500,
-    currentOccupancy: 120,
+    currentOccupancy: 85,
     petFriendly: true,
     wheelchairAccessible: true,
     contact: '+91-20-25442010',
@@ -434,7 +219,7 @@ export const INITIAL_SHELTERS: Shelter[] = [
     lat: 18.4750,
     lng: 73.8180,
     capacity: 350,
-    currentOccupancy: 210,
+    currentOccupancy: 120,
     petFriendly: false,
     wheelchairAccessible: true,
     contact: '+91-20-24358890',
@@ -447,7 +232,7 @@ export const INITIAL_SHELTERS: Shelter[] = [
     lat: 18.5020,
     lng: 73.8590,
     capacity: 300,
-    currentOccupancy: 95,
+    currentOccupancy: 60,
     petFriendly: true,
     wheelchairAccessible: false,
     contact: '+91-20-24443211',
@@ -460,7 +245,7 @@ export const INITIAL_SHELTERS: Shelter[] = [
     lat: 18.6280,
     lng: 73.8150,
     capacity: 450,
-    currentOccupancy: 110,
+    currentOccupancy: 75,
     petFriendly: true,
     wheelchairAccessible: true,
     contact: '+91-20-27425555',
@@ -473,7 +258,7 @@ export const INITIAL_SHELTERS: Shelter[] = [
     lat: 18.5530,
     lng: 73.8890,
     capacity: 200,
-    currentOccupancy: 45,
+    currentOccupancy: 30,
     petFriendly: false,
     wheelchairAccessible: true,
     contact: '+91-20-26681020',
@@ -614,142 +399,153 @@ export const INITIAL_EMERGENCY_FACILITIES: EmergencyFacility[] = [
   }
 ];
 
+export const INITIAL_HISTORICAL_FLOODS: HistoricalFlood[] = [
+  {
+    id: 'INC_2019_01',
+    name: 'Ambil Odha Flash Flood',
+    lat: 18.4980,
+    lng: 73.8420,
+    date: '2019-09-25',
+    severity: 'Critical',
+    waterLevelM: 2.4,
+    roadAffected: 'Sinhagad Road / Aranyeshwar',
+    source: 'PMC Disaster Analysis'
+  },
+  {
+    id: 'INC_2019_02',
+    name: 'Sinhagad Road Ekta Nagari Inundation',
+    lat: 18.4850,
+    lng: 73.8210,
+    date: '2019-09-26',
+    severity: 'Critical',
+    waterLevelM: 2.8,
+    roadAffected: 'Sinhagad Road Riverside',
+    source: 'CWC Flood Bulletins'
+  },
+  {
+    id: 'INC_2021_01',
+    name: 'Mutha River Swelling (Bhide Bridge)',
+    lat: 18.5175,
+    lng: 73.8440,
+    date: '2021-07-23',
+    severity: 'High',
+    waterLevelM: 1.8,
+    roadAffected: 'Deccan Riverside Causeway',
+    source: 'Irrigation Dept Discharge'
+  },
+  {
+    id: 'INC_2023_01',
+    name: 'Pavana River Inundation (Sangvi)',
+    lat: 18.5880,
+    lng: 73.8120,
+    date: '2023-07-19',
+    severity: 'High',
+    waterLevelM: 1.5,
+    roadAffected: 'Old Sangvi Bridge Road',
+    source: 'PCMC Incident Log'
+  }
+];
+
 export const INITIAL_COMMUNITY_REPORTS: CommunityReport[] = [
   {
     id: 'REP_101',
-    userId: 'usr_pune_89',
-    roadId: 'R03',
-    locationName: 'Sinhagad Road near Ekta Nagari',
-    lat: 18.4980,
-    lng: 73.8210,
-    reportType: 'Road flooded',
-    description: 'Water level reached knee height (~1.5 ft) on riverside lane. Small cars cannot pass. Mutha river backwater rising.',
-    severity: 'Critical',
+    userId: 'USR_CITIZEN_01',
+    userName: 'Anjali Sharma',
+    roadId: 'R08',
+    locationName: 'Sinhagad Road near Ekta Nagari / Dandekar Bridge',
+    lat: 18.4968,
+    lng: 73.8214,
+    reportType: 'Waterlogging',
+    description: 'Historical flood-prone Mutha riverside low-lying lane; monitor drainage grates during intense rain.',
+    severity: 'High',
     timestamp: '2026-10-30T08:15:00Z',
     verificationStatus: 'Verified',
-    confidenceScore: 0.94
+    confidenceScore: 0.90,
+    reviewedBy: 'Dr. Rajiv Kulkarni',
+    reviewNotes: 'Confirmed historical risk zone along Mutha basin'
   },
   {
     id: 'REP_102',
-    userId: 'usr_pune_42',
-    roadId: 'R01',
-    locationName: 'FC Road outside Starbucks',
-    lat: 18.5245,
-    lng: 73.8402,
-    reportType: 'Waterlogging',
-    description: 'Moderate water accumulation near footpath drain, 2-wheelers can pass with caution.',
-    severity: 'Moderate',
-    timestamp: '2026-10-30T08:30:00Z',
-    verificationStatus: 'Verified',
-    confidenceScore: 0.85
-  },
-  {
-    id: 'REP_103',
-    userId: 'usr_pune_17',
-    roadId: 'R08',
-    locationName: 'Bund Garden Bridge approach',
-    lat: 18.5340,
-    lng: 73.8790,
-    reportType: 'Traffic disruption',
-    description: 'Traffic crawl due to 6-inch water puddles near bridge ramp.',
-    severity: 'High',
-    timestamp: '2026-10-30T08:45:00Z',
-    verificationStatus: 'Under Review',
-    confidenceScore: 0.74
-  },
-  {
-    id: 'REP_104',
-    userId: 'usr_pune_63',
-    roadId: 'R13',
-    locationName: 'Pimple Saudagar Linear Garden',
-    lat: 18.6180,
-    lng: 73.7880,
+    userId: 'USR_CITIZEN_01',
+    userName: 'Anjali Sharma',
+    roadId: 'R31',
+    locationName: 'Old Sangvi - Pavana Bridge Approach',
+    lat: 18.5818,
+    lng: 73.8168,
     reportType: 'Drainage overflow',
-    description: 'Manhole cover dislodged due to storm water pressure.',
-    severity: 'High',
-    timestamp: '2026-10-30T09:00:00Z',
-    verificationStatus: 'Reported',
-    confidenceScore: 0.68
-  },
-  {
-    id: 'REP_105',
-    userId: 'usr_pune_55',
-    roadId: 'R04',
-    locationName: 'Karve Road near Nal Stop',
-    lat: 18.5075,
-    lng: 73.8240,
-    reportType: 'Fallen tree',
-    description: 'Branch fell on side lane, PMC garden dept notified, single lane slow.',
+    description: 'Pavana river embankment stretch experiences runoff accumulation during monsoon peaks.',
     severity: 'Moderate',
-    timestamp: '2026-10-30T09:10:00Z',
-    verificationStatus: 'Verified',
-    confidenceScore: 0.90
+    timestamp: '2026-10-30T08:40:00Z',
+    verificationStatus: 'Reported',
+    confidenceScore: 0.72
   }
 ];
 
 export const INITIAL_POLLS: LivePoll[] = [
   {
     id: 'POLL_01',
-    roadId: 'R03',
-    roadName: 'Sinhagad Road (Anand Nagar stretch)',
-    question: 'What is the condition of Sinhagad Road right now?',
-    options: ['Completely safe', 'Minor waterlogging', 'Heavy waterlogging', 'Road blocked', 'Need emergency assistance'],
+    roadId: 'R08',
+    roadName: 'Sinhagad Road (Dandekar Bridge - Anand Nagar)',
+    question: 'What is the current waterlogging condition on Sinhagad Road?',
+    options: [
+      'Completely safe',
+      'Minor waterlogging',
+      'Heavy waterlogging',
+      'Road blocked',
+      'Need emergency assistance'
+    ],
     votes: {
-      'Completely safe': 14,
-      'Minor waterlogging': 28,
-      'Heavy waterlogging': 112,
-      'Road blocked': 184,
-      'Need emergency assistance': 19
+      'Completely safe': 4,
+      'Minor waterlogging': 7,
+      'Heavy waterlogging': 5,
+      'Road blocked': 2,
+      'Need emergency assistance': 0
     },
-    totalVotes: 357,
+    totalVotes: 18,
     isActive: true
   },
   {
     id: 'POLL_02',
     roadId: 'R01',
-    roadName: 'FC Road',
-    question: 'How is the condition of FC Road right now?',
-    options: ['Completely safe', 'Minor waterlogging', 'Heavy waterlogging', 'Road blocked', 'Need emergency assistance'],
+    roadName: 'Fergusson College (FC) Road',
+    question: 'How is the passability on FC Road right now?',
+    options: [
+      'Completely safe',
+      'Minor waterlogging',
+      'Heavy waterlogging',
+      'Road blocked',
+      'Need emergency assistance'
+    ],
     votes: {
-      'Completely safe': 180,
-      'Minor waterlogging': 64,
-      'Heavy waterlogging': 12,
-      'Road blocked': 2,
+      'Completely safe': 12,
+      'Minor waterlogging': 3,
+      'Heavy waterlogging': 0,
+      'Road blocked': 0,
       'Need emergency assistance': 0
     },
-    totalVotes: 258,
+    totalVotes: 15,
     isActive: true
   },
   {
     id: 'POLL_03',
-    roadId: 'R08',
-    roadName: 'Bund Garden Approach',
-    question: 'What is the water condition at Bund Garden approach road?',
-    options: ['Completely safe', 'Minor waterlogging', 'Heavy waterlogging', 'Road blocked', 'Need emergency assistance'],
+    roadId: 'R31',
+    roadName: 'Pavana Bridge Approach (Old Sangvi - Dapodi)',
+    question: 'What is the water condition near Old Sangvi / Pavana Bridge?',
+    options: [
+      'Completely safe',
+      'Minor waterlogging',
+      'Heavy waterlogging',
+      'Road blocked',
+      'Need emergency assistance'
+    ],
     votes: {
-      'Completely safe': 35,
-      'Minor waterlogging': 89,
-      'Heavy waterlogging': 74,
-      'Road blocked': 18,
-      'Need emergency assistance': 3
+      'Completely safe': 6,
+      'Minor waterlogging': 8,
+      'Heavy waterlogging': 3,
+      'Road blocked': 1,
+      'Need emergency assistance': 0
     },
-    totalVotes: 219,
+    totalVotes: 18,
     isActive: true
   }
-];
-
-export const INITIAL_RAINFALL: RainfallObservation[] = [
-  { stationId: 'PUN_01', stationName: 'IMD Shivajinagar', lat: 18.5314, lng: 73.8446, rainfallMm: 42.5, durationHrs: 4.0, source: 'IMD Automated Weather Station', timestamp: '2026-10-30T08:00:00Z' },
-  { stationId: 'PUN_02', stationName: 'IMD Pashan', lat: 18.5388, lng: 73.7915, rainfallMm: 35.0, durationHrs: 3.5, source: 'IMD AWS', timestamp: '2026-10-30T08:00:00Z' },
-  { stationId: 'PUN_03', stationName: 'IMD Lohegaon Airport', lat: 18.5822, lng: 73.9197, rainfallMm: 68.2, durationHrs: 5.0, source: 'IMD Aviation Met Office', timestamp: '2026-10-30T08:00:00Z' },
-  { stationId: 'PUN_04', stationName: 'IMD Chinchwad PCMC', lat: 18.6298, lng: 73.7997, rainfallMm: 58.0, durationHrs: 4.5, source: 'PCMC Disaster Cell', timestamp: '2026-10-30T08:00:00Z' },
-  { stationId: 'PUN_05', stationName: 'Khadakwasla Dam Catchment', lat: 18.4357, lng: 73.7634, rainfallMm: 88.0, durationHrs: 6.5, source: 'Central Water Commission (CWC)', timestamp: '2026-10-30T08:00:00Z' },
-  { stationId: 'PUN_06', stationName: 'Mutha River Basin (Swargate)', lat: 18.5018, lng: 73.8580, rainfallMm: 64.0, durationHrs: 5.0, source: 'PMC Hydrology Dept', timestamp: '2026-10-30T08:00:00Z' }
-];
-
-export const INITIAL_HISTORICAL_FLOODS: HistoricalFlood[] = [
-  { id: 'INC_2019_01', name: 'Ambil Odha Flash Flood', lat: 18.4980, lng: 73.8420, date: '2019-09-25', severity: 'Critical', waterLevelM: 2.4, roadAffected: 'Sinhagad Road / Aranyeshwar', source: 'PMC Disaster Analysis' },
-  { id: 'INC_2019_02', name: 'Sinhagad Road Ekta Nagari Inundation', lat: 18.4850, lng: 73.8210, date: '2019-09-26', severity: 'Critical', waterLevelM: 2.8, roadAffected: 'Sinhagad Road Riverside', source: 'CWC Flood Bulletins' },
-  { id: 'INC_2021_01', name: 'Mutha River Swelling (Bhide Bridge)', lat: 18.5175, lng: 73.8440, date: '2021-07-23', severity: 'High', waterLevelM: 1.8, roadAffected: 'Deccan Riverside Causeway', source: 'Irrigation Dept Discharge' },
-  { id: 'INC_2023_01', name: 'Pavana River Inundation (Sangvi)', lat: 18.5880, lng: 73.8120, date: '2023-07-19', severity: 'High', waterLevelM: 1.5, roadAffected: 'Old Sangvi Bridge Road', source: 'PCMC Incident Log' }
 ];

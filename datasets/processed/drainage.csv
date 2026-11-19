@@ -1,7 +1,9 @@
-drainage_id,sector,latitude,longitude,drainage_type,drainage_capacity_cusecs,maintenance_status,source
-DRN_01,Sinhagad Road / Ambil Odha,18.4980,73.8210,Natural Nullah + Storm Box Drain,450,Maintenance Delayed - Heavy Silt,PMC Stormwater Audit
-DRN_02,FC Road / Fergusson College Ward,18.5314,73.8446,Sub-surface Concrete Storm Sewer,180,Cleaned & Operational,PMC Ghole Road Ward
-DRN_03,JM Road,18.5255,73.8475,Box Culvert Drain,220,Cleaned & Operational,PMC Ghole Road Ward
-DRN_04,Bund Garden / Sangam,18.5340,73.8790,Open Nullah into Mula-Mutha,380,Partially Clogged,PMC Dhole Patil Road Ward
-DRN_05,Pimpri Pavana Bank,18.6279,73.8131,Embankment Drain,310,Cleaned,PCMC Storm Water Dept
-DRN_06,Kothrud Paud Road,18.5080,73.8070,Underground Storm Conduits,290,Operational,PMC Kothrud Ward
+drainage_id,name,waterway_type,sector,latitude,longitude,capacity_known,reported_capacity_cusecs,maintenance_note,source
+DRN_01,Ambil Odha Natural Nullah,stream,Sinhagad Road / Sahakar Nagar,18.4968,73.8214,false,,Natural storm nullah traversing Parvati-Sinhagad basin; historical bottleneck during intense cloudbursts,OpenStreetMap Waterways & PMC Flood Review
+DRN_02,Mutha River Corridor (Bhide / Lakdi / Sangam),river,Deccan - Shivajinagar - Sangam,18.5175,73.8440,false,,Regulated by upstream Khadakwasla Dam discharge; low-lying causeways submerge during heavy release,OpenStreetMap & Maharashtra Irrigation Dept Reference
+DRN_03,Mula-Mutha Confluence & Bund Garden Stretch,river,Bund Garden / Yerawada,18.5364,73.8812,false,,Confluence basin receiving combined Mula and Mutha river flows; capacity depends on upstream dam outflow,OpenStreetMap Waterways
+DRN_04,Pavana River Basin (Sangvi - Pimpri - Chinchwad),river,Pimpri-Chinchwad,18.5818,73.8168,false,,Low-lying riparian stretch near Old Sangvi & Dapodi; subject to backwater swelling from Pavana Dam release,OpenStreetMap & PCMC Flood Zone Reference
+DRN_05,Mula River (Aundh - Baner - Wakad),river,Aundh / Baner / Wakad,18.5620,73.8050,false,,Meandering river boundary between Pune & PCMC; approach roads near bridges vulnerable to runoff,OpenStreetMap Waterways
+DRN_06,Nagzari Nullah Corridor,drain,Camp / Pune Railway Station,18.5289,73.8744,false,,Urban stormwater nullah; discharge capacity not publicly instrumented in open telemetry,OpenStreetMap Waterways
+DRN_07,Bhosari - Nashik Phata Stormwater Culvert,culvert,Bhosari / Kasarwadi,18.6242,73.8355,false,,Grade-separated underpass & box culvert drainage zone; capacity telemetry unavailable,OpenStreetMap Waterways
+DRN_08,Fergusson / JM Road Urban Storm Drains,drain,Shivajinagar / Deccan,18.5245,73.8402,false,,Urban roadside storm inlets along FC/JM corridor; micro-drainage capacity unverified,OpenStreetMap / PMC Ward Reference

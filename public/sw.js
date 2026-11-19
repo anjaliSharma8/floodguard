@@ -1,4 +1,4 @@
-const CACHE_NAME = 'floodguard-cache-v1';
+const CACHE_NAME = 'sanketsetu-cache-v1';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -26,7 +26,9 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Network first with offline cache fallback
+  if (event.request.url.includes('/api/')) {
+    return;
+  }
   event.respondWith(
     fetch(event.request).catch(() => {
       return caches.match(event.request).then((response) => {
