@@ -1,20 +1,35 @@
-import 'dart:convert';
-
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 
+import '../models/app_models.dart';
+import '../services/api_service.dart';
+import '../services/app_storage.dart';
+import '../widgets/app_widgets.dart';
+
 class SafeRoutePlannerScreen extends StatefulWidget {
-  const SafeRoutePlannerScreen({super.key});
+  const SafeRoutePlannerScreen({
+    super.key,
+    this.client,
+    this.api,
+    this.storage,
+  });
+
+  final http.Client? client;
+  final ApiService? api;
+  final AppStorage? storage;
 
   @override
   State<SafeRoutePlannerScreen> createState() => _SafeRoutePlannerScreenState();
 }
 
 class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
-  static const String baseUrl = 'http://127.0.0.1:3000';
   static const Color primaryColor = Color(0xFF087E8B);
+
+  late final ApiService _api;
+  late final bool _ownsApi;
+  String get baseUrl => _api.baseUrl;
 
   String? selectedSourceId;
   String? selectedDestinationId;
@@ -27,41 +42,56 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
 
   bool isLoadingRoads = true;
   bool isFindingRoute = false;
+  bool mapTileError = false;
 
   String? errorMessage;
+  String? roadsErrorMessage;
 
   @override
   void initState() {
     super.initState();
+    _api = widget.api ?? ApiService(client: widget.client);
+    _ownsApi = widget.api == null;
     fetchRoads();
+  }
+
+  @override
+  void dispose() {
+    if (_ownsApi) _api.close();
+    super.dispose();
   }
 
   // FETCH ROAD LOCATIONS
 
   Future<void> fetchRoads() async {
+    setState(() {
+      isLoadingRoads = true;
+      roadsErrorMessage = null;
+    });
+
     try {
-      final response = await http
-          .get(Uri.parse('$baseUrl/api/roads'))
-          .timeout(const Duration(seconds: 15));
-
-      if (response.statusCode != 200) {
-        throw Exception('Failed to load Pune locations.');
-      }
-
-      final data = jsonDecode(response.body);
-
-      final Map<String, dynamic> nodes = Map<String, dynamic>.from(
-        data['nodes'],
-      );
-
-      final loadedNodes = nodes.entries.map((entry) {
-        return {'id': entry.key, ...Map<String, dynamic>.from(entry.value)};
-      }).toList();
+      final network = await _api.fetchRoadNetwork();
+      final loadedNodes = network.nodes
+          .map(
+            (node) => <String, dynamic>{
+              'id': node.id,
+              'name': node.name,
+              'lat': node.latitude,
+              'lng': node.longitude,
+            },
+          )
+          .toList();
 
       if (!mounted) return;
 
       if (loadedNodes.isEmpty) {
-        throw Exception('No road locations received.');
+        setState(() {
+          availableNodes = [];
+          selectedSourceId = null;
+          selectedDestinationId = null;
+          isLoadingRoads = false;
+        });
+        return;
       }
 
       setState(() {
@@ -76,14 +106,15 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
             : loadedNodes.last['id'].toString();
 
         isLoadingRoads = false;
-        errorMessage = null;
+        roadsErrorMessage = null;
       });
-    } catch (e) {
+    } on ApiException catch (error) {
       if (!mounted) return;
 
       setState(() {
         isLoadingRoads = false;
-        errorMessage = 'Unable to connect to the server.\n$e';
+        roadsErrorMessage =
+            'Unable to load locations from $baseUrl.\n${error.message}';
       });
     }
   }
@@ -215,23 +246,10 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
     });
 
     try {
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/api/routes/find'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'startNodeId': selectedSourceId,
-              'targetNodeId': selectedDestinationId,
-              'lambdaRisk': 1.8,
-            }),
-          )
-          .timeout(const Duration(seconds: 20));
-
-      if (response.statusCode != 200) {
-        throw Exception('Route request failed: ${response.statusCode}');
-      }
-
-      final data = jsonDecode(response.body);
+      final data = await _api.findRoute(
+        startNodeId: selectedSourceId!,
+        targetNodeId: selectedDestinationId!,
+      );
 
       if (!mounted) return;
 
@@ -255,12 +273,12 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
           ),
         );
       }
-    } catch (e) {
+    } on ApiException catch (error) {
       if (!mounted) return;
 
       setState(() {
         isFindingRoute = false;
-        errorMessage = 'Unable to calculate route.\n$e';
+        errorMessage = 'Unable to calculate route.\n${error.message}';
       });
     }
   }
@@ -276,6 +294,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
     return DropdownButtonFormField<String>(
       initialValue: selectedValue,
       isExpanded: true,
+      menuMaxHeight: MediaQuery.sizeOf(context).height * 0.6,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, color: primaryColor),
@@ -378,8 +397,13 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
 
           TileLayer(
             urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.example.floodguard',
+            userAgentPackageName: 'com.sankatsetu.sankatsetu',
             maxNativeZoom: 19,
+            errorTileCallback: (_, _, _) {
+              if (mounted && !mapTileError) {
+                setState(() => mapTileError = true);
+              }
+            },
           ),
 
           // BLUE ROUTE POLYLINE
@@ -443,6 +467,9 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
     final safetyRating = route['safetyRating']?.toString() ?? 'Unknown';
 
     final List<dynamic> edges = route['edges'] ?? [];
+    final containsBlockedRoad = edges.any(
+      (edge) => edge is Map && edge['status'] == 'blocked',
+    );
 
     final ratingColor = safetyRating == 'Safe'
         ? Colors.green
@@ -465,6 +492,13 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
             '$selectedRoute Route Details',
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
+          if (containsBlockedRoad) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Warning: the backend route includes a road marked blocked. Do not travel this route; follow current local authority guidance.',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            ),
+          ],
 
           const SizedBox(height: 16),
 
@@ -564,9 +598,58 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
               );
             }),
           ],
+          if (widget.storage != null) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _saveCurrentRoute,
+              icon: const Icon(Icons.bookmark_add_outlined),
+              label: const Text('Save this route on this device'),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Future<void> _saveCurrentRoute() async {
+    final route = currentRoute;
+    final storage = widget.storage;
+    if (route == null || storage == null) return;
+    final nodeNames = (route['nodes'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((node) => node['name']?.toString())
+        .whereType<String>()
+        .toList();
+    final details = [
+      'Preference: $selectedRoute',
+      'Path: ${nodeNames.join(' → ')}',
+      'Distance: ${route['totalDistanceKm'] ?? 'not provided'} km',
+      'Estimated time: ${route['travelTimeMins'] ?? 'not provided'} minutes',
+      'Average risk: ${route['averageRiskScore'] ?? 'not provided'}',
+      'Maximum risk: ${route['maxRiskScore'] ?? 'not provided'}',
+      'Safety rating: ${route['safetyRating'] ?? 'not provided'}',
+      'Road-network coverage is a static Pune demo graph, not live navigation.',
+    ].join('\n');
+    try {
+      await storage.saveItem(
+        SavedItem(
+          id: 'route:${selectedSourceId}_$selectedDestinationId',
+          type: 'route',
+          title: '$selectedRoute route',
+          details: details,
+          savedAt: DateTime.now(),
+        ),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Route saved on this device.')),
+      );
+    } on Exception catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save this route: $error')),
+      );
+    }
   }
 
   // DETAIL ITEM
@@ -636,6 +719,21 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
               style: TextStyle(color: Colors.grey, fontSize: 14),
             ),
 
+            const SizedBox(height: 8),
+            const DemoDataNotice(
+              text: 'Routes use a static Pune road graph, not complete live navigation. Confirm road conditions with authorities before travelling.',
+            ),
+
+            const SizedBox(height: 8),
+
+            Text(
+              'Backend: $baseUrl',
+              key: const ValueKey('backend-api-url'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.grey, fontSize: 11),
+            ),
+
             const SizedBox(height: 24),
 
             const Text(
@@ -646,8 +744,71 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
             const SizedBox(height: 8),
 
             if (isLoadingRoads)
-              const Center(child: CircularProgressIndicator())
-            else if (availableNodes.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Loading locations from $baseUrl...',
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (roadsErrorMessage != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      roadsErrorMessage!,
+                      style: TextStyle(color: Colors.red.shade900),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: isLoadingRoads ? null : fetchRoads,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry loading locations'),
+                    ),
+                  ],
+                ),
+              )
+            else if (availableNodes.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text('No road locations are currently available.'),
+                    ),
+                    TextButton.icon(
+                      onPressed: isLoadingRoads ? null : fetchRoads,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              )
+            else
               buildLocationDropdown(
                 label: 'Select starting point',
                 selectedValue: selectedSourceId,
@@ -660,16 +821,13 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
                 },
               ),
 
-            const SizedBox(height: 20),
-
-            const Text(
-              'Destination',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-
-            const SizedBox(height: 8),
-
-            if (availableNodes.isNotEmpty)
+            if (availableNodes.isNotEmpty && !isLoadingRoads) ...[
+              const SizedBox(height: 20),
+              const Text(
+                'Destination',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
               buildLocationDropdown(
                 label: 'Select destination',
                 selectedValue: selectedDestinationId,
@@ -681,6 +839,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
                   });
                 },
               ),
+            ],
 
             const SizedBox(height: 24),
 
@@ -710,12 +869,12 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
 
                 Expanded(
                   child: ChoiceChip(
-                    label: const Text('Fastest Route'),
-                    selected: selectedRoute == 'Fastest',
+                    label: const Text('Shortest Route'),
+                    selected: selectedRoute == 'Shortest',
                     selectedColor: Colors.teal.shade100,
                     onSelected: (_) {
                       setState(() {
-                        selectedRoute = 'Fastest';
+                        selectedRoute = 'Shortest';
                       });
                     },
                   ),
@@ -737,6 +896,13 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
               width: double.infinity,
               child: buildRouteMap(),
             ),
+            if (mapTileError) ...[
+              const SizedBox(height: 6),
+              const Text(
+                'Map tiles are unavailable. Route calculation still uses backend road-graph data.',
+                style: TextStyle(color: Colors.orange, fontSize: 12),
+              ),
+            ],
 
             const SizedBox(height: 20),
 
