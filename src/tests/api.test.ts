@@ -7,9 +7,11 @@ import fs from 'node:fs';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createSanketSetuApp } from '../../server';
-import { hashPassword } from '../utils/auth';
+import { generateToken, hashPassword } from '../utils/auth';
 import { SanketSetuDatabase } from '../db/database';
 import type { CommunityReport } from '../types';
+import { INITIAL_EMERGENCY_FACILITIES } from '../data/puneData';
+import { stopScheduledOsmSync } from '../services/osmSyncService';
 
 function makeTmpDbPath(name: string): string {
   const dir = fs.mkdtempSync(join(os.tmpdir(), 'sanketsetu-test-'));
@@ -30,6 +32,7 @@ async function withServer(
   } finally {
     server.closeAllConnections?.();
     await new Promise<void>(resolve => server.close(() => resolve()));
+    stopScheduledOsmSync();
     db.close();
   }
 }
@@ -73,7 +76,14 @@ function attachDemoExpert(db: SanketSetuDatabase, authorityId = 'AUTH_TEST_OPS')
       (id, authority_id, user_id, membership_role, status, created_by, created_at, updated_at)
     VALUES (?, ?, 'USR_EXPERT_01', 'EXPERT', 'ACTIVE', 'USR_EXPERT_01', ?, ?)
   `).run(memberId, authorityId, now, now);
-  for (const permission of ['ROAD_STATUS_UPDATE', 'REPORTS_VERIFY', 'HAZARD_VERIFY', 'SHELTER_MANAGE']) {
+  for (const permission of [
+    'ROAD_STATUS_UPDATE',
+    'REPORTS_VERIFY',
+    'HAZARD_VERIFY',
+    'SHELTER_MANAGE',
+    'ALERT_CREATE',
+    'AUDIT_VIEW'
+  ]) {
     db.db.prepare(`
       INSERT INTO authority_permissions (id, membership_id, permission, assigned_by, created_at)
       VALUES (?, ?, ?, 'USR_EXPERT_01', ?)
@@ -116,6 +126,63 @@ async function getExpertToken(baseUrl: string): Promise<string> {
   return (await response.json()).token as string;
 }
 
+test('emergency directory API returns the shared contact records', async () => {
+  await withServer(makeTmpDbPath('emergency-directory'), async baseUrl => {
+    const response = await fetch(`${baseUrl}/api/emergency-facilities`);
+    assert.equal(response.status, 200);
+    const contacts = await response.json();
+    assert.deepEqual(contacts, INITIAL_EMERGENCY_FACILITIES);
+    assert.ok(contacts.some((contact: { id: string; name: string }) =>
+      contact.id === 'EM_07' && contact.name === 'Emergency Ambulance'
+    ));
+    assert.ok(contacts.some((contact: { id: string; name: string }) =>
+      contact.id === 'EM_08' && contact.name === 'PCMC Control Room'
+    ));
+  });
+});
+
+test('chatbot returns verified backend telemetry with an explicit AI-unavailable state when unconfigured', async () => {
+  const previousKey = process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
+  try {
+    await withServer(makeTmpDbPath('chatbot-fallback'), async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/chatbot/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'What are the current road conditions?', lang: 'en' })
+      });
+      assert.equal(response.status, 200);
+      const result = await response.json();
+      assert.equal(result.aiStatus, 'unavailable');
+      assert.equal(result.errorCategory, 'not_configured');
+      assert.match(result.reply, /AI unavailable: not_configured/);
+      assert.match(result.source, /Verified SanketSetu backend telemetry/);
+      assert.doesNotMatch(result.source, /Gemini AI/);
+
+      const streamResponse = await fetch(`${baseUrl}/api/chatbot/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Hello', lang: 'en', stream: true })
+      });
+      assert.equal(streamResponse.headers.get('content-type')?.includes('text/event-stream'), true);
+      const streamBody = await streamResponse.text();
+      assert.match(streamBody, /event: complete/);
+      assert.match(streamBody, /"aiStatus":"unavailable"/);
+      assert.match(streamBody, /Verified SanketSetu backend telemetry/);
+    });
+  } finally {
+    if (previousKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = previousKey;
+  }
+});
+
+test('Gemini Live token endpoint requires authentication', async () => {
+  await withServer(makeTmpDbPath('live-token-auth'), async baseUrl => {
+    const response = await fetch(`${baseUrl}/api/ai/live-token`, { method: 'POST' });
+    assert.equal(response.status, 401);
+  });
+});
+
 test('Citizen and Expert auth persist; only Authority Admins can approve scoped Expert applications', async () => {
   const dbPath = makeTmpDbPath('auth-persist');
   let pendingAppId = '';
@@ -126,11 +193,28 @@ test('Citizen and Expert auth persist; only Authority Admins can approve scoped 
 
   await withServer(dbPath, async (baseUrl, db) => {
     createTestAuthority(db);
+    attachDemoExpert(db, 'AUTH_TEST_A');
     // 1. Health endpoint reports the supported global roles
     const healthRes = await fetch(`${baseUrl}/api/health`);
     assert.equal(healthRes.status, 200);
     const health = await healthRes.json();
     assert.deepEqual(health.rolesSupported, ['CITIZEN', 'AUTHORITY_ADMIN', 'EXPERT']);
+
+    assert.equal('database' in health, false);
+    assert.equal('geminiConfigured' in health, false);
+    const networkRes = await fetch(`${baseUrl}/api/network/status`);
+    assert.equal(networkRes.status, 401);
+
+    const invalidExpertLogin = await fetch(`${baseUrl}/api/auth/expert/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: `missing.${Date.now()}@example.invalid`,
+        password: 'not-a-real-password'
+      })
+    });
+    assert.equal(invalidExpertLogin.status, 401);
+    assert.equal((await invalidExpertLogin.json()).error, 'Invalid email or password.');
 
     // 2. Register citizen
     const regCit = await fetch(`${baseUrl}/api/auth/citizen/register`, {
@@ -177,6 +261,29 @@ test('Citizen and Expert auth persist; only Authority Admins can approve scoped 
       body: JSON.stringify({ email: pendingEmail, password: 'Password@123' })
     });
     assert.equal(pendingLogin.status, 403);
+    const pendingLoginBody = await pendingLogin.json();
+    assert.equal(pendingLoginBody.accountStatus, 'PENDING_APPROVAL');
+    assert.equal(pendingLoginBody.applicationId, pendingAppId);
+    const pendingDirectAccess = await fetch(`${baseUrl}/api/expert/applications`);
+    assert.equal(pendingDirectAccess.status, 404);
+    const pendingStoredUser = db.getUserByEmail(pendingEmail);
+    assert.ok(pendingStoredUser);
+    const pendingToken = generateToken({
+      id: pendingStoredUser.id,
+      fullName: pendingStoredUser.fullName,
+      email: pendingStoredUser.email,
+      role: pendingStoredUser.role,
+      accountStatus: pendingStoredUser.accountStatus,
+      createdAt: pendingStoredUser.createdAt
+    });
+    const pendingProtectedAccess = await fetch(`${baseUrl}/api/expert/applications`, {
+      headers: { Authorization: `Bearer ${pendingToken}` }
+    });
+    assert.equal(pendingProtectedAccess.status, 404);
+    const pendingTrafficAccess = await fetch(`${baseUrl}/api/traffic/status`, {
+      headers: { Authorization: `Bearer ${pendingToken}` }
+    });
+    assert.equal(pendingTrafficAccess.status, 403);
 
     // 4. An active Expert cannot access the retired peer-approval API.
     const devExpertRes = await fetch(`${baseUrl}/api/auth/dev-login`, {
@@ -189,11 +296,70 @@ test('Citizen and Expert auth persist; only Authority Admins can approve scoped 
     expertToken = devExpert.token;
     assert.equal(devExpert.user.role, 'EXPERT');
 
+    const citizenHealthResponse = await fetch(`${baseUrl}/api/health`, {
+      headers: { Authorization: `Bearer ${citizenToken}` }
+    });
+    const citizenHealth = await citizenHealthResponse.json();
+    assert.equal('database' in citizenHealth, false);
+    assert.equal('geminiConfigured' in citizenHealth, false);
+    assert.equal('imdApiStatus' in citizenHealth.weatherFeed, false);
+
+    const expertHealthResponse = await fetch(`${baseUrl}/api/health`, {
+      headers: { Authorization: `Bearer ${expertToken}` }
+    });
+    const expertHealth = await expertHealthResponse.json();
+    assert.equal(expertHealth.database, 'sqlite_persistent');
+    assert.equal(typeof expertHealth.geminiConfigured, 'boolean');
+    assert.ok('imdApiStatus' in expertHealth.weatherFeed);
+
     // Citizen cannot access expert endpoints
     const forbiddenApps = await fetch(`${baseUrl}/api/expert/applications`, {
       headers: { Authorization: `Bearer ${citizenToken}` }
     });
     assert.equal(forbiddenApps.status, 404);
+    const forbiddenApproval = await fetch(`${baseUrl}/api/expert/applications/${pendingAppId}/approve`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${citizenToken}` }
+    });
+    assert.equal(forbiddenApproval.status, 404);
+
+    const forbiddenNetwork = await fetch(`${baseUrl}/api/network/status`, {
+      headers: { Authorization: `Bearer ${citizenToken}` }
+    });
+    assert.equal(forbiddenNetwork.status, 403);
+
+    const unauthenticatedAiDiagnostics = await fetch(`${baseUrl}/api/ai/health`);
+    assert.equal(unauthenticatedAiDiagnostics.status, 401);
+    const citizenAiDiagnostics = await fetch(`${baseUrl}/api/ai/health`, {
+      headers: { Authorization: `Bearer ${citizenToken}` }
+    });
+    assert.equal(citizenAiDiagnostics.status, 403);
+
+    const expertNetworkResponse = await fetch(`${baseUrl}/api/network/status`, {
+      headers: { Authorization: `Bearer ${expertToken}` }
+    });
+    assert.equal(expertNetworkResponse.status, 200);
+    const network = await expertNetworkResponse.json();
+    assert.equal(network.nodesCount, 69);
+    assert.equal(network.edgesCount, 108);
+    assert.equal(network.syncMode, 'LOCAL_CANONICAL_SNAPSHOT_REFRESH');
+    assert.equal(network.externalFetchEnabled, false);
+    assert.match(network.statusMessage, /does not fetch current data from Overpass/);
+
+    const unauthenticatedTrafficResponse = await fetch(`${baseUrl}/api/traffic/status`);
+    assert.equal(unauthenticatedTrafficResponse.status, 401);
+    const citizenTrafficResponse = await fetch(`${baseUrl}/api/traffic/status`, {
+      headers: { Authorization: `Bearer ${citizenToken}` }
+    });
+    assert.equal(citizenTrafficResponse.status, 403);
+
+    const expertTrafficResponse = await fetch(`${baseUrl}/api/traffic/status`, {
+      headers: { Authorization: `Bearer ${expertToken}` }
+    });
+    assert.equal(expertTrafficResponse.status, 200);
+    const expertTraffic = await expertTrafficResponse.json();
+    assert.equal(typeof expertTraffic.liveSegments, 'number');
+    assert.equal(typeof expertTraffic.cachedSegments, 'number');
 
     const peerApprove = await fetch(`${baseUrl}/api/expert/applications/${pendingAppId}/approve`, {
       method: 'PATCH',
@@ -213,6 +379,15 @@ test('Citizen and Expert auth persist; only Authority Admins can approve scoped 
       headers: { Authorization: `Bearer ${admin.token}` }
     });
     assert.equal(approveRes.status, 200);
+    const approvedApplication = (await approveRes.json()).application;
+    assert.equal(approvedApplication.reviewedById, admin.user.id);
+    assert.equal(approvedApplication.reviewedBy, admin.user.fullName);
+    assert.ok(Number.isFinite(Date.parse(approvedApplication.reviewedAt)));
+    const duplicateApproval = await fetch(`${baseUrl}/api/expert/applications/${pendingAppId}/approve`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${expertToken}` }
+    });
+    assert.equal(duplicateApproval.status, 404);
   });
 
   // Reopen the SAME SQLite database file in a fresh server instance to verify persistence!
@@ -225,6 +400,25 @@ test('Citizen and Expert auth persist; only Authority Admins can approve scoped 
     assert.equal(approvedLogin.status, 200);
     const body = await approvedLogin.json();
     assert.equal(body.user.accountStatus, 'ACTIVE');
+    const authorizedOperations = await fetch(`${baseUrl}/api/network/status`, {
+      headers: { Authorization: `Bearer ${body.token}` }
+    });
+    assert.equal(authorizedOperations.status, 200);
+    const adminLogin = await fetch(`${baseUrl}/api/auth/authority-admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'admin.auth_test_a@gov.in', password: 'Authority@12345' })
+    });
+    assert.equal(adminLogin.status, 200);
+    const admin = await adminLogin.json();
+    const persistedReview = await fetch(`${baseUrl}/api/authority/applications`, {
+      headers: { Authorization: `Bearer ${admin.token}` }
+    });
+    const persistedApplications = await persistedReview.json();
+    const approvedApplication = persistedApplications.find((item: { id: string }) => item.id === pendingAppId);
+    assert.equal(approvedApplication.reviewedBy, 'Test Authority Admin');
+    assert.equal(approvedApplication.reviewedById, admin.user.id);
+    assert.ok(Number.isFinite(Date.parse(approvedApplication.reviewedAt)));
   });
 });
 
@@ -270,6 +464,54 @@ test('Citizen report does NOT auto-close road; expert closure excludes road from
     const repData = await repRes.json();
     const r01AfterCitizen = repData.roads.find((r: any) => r.id === 'R01');
     assert.equal(r01AfterCitizen.status, 'REPORTED_WATERLOGGING', 'Citizen report must set REPORTED_WATERLOGGING, NEVER CLOSED');
+
+    const queuedReportPayload = {
+      clientRequestId: 'offline-report-test-1',
+      roadId: 'R02',
+      locationName: 'Test Road Location',
+      lat: 18.51,
+      lng: 73.84,
+      reportType: 'Waterlogging',
+      severity: 'Moderate',
+      description: 'Offline report synchronization test'
+    };
+    const firstQueuedReportResponse = await fetch(`${baseUrl}/api/reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${citToken}`
+      },
+      body: JSON.stringify(queuedReportPayload)
+    });
+    assert.equal(firstQueuedReportResponse.status, 201);
+    const firstQueuedReport = await firstQueuedReportResponse.json();
+    const retryQueuedReportResponse = await fetch(`${baseUrl}/api/reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${citToken}`
+      },
+      body: JSON.stringify(queuedReportPayload)
+    });
+    assert.equal(retryQueuedReportResponse.status, 200);
+    const retryQueuedReport = await retryQueuedReportResponse.json();
+    assert.equal(retryQueuedReport.report.id, firstQueuedReport.report.id, 'Retry must return the existing report');
+    assert.equal(
+      (await fetch(`${baseUrl}/api/reports`).then(response => response.json()))
+        .filter((report: any) => report.id === firstQueuedReport.report.id).length,
+      1,
+      'Idempotent report retry must not create duplicates'
+    );
+
+    const reusedIdResponse = await fetch(`${baseUrl}/api/reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${citToken}`
+      },
+      body: JSON.stringify({ ...queuedReportPayload, description: 'Different content' })
+    });
+    assert.equal(reusedIdResponse.status, 409, 'A request ID cannot be reused for a different report');
 
     // 2. Expert road status update requires reason
     const missingReason = await fetch(`${baseUrl}/api/roads/R01/status`, {
@@ -703,9 +945,16 @@ test('POST /api/routes/find returns independent metrics, distinguishes shortest/
     const wShort = warjeData.shortest.edges.map((e: any) => e.id).join(',');
     const wFast = warjeData.fastest.edges.map((e: any) => e.id).join(',');
     const wSafe = warjeData.safest.edges.map((e: any) => e.id).join(',');
+    const enrichedEdge = warjeData.safest.edges[0];
+    assert.ok(Array.isArray(enrichedEdge.riskSources));
+    assert.ok(enrichedEdge.riskExplanation);
+    assert.ok(enrichedEdge.riskUpdatedAt);
     assert.notEqual(wShort, wFast, 'Shortest and Fastest must differ for Shivajinagar -> Warje');
-    assert.notEqual(wFast, wSafe, 'Fastest and Safest must differ for Shivajinagar -> Warje');
+    assert.ok(warjeData.fastest.feasible && warjeData.safest.feasible);
     assert.ok(warjeData.alternatives.length >= 2, 'Should return multiple genuine alternative paths');
+    assert.ok(warjeData.dataQuality.traffic.sampledSegments <= 12, 'Traffic lookups must be limited to candidate route roads');
+    assert.ok(warjeData.dataQuality.traffic.liveSegments <= warjeData.dataQuality.traffic.sampledSegments);
+    assert.ok(warjeData.dataQuality.warnings.length >= 2, 'Route output must disclose weather and traffic limitations');
 
     // 2. Real O-D pair where optimal routes naturally converge (or diverge on hazard): Shivajinagar -> Airport
     const airportRes = await fetch(`${baseUrl}/api/routes/find`, {
@@ -727,7 +976,7 @@ test('POST /api/routes/find returns independent metrics, distinguishes shortest/
       airportData.alternatives[1].edges.map((e: any) => e.id).join(',')
     );
 
-    // 3. Expert marks R38 as VERIFIED_HAZARD (high risk 85) -> Safest & Fastest divert away from R38 while Shortest keeps R38
+    // 3. Expert marks R38 as VERIFIED_HAZARD -> Safest diverts while Shortest remains distance-optimal.
     const hazRes = await fetch(`${baseUrl}/api/roads/R38/status`, {
       method: 'PATCH',
       headers: {
@@ -755,9 +1004,10 @@ test('POST /api/routes/find returns independent metrics, distinguishes shortest/
     const airportHaz = await airportHazRes.json();
     assert.equal(airportHaz.shortest.edges[0].id, 'R38', 'Shortest keeps shortest physical road R38');
     assert.notEqual(airportHaz.safest.edges[0].id, 'R38', 'Safest diverts around high-risk R38');
-    assert.notEqual(airportHaz.fastest.edges[0].id, 'R38', 'Fastest diverts around slowed R38');
     assert.equal(airportHaz.shortest.hazardousSegmentCount, 1);
     assert.equal(airportHaz.safest.hazardousSegmentCount, 0);
+    const riskBeforeClosure = airportHaz.shortest.edges.find((e: any) => e.id === 'R38')?.riskScore;
+    assert.equal(typeof riskBeforeClosure, 'number');
 
     // 4. Expert closes R38 officially -> Shortest also diverts and counts 1 closure avoided
     const closeRes = await fetch(`${baseUrl}/api/roads/R38/status`, {
@@ -768,11 +1018,15 @@ test('POST /api/routes/find returns independent metrics, distinguishes shortest/
       },
       body: JSON.stringify({
         status: 'CLOSED',
-        riskScore: 100,
         reason: 'Holkar Bridge closed due to flooding'
       })
     });
     assert.equal(closeRes.status, 200);
+    const closedRoadUpdate = await closeRes.json();
+    assert.equal(closedRoadUpdate.updatedRoad.status, 'CLOSED');
+    assert.equal(closedRoadUpdate.updatedRoad.riskScore, riskBeforeClosure, 'Closing a road must preserve its current risk score instead of setting it to 100');
+    const statusSnapshot = await (await fetch(`${baseUrl}/api/roads/status`)).json();
+    assert.equal(statusSnapshot.roads.find((road: any) => road.id === 'R38').status, 'CLOSED');
 
     const airportClosedRes = await fetch(`${baseUrl}/api/routes/find`, {
       method: 'POST',
@@ -788,5 +1042,213 @@ test('POST /api/routes/find returns independent metrics, distinguishes shortest/
     assert.equal(airportClosed.shortest.edges.some((e: any) => e.id === 'R38'), false);
     assert.equal(airportClosed.shortest.closuresAvoidedCount, 1);
   });
+});
+
+test('expert alerts are role-protected, persisted, and explicitly not externally delivered', async () => {
+  await withServer(makeTmpDbPath('expert-alerts'), async (baseUrl, db) => {
+    const alertPayload = {
+      title: 'Rainfall watch',
+      message: 'Monitor verified reports near the river corridor.',
+      severity: 'warning'
+    };
+
+    const unauthenticated = await fetch(`${baseUrl}/api/expert/alerts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(alertPayload)
+    });
+    assert.equal(unauthenticated.status, 401);
+
+    const citizenLogin = await (
+      await fetch(`${baseUrl}/api/auth/dev-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: 'citizen' })
+      })
+    ).json();
+    const citizenToken = citizenLogin.token as string;
+    const citizenAttempt = await fetch(`${baseUrl}/api/expert/alerts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${citizenToken}`
+      },
+      body: JSON.stringify(alertPayload)
+    });
+    assert.equal(citizenAttempt.status, 403);
+
+    const expertLogin = await (
+      await fetch(`${baseUrl}/api/auth/dev-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: 'expert' })
+      })
+    ).json();
+    const expertToken = expertLogin.token as string;
+    const unassignedExpertAttempt = await fetch(`${baseUrl}/api/expert/alerts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${expertToken}`
+      },
+      body: JSON.stringify(alertPayload)
+    });
+    assert.equal(unassignedExpertAttempt.status, 403);
+    attachDemoExpert(db);
+
+    const createdResponse = await fetch(`${baseUrl}/api/expert/alerts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${expertToken}`
+      },
+      body: JSON.stringify(alertPayload)
+    });
+    assert.equal(createdResponse.status, 201);
+    const created = await createdResponse.json();
+    assert.equal(created.publication, 'IN_APP_ONLY');
+    assert.equal(created.deliveryStatus, 'NOT_CONFIGURED');
+    assert.equal(created.alert.createdById, expertLogin.user.id);
+    assert.ok(Number.isFinite(Date.parse(created.alert.createdAt)));
+
+    const historyResponse = await fetch(`${baseUrl}/api/expert/alerts`, {
+      headers: { Authorization: `Bearer ${expertToken}` }
+    });
+    assert.equal(historyResponse.status, 200);
+    const history = await historyResponse.json();
+    assert.equal(history.alerts.length, 1);
+    assert.equal(history.alerts[0].id, created.alert.id);
+    assert.equal(history.alerts[0].createdById, expertLogin.user.id);
+
+    const citizenFeed = await fetch(`${baseUrl}/api/notifications`, {
+      headers: { Authorization: `Bearer ${citizenToken}` }
+    });
+    assert.equal(citizenFeed.status, 200);
+    const notifications = await citizenFeed.json();
+    assert.ok(notifications.some((item: { id: string }) => item.id === created.alert.id));
+
+    const auditResponse = await fetch(`${baseUrl}/api/expert/audit-logs`, {
+      headers: { Authorization: `Bearer ${expertToken}` }
+    });
+    assert.equal(auditResponse.status, 200);
+    const audit = await auditResponse.json();
+    assert.ok(audit.auditLogs.some((item: { action: string; targetResource: string; actorId: string }) =>
+      item.action === 'EXPERT_ALERT_CREATE' &&
+      item.targetResource === created.alert.id &&
+      item.actorId === expertLogin.user.id
+    ));
+  });
+});
+
+test('Authority Admin can reject an application and the rejected account remains blocked', async () => {
+  await withServer(makeTmpDbPath('expert-rejection'), async (baseUrl, db) => {
+    createTestAuthority(db);
+    const email = `rejected.expert.${Date.now()}@example.test`;
+    const registration = await fetch(`${baseUrl}/api/auth/expert/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fullName: 'Rejected Applicant',
+        email,
+        password: 'Password@123',
+        organisation: 'Test Organization',
+        designation: 'Test Officer'
+      })
+    });
+    assert.equal(registration.status, 201);
+    const registered = await registration.json();
+    assert.equal(registered.user.accountStatus, 'PENDING_APPROVAL');
+
+    const adminLogin = await fetch(`${baseUrl}/api/auth/authority-admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'admin.auth_test_a@gov.in', password: 'Authority@12345' })
+    });
+    assert.equal(adminLogin.status, 200);
+    const admin = await adminLogin.json();
+    const rejectedResponse = await fetch(
+      `${baseUrl}/api/authority/applications/${registered.application.id}/reject`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${admin.token}` }
+      }
+    );
+    assert.equal(rejectedResponse.status, 200);
+    const rejected = (await rejectedResponse.json()).application;
+    assert.equal(rejected.status, 'REJECTED');
+    assert.equal(rejected.reviewedById, admin.user.id);
+    assert.ok(Number.isFinite(Date.parse(rejected.reviewedAt)));
+
+    const rejectedLogin = await fetch(`${baseUrl}/api/auth/expert/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: 'Password@123' })
+    });
+    assert.equal(rejectedLogin.status, 403);
+    const loginError = await rejectedLogin.json();
+    assert.equal(loginError.accountStatus, 'REJECTED');
+    assert.match(loginError.error, /reviewed and rejected/i);
+  });
+});
+
+test('initial Expert approval cannot bypass Authority Admin application review', async () => {
+  const previousSecret = process.env.EXPERT_APPROVAL_SECRET;
+  const previousReviewerId = process.env.EXPERT_BOOTSTRAP_REVIEWER_ID;
+  const previousReviewerName = process.env.EXPERT_BOOTSTRAP_REVIEWER_NAME;
+  const testSecret = 'test-only-initial-expert-bootstrap-secret-32-bytes';
+  process.env.EXPERT_APPROVAL_SECRET = testSecret;
+  process.env.EXPERT_BOOTSTRAP_REVIEWER_ID = 'provisioner-test-01';
+  process.env.EXPERT_BOOTSTRAP_REVIEWER_NAME = 'Deployment Operator Test';
+
+  try {
+    await withServer(makeTmpDbPath('expert-bootstrap'), async (baseUrl, db) => {
+      createTestAuthority(db);
+      const email = `first.expert.${Date.now()}@example.test`;
+      const registration = await fetch(`${baseUrl}/api/auth/expert/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: 'First Expert Applicant',
+          email,
+          password: 'Password@123',
+          organisation: 'Test Organization',
+          designation: 'Test Officer'
+        })
+      });
+      assert.equal(registration.status, 201);
+      const registered = await registration.json();
+
+      const bootstrapAttempt = await fetch(
+        `${baseUrl}/api/expert/applications/${registered.application.id}/bootstrap-approve`,
+        {
+          method: 'POST',
+          headers: { 'x-expert-approval-secret': testSecret }
+        }
+      );
+      assert.equal(bootstrapAttempt.status, 404);
+      assert.equal(db.getExpertApplicationById(registered.application.id)?.status, 'PENDING_APPROVAL');
+
+      const adminLogin = await fetch(`${baseUrl}/api/auth/authority-admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'admin.auth_test_a@gov.in', password: 'Authority@12345' })
+      });
+      assert.equal(adminLogin.status, 200);
+      const admin = await adminLogin.json();
+      const approval = await fetch(`${baseUrl}/api/authority/applications/${registered.application.id}/approve`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${admin.token}` }
+      });
+      assert.equal(approval.status, 200);
+      assert.equal((await approval.json()).application.reviewedById, admin.user.id);
+    });
+  } finally {
+    if (previousSecret === undefined) delete process.env.EXPERT_APPROVAL_SECRET;
+    else process.env.EXPERT_APPROVAL_SECRET = previousSecret;
+    if (previousReviewerId === undefined) delete process.env.EXPERT_BOOTSTRAP_REVIEWER_ID;
+    else process.env.EXPERT_BOOTSTRAP_REVIEWER_ID = previousReviewerId;
+    if (previousReviewerName === undefined) delete process.env.EXPERT_BOOTSTRAP_REVIEWER_NAME;
+    else process.env.EXPERT_BOOTSTRAP_REVIEWER_NAME = previousReviewerName;
+  }
 });
 

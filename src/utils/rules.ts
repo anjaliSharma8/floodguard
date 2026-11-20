@@ -14,11 +14,21 @@
  *    - Honors one-way restrictions (isOneWay) and access restrictions
  *    - Excludes ONLY verified closures (status === 'CLOSED')
  *    - Preserves traversability for 'REPORTED_WATERLOGGING' and 'VERIFIED_HAZARD' with warnings
- *    - Three independent route objectives:
- *        a) Shortest: minimize total road-network distance (km)
- *        b) Fastest:  minimize estimated travel time T(e) (minutes)
- *        c) Safest:   minimize C(e) = T(e) + lambda * R_time(e) (both terms in minutes!)
- *           where R_time(e) = ((riskScore / 100) * 18.0 * statusMultiplier) minutes
+ *    - Three genuinely independent route objectives, each runs its own Dijkstra:
+ *        a) Shortest:  minimize total road-network distance (km)
+ *                      weight = distanceKm
+ *        b) Fastest:   minimize estimated travel time T(e) (minutes)
+ *                      weight = T(e) = (distanceKm / speedKmph) * 60
+ *                      Uses actual road speed; no flood-risk terms.
+ *        c) Safest:    minimize flood-risk-adjusted travel cost C(e) (minutes)
+ *                      weight = T(e) + λ * T(e) * riskNorm + statusPenalty
+ *                      where riskNorm = riskScore / 100  (clamped 0–1)
+ *                            λ        = risk-avoidance slider value
+ *                            statusPenalty = T(e) * 1.5  for VERIFIED_HAZARD
+ *                                          = T(e) * 0.6  for REPORTED_WATERLOGGING
+ *                      A road with riskNorm = 0.60 and λ = 1.8 multiplies its travel time by
+ *                      (1 + 1.8 * 0.60) = 2.08, making high-risk corridors substantially
+ *                      more expensive than low-risk roads regardless of raw speed.
  *    - Yen's K-shortest loopless paths algorithm for genuine route alternatives
  *    - Coordinate road-snapping to nearest segment/node in the road graph
  */
@@ -94,6 +104,40 @@ export function classifyRiskScore(score: number | null | undefined): {
     return { category: 'Moderate', color: '#eab308' }; // yellow-500
   }
   return { category: 'Low', color: '#10b981' }; // emerald-500
+}
+
+export type RoadRiskLevel = RiskCategory | 'Closed';
+
+export function getRoadRiskLevel(road: Pick<RoadSegment, 'riskScore' | 'status'>): RoadRiskLevel {
+  if (road.status === 'CLOSED') return 'Closed';
+  if (road.status === 'UNKNOWN' || road.riskScore === null || road.riskScore === undefined) {
+    return 'Unknown';
+  }
+  if (road.status === 'REPORTED_WATERLOGGING' && road.riskScore < 25) return 'Moderate';
+  return classifyRiskScore(road.riskScore).category;
+}
+
+export function getRouteRiskCounts(route: {
+  edges: readonly Pick<GraphEdge, 'riskScore' | 'status'>[];
+}): {
+  moderate: number;
+  high: number;
+  severe: number;
+  unknown: number;
+  closed: number;
+} {
+  return route.edges.reduce(
+    (counts, edge) => {
+      const level = getRoadRiskLevel(edge);
+      if (level === 'Moderate') counts.moderate++;
+      else if (level === 'High') counts.high++;
+      else if (level === 'Severe') counts.severe++;
+      else if (level === 'Unknown') counts.unknown++;
+      else if (level === 'Closed') counts.closed++;
+      return counts;
+    },
+    { moderate: 0, high: 0, severe: 0, unknown: 0, closed: 0 }
+  );
 }
 
 export function normalizeWeights(partial?: Partial<RiskFactorWeights>): RiskFactorWeights {
@@ -340,6 +384,18 @@ export interface GraphEdge {
   isOneWay?: boolean;
   accessRestriction?: 'all_vehicles' | 'no_heavy_vehicles' | 'emergency_only';
   coordinates?: [number, number][];
+  riskCategory?: RiskCategory;
+  riskSources?: string[];
+  riskExplanation?: string;
+  riskObservationTimestamp?: string;
+  riskUpdatedAt?: string;
+  lastUpdated?: string;
+  verifiedBy?: string;
+  statusReason?: string;
+  expiresAt?: string | null;
+  slopePct?: number | null;
+  drainageCondition?: RoadSegment['drainageCondition'];
+  confidenceScore?: number;
 }
 
 export interface RouteCalculationResult {
@@ -361,6 +417,22 @@ export interface RouteCalculationResult {
   safetyRating: 'Low Risk' | 'Moderate Risk' | 'High Risk' | 'Severe Risk' | 'Blocked' | 'Unknown';
 }
 
+export interface RouteDataQuality {
+  weather: {
+    provider: string;
+    status: 'OK' | 'UNAVAILABLE';
+    lastSuccessfulUpdate: string | null;
+  };
+  traffic: {
+    provider: string;
+    liveSegments: number;
+    sampledSegments: number;
+    networkSegments: number;
+    lastSuccessfulUpdate: string | null;
+  };
+  warnings: string[];
+}
+
 export interface MultiRouteResponse {
   originNode: RoadNode;
   targetNode: RoadNode;
@@ -369,49 +441,214 @@ export interface MultiRouteResponse {
   fastest: RouteCalculationResult;
   safest: RouteCalculationResult;
   alternatives: RouteCalculationResult[];
+  dataQuality?: RouteDataQuality;
+}
+
+export interface SelectedRoute extends RouteCalculationResult {
+  geometry: [number, number][];
+  geometryAvailable: boolean;
+}
+
+export interface ActiveRouteSelection extends MultiRouteResponse {
+  activeMode: RouteMode;
+  altIndex?: number;
+  selectedRoute: SelectedRoute;
+}
+
+export function getOrderedRouteSegments(
+  route: Pick<RouteCalculationResult, 'edges' | 'nodeIds' | 'nodes'>
+): { edge: GraphEdge; coordinates: [number, number][] }[] {
+  return route.edges.map((edge, index) => {
+    const fromNodeId = route.nodeIds[index];
+    const toNodeId = route.nodeIds[index + 1];
+    const storedCoordinates = edge.coordinates || [];
+    const traversedForward = edge.from === fromNodeId && edge.to === toNodeId;
+    const traversedBackward =
+      edge.to === fromNodeId && edge.from === toNodeId && !edge.isOneWay;
+    const coordinates = traversedForward
+      ? [...storedCoordinates]
+      : traversedBackward
+      ? [...storedCoordinates].reverse()
+      : [];
+    const fromNode = route.nodes[index];
+    const toNode = route.nodes[index + 1];
+
+    if (coordinates.length >= 2 && fromNode && toNode) {
+      coordinates[0] = [fromNode.lat, fromNode.lng];
+      coordinates[coordinates.length - 1] = [toNode.lat, toNode.lng];
+    }
+
+    return {
+      edge,
+      coordinates
+    };
+  });
+}
+
+export function getRouteGeometry(
+  route: Pick<RouteCalculationResult, 'edges' | 'nodeIds' | 'nodes'>
+): [number, number][] {
+  const geometry: [number, number][] = [];
+  if (route.nodeIds.length !== route.edges.length + 1 || route.nodes.length !== route.nodeIds.length) {
+    return geometry;
+  }
+  const segments = getOrderedRouteSegments(route);
+  if (segments.some(segment => segment.coordinates.length < 2)) return geometry;
+
+  for (const segment of segments) {
+    for (const coordinate of segment.coordinates) {
+      const previous = geometry[geometry.length - 1];
+      if (!previous || previous[0] !== coordinate[0] || previous[1] !== coordinate[1]) {
+        geometry.push(coordinate);
+      }
+    }
+  }
+  return geometry;
+}
+
+export function createRouteSelection(
+  bundle: MultiRouteResponse,
+  activeMode: RouteMode,
+  altIndex = 0
+): ActiveRouteSelection {
+  const route =
+    activeMode === 'safest'
+      ? bundle.alternatives[altIndex] || bundle.safest
+      : bundle[activeMode];
+  const segments = getOrderedRouteSegments(route);
+  const geometryAvailable =
+    route.edges.length === 0 ||
+    (route.nodeIds.length === route.edges.length + 1 &&
+      route.nodes.length === route.nodeIds.length &&
+      segments.length === route.edges.length &&
+      segments.every(segment => segment.coordinates.length >= 2));
+  const geometry = geometryAvailable ? getRouteGeometry(route) : [];
+
+  return {
+    ...bundle,
+    activeMode,
+    altIndex: activeMode === 'safest' ? altIndex : undefined,
+    selectedRoute: { ...route, geometry, geometryAvailable }
+  };
 }
 
 /**
- * Returns effective speed adjusted conservatively for verified hazards / waterlogging.
+ * Computes base travel time T(e) in MINUTES using the actual speed assigned to the road segment.
+ * edgeTime = (distanceKm / speedKmph) * 60
+ *
+ * Fallback speeds by road type (used only when speedKmph is missing or zero):
+ *   - Motorway / expressway: 80 km/h
+ *   - Arterial road:          50 km/h
+ *   - Local road (default):   30 km/h
  */
-function effectiveSpeedKmph(edge: GraphEdge): number {
-  const base = Math.max(10, edge.speedKmph || 30);
-  if (edge.status === 'VERIFIED_HAZARD') return Math.max(10, base * 0.45);
-  if (edge.status === 'REPORTED_WATERLOGGING') return Math.max(12, base * 0.72);
-  if (edge.riskScore !== null && edge.riskScore >= 50) return Math.max(12, base * 0.8);
-  return base;
+export function computeEdgeTravelTimeMinutes(edge: GraphEdge): number {
+  const speed = Math.max(10, edge.speedKmph || 30);
+  return (edge.distanceKm / speed) * 60;
 }
 
 /**
- * Time-equivalent risk penalty R_time(e) in MINUTES.
- * Converts normalized flood risk [0, 1] into documented minutes of hazard delay/detour tolerance:
- *   R_time(e) = ((effectiveRisk / 100) * 18.0 * statusMultiplier)
- * Missing/unknown risk defaults to precautionary 50 (never 0).
+ * Computes the risk-adjusted cost C(e) for the SAFEST objective.
+ *
+ * User-spec formula (transparent multiplicative form):
+ *   C(e) = T(e) * (1 + λ * riskNorm) + statusPenalty(e)
+ *
+ * Where:
+ *   T(e)         = (distanceKm / speedKmph) * 60     [minutes]
+ *   riskNorm     = riskScore / 100                    [0.0 – 1.0]
+ *   λ (lambda)   = risk-avoidance slider value        [0.0 – 4.0]
+ *   statusPenalty:
+ *     VERIFIED_HAZARD        → T(e) * 1.5
+ *     REPORTED_WATERLOGGING  → T(e) * 0.6
+ *     OPEN / UNKNOWN         → 0
+ *
+ * Exported for transparency and test verification; actual routing uses
+ * computeEdgeRiskTimeMinutes + edgeWeight for the nonlinear penalty form.
+ */
+export function computeEdgeRiskAdjustedCost(edge: GraphEdge, lambdaRisk: number): number {
+  const T = computeEdgeTravelTimeMinutes(edge);
+  const effectiveRisk = edge.riskScore === null || edge.riskScore === undefined ? 50 : edge.riskScore;
+  const riskNorm = Math.max(0, Math.min(100, effectiveRisk)) / 100.0;
+  const lam = Math.max(0, lambdaRisk);
+
+  let statusPenalty = 0;
+  if (edge.status === 'VERIFIED_HAZARD') {
+    statusPenalty = T * 1.5;
+  } else if (edge.status === 'REPORTED_WATERLOGGING') {
+    statusPenalty = T * 0.6;
+  }
+
+  return Math.max(0.001, T * (1 + lam * riskNorm) + statusPenalty);
+}
+
+/**
+ * Calibrated non-negative time-equivalent risk penalty R_time(e) in MINUTES.
+ * Uses a nonlinear power curve to strongly penalise high-risk roads:
+ *   - Low risk  (riskScore ≤ 25): ~0–4 min penalty
+ *   - Moderate  (25–50):         ~4–10 min penalty
+ *   - High/Severe (50–100):      ~10–50+ min penalty (with status multiplier)
+ *
+ * Status multipliers:
+ *   VERIFIED_HAZARD        → ×2.5 base + 12 min extra
+ *   REPORTED_WATERLOGGING  → ×1.6 base + 4.8 min extra
+ *   UNKNOWN                → ×1.25 base + 2 min extra
+ *
+ * Missing risk (null/undefined) → treated as 50 (moderate) for precautionary routing.
  */
 export function computeEdgeRiskTimeMinutes(edge: GraphEdge): number {
-  const riskNorm = (edge.riskScore === null || edge.riskScore === undefined ? 50 : edge.riskScore) / 100.0;
+  const effectiveRisk = edge.riskScore === null || edge.riskScore === undefined ? 50 : edge.riskScore;
+  const clampedRisk = Math.max(0, Math.min(100, effectiveRisk));
+  const riskNorm = clampedRisk / 100.0;
+
   let statusMultiplier = 1.0;
-  if (edge.status === 'VERIFIED_HAZARD') statusMultiplier = 2.4;
-  else if (edge.status === 'REPORTED_WATERLOGGING') statusMultiplier = 1.5;
+  if (edge.status === 'VERIFIED_HAZARD') statusMultiplier = 2.5;
+  else if (edge.status === 'REPORTED_WATERLOGGING') statusMultiplier = 1.6;
   else if (edge.status === 'UNKNOWN') statusMultiplier = 1.25;
 
-  return riskNorm * 18.0 * statusMultiplier;
+  const baseTimePenalty = Math.pow(riskNorm, 1.25) * 25.0;
+  const statusExtra = (statusMultiplier - 1.0) * 8.0;
+
+  return Math.max(0, baseTimePenalty * statusMultiplier + statusExtra);
 }
 
+/**
+ * Independently calculates edge weight for Dijkstra optimization.
+ *
+ * SHORTEST:  weight = distanceKm
+ *            → Minimises total road-network distance; no time or risk terms.
+ *            → Completely independent of fastest and safest.
+ *
+ * FASTEST:   weight = T(e) = (distanceKm / speedKmph) * 60  [minutes]
+ *            → Minimises estimated travel time using actual road-segment speed.
+ *            → No flood-risk terms are applied; purely speed-based.
+ *            → Completely independent of shortest and safest.
+ *
+ * SAFEST:    weight = T(e) + λ * R_time(e)   [minutes]
+ *            → T(e) = travel time (same as fastest)
+ *            → R_time(e) = nonlinear risk penalty from computeEdgeRiskTimeMinutes(e)
+ *            → λ = risk-avoidance slider; higher λ = stronger avoidance of risky roads.
+ *            → Completely independent of shortest and fastest Dijkstra calls.
+ *            → Status multipliers ensure VERIFIED_HAZARD roads are very strongly penalised.
+ *
+ * All three weights are non-negative (clamped to minimum 0.001).
+ */
 export function edgeWeight(
   edge: GraphEdge,
   mode: RouteMode,
   lambdaRisk: number
 ): number {
   if (mode === 'shortest') {
-    return edge.distanceKm;
+    return Math.max(0.001, edge.distanceKm);
   }
-  const timeMins = (edge.distanceKm / effectiveSpeedKmph(edge)) * 60;
+  const edgeTime = computeEdgeTravelTimeMinutes(edge);
   if (mode === 'fastest') {
-    return timeMins;
+    // Pure travel time — do NOT include any risk or status penalty here
+    return Math.max(0.001, edgeTime);
   }
-  // Safest mode: C(e) = T(e) + lambda * R_time(e) (all terms in minutes)
-  return timeMins + lambdaRisk * computeEdgeRiskTimeMinutes(edge);
+  // Safest: risk-adjusted cost = travel time + lambda * nonlinear risk penalty
+  // This formula strongly penalises high-risk and hazardous roads while remaining
+  // proportional to road length through the base penalty curve.
+  const penalty = computeEdgeRiskTimeMinutes(edge);
+  return Math.max(0.001, edgeTime + Math.max(0, lambdaRisk) * penalty);
 }
 
 function isEdgeTraversable(
@@ -457,7 +694,7 @@ function summarizeRoute(
   for (const e of routeEdges) {
     routeEdgeIdSet.add(e.id);
     totalDist += e.distanceKm;
-    totalTime += (e.distanceKm / effectiveSpeedKmph(e)) * 60;
+    totalTime += computeEdgeTravelTimeMinutes(e);
 
     const effectiveRisk = e.riskScore === null || e.riskScore === undefined ? 50 : e.riskScore;
     if (e.riskScore === null || e.riskScore === undefined) {

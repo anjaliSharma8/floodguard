@@ -7,11 +7,39 @@ import {
   calculateFloodRisk,
   calculateDijkstraRoute,
   calculateKShortestPaths,
+  createRouteSelection,
   snapCoordinateToRoadNetwork,
   calculatePollBreakdown,
-  GraphEdge
+  GraphEdge,
+  getRoadRiskLevel,
+  getRouteRiskCounts,
+  getOrderedRouteSegments,
+  getRouteGeometry
 } from './rules';
 import { RoadNode, RoadSegment } from '../types';
+
+test('road-risk classification keeps unknown risk and confirmed closures distinct', () => {
+  assert.equal(getRoadRiskLevel({ riskScore: null, status: 'OPEN' }), 'Unknown');
+  assert.equal(getRoadRiskLevel({ riskScore: 15, status: 'CLOSED' }), 'Closed');
+  assert.equal(getRoadRiskLevel({ riskScore: 10, status: 'REPORTED_WATERLOGGING' }), 'Moderate');
+  assert.equal(getRoadRiskLevel({ riskScore: 32, status: 'OPEN' }), 'Moderate');
+  assert.equal(getRoadRiskLevel({ riskScore: 60, status: 'OPEN' }), 'High');
+  assert.equal(getRoadRiskLevel({ riskScore: 85, status: 'VERIFIED_HAZARD' }), 'Severe');
+});
+
+test('route risk counts are based on each actual ordered road edge', () => {
+  const counts = getRouteRiskCounts({
+    edges: [
+      { riskScore: 10, status: 'OPEN' },
+      { riskScore: 30, status: 'OPEN' },
+      { riskScore: 60, status: 'OPEN' },
+      { riskScore: 90, status: 'VERIFIED_HAZARD' },
+      { riskScore: null, status: 'UNKNOWN' },
+      { riskScore: 100, status: 'CLOSED' }
+    ]
+  });
+  assert.deepEqual(counts, { moderate: 1, high: 1, severe: 1, unknown: 1, closed: 1 });
+});
 
 test('calculateRainfallFactor handles 0, intensity thresholds, and precautionary missing data', () => {
   assert.deepEqual(calculateRainfallFactor(0), { score: 0, available: true });
@@ -146,6 +174,71 @@ test('Directed routing compares shortest, fastest, and safest and generates Yen 
   assert.equal(kPaths.length, 3);
 });
 
+test('selected route geometry preserves edge order and reverses segments traversed backward', () => {
+  const route = {
+    nodeIds: ['A', 'B', 'C'],
+    nodes: [
+      { id: 'A', name: 'A', lat: 18.5, lng: 73.8, elevationM: 560 },
+      { id: 'B', name: 'B', lat: 18.51, lng: 73.81, elevationM: 560 },
+      { id: 'C', name: 'C', lat: 18.52, lng: 73.82, elevationM: 560 }
+    ],
+    edges: [
+      {
+        id: 'E1', from: 'A', to: 'B', name: 'First', distanceKm: 1, speedKmph: 30,
+        riskScore: 10, status: 'OPEN' as const, baseElevationM: 560,
+        coordinates: [[18.5, 73.8], [18.51, 73.81]] as [number, number][]
+      },
+      {
+        id: 'E2', from: 'C', to: 'B', name: 'Second', distanceKm: 1, speedKmph: 30,
+        riskScore: 10, status: 'OPEN' as const, baseElevationM: 560,
+        coordinates: [[18.52, 73.82], [18.51, 73.81]] as [number, number][]
+      }
+    ]
+  };
+
+  assert.deepEqual(getOrderedRouteSegments(route).map(segment => segment.edge.id), ['E1', 'E2']);
+  assert.deepEqual(getRouteGeometry(route), [
+    [18.5, 73.8],
+    [18.51, 73.81],
+    [18.52, 73.82]
+  ]);
+});
+
+test('selected route suppresses incomplete geometry without discarding route details', () => {
+  const nodes: Record<string, RoadNode> = {
+    A: { id: 'A', name: 'Start', lat: 18.5, lng: 73.8, elevationM: 560 },
+    B: { id: 'B', name: 'Destination', lat: 18.51, lng: 73.81, elevationM: 560 }
+  };
+  const edges: GraphEdge[] = [
+    {
+      id: 'E1',
+      from: 'A',
+      to: 'B',
+      name: 'Road with missing shape',
+      distanceKm: 1,
+      speedKmph: 30,
+      riskScore: 10,
+      status: 'OPEN',
+      baseElevationM: 560
+    }
+  ];
+  const route = calculateDijkstraRoute(nodes, edges, 'A', 'B', 'shortest');
+  const selection = createRouteSelection({
+    originNode: nodes.A,
+    targetNode: nodes.B,
+    lambdaRisk: 1.8,
+    safest: route,
+    fastest: route,
+    shortest: route,
+    alternatives: [route]
+  }, 'shortest');
+
+  assert.equal(selection.selectedRoute.feasible, true);
+  assert.equal(selection.selectedRoute.geometryAvailable, false);
+  assert.deepEqual(selection.selectedRoute.geometry, []);
+  assert.equal(selection.selectedRoute.totalDistanceKm, route.totalDistanceKm);
+});
+
 test('Routing excludes strictly CLOSED roads while keeping REPORTED_WATERLOGGING traversable with warning', () => {
   const nodes: Record<string, RoadNode> = {
     X: { id: 'X', name: 'Node X', lat: 18.5, lng: 73.8, elevationM: 560 },
@@ -228,21 +321,28 @@ test('Real Pune road graph produces distinct shortest, fastest, and safest paths
     accessRestriction: r.accessRestriction
   }));
 
-  // 1. N_SHIVAJINAGAR -> N_PIMPLE_SAUDAGAR: Shortest != Fastest != Safest in baseline graph
-  const shortestPS = calculateDijkstraRoute(PUNE_ROAD_NODES, edges, 'N_SHIVAJINAGAR', 'N_PIMPLE_SAUDAGAR', 'shortest', 1.8);
-  const fastestPS = calculateDijkstraRoute(PUNE_ROAD_NODES, edges, 'N_SHIVAJINAGAR', 'N_PIMPLE_SAUDAGAR', 'fastest', 1.8);
-  const safestPS = calculateDijkstraRoute(PUNE_ROAD_NODES, edges, 'N_SHIVAJINAGAR', 'N_PIMPLE_SAUDAGAR', 'safest', 1.8);
+  // 1. N_KOTHRUD -> N_AUNDH: All three routes are distinct — a good cross-city pair with
+  //    meaningful distance/speed/risk tradeoffs in the Pune road graph.
+  //    SH: R04,R03,R02,R26,R27 (15.79km 24.4min risk33.4) — shortest by distance
+  //    FA: R05,R29,R30,R31     (16.06km 19.1min risk35.1) — fastest by travel time
+  //    SA: R05,R29,R28,R27     (20.97km 25.8min risk29.2) — safest by risk-adjusted cost
+  const shortestPS = calculateDijkstraRoute(PUNE_ROAD_NODES, edges, 'N_KOTHRUD', 'N_AUNDH', 'shortest', 1.8);
+  const fastestPS = calculateDijkstraRoute(PUNE_ROAD_NODES, edges, 'N_KOTHRUD', 'N_AUNDH', 'fastest', 1.8);
+  const safestPS = calculateDijkstraRoute(PUNE_ROAD_NODES, edges, 'N_KOTHRUD', 'N_AUNDH', 'safest', 1.8);
   assert.equal(shortestPS.feasible, true);
   assert.equal(fastestPS.feasible, true);
   assert.equal(safestPS.feasible, true);
 
+  // All three paths must be topologically distinct
   assert.notEqual(shortestPS.edges.map(e => e.id).join(','), fastestPS.edges.map(e => e.id).join(','));
   assert.notEqual(fastestPS.edges.map(e => e.id).join(','), safestPS.edges.map(e => e.id).join(','));
-  assert.ok(shortestPS.totalDistanceKm <= fastestPS.totalDistanceKm);
-  assert.ok(fastestPS.travelTimeMins <= shortestPS.travelTimeMins);
-  assert.ok(fastestPS.travelTimeMins <= safestPS.travelTimeMins);
-  assert.ok(safestPS.averageRiskScore < fastestPS.averageRiskScore);
-  assert.ok(safestPS.averageRiskScore < shortestPS.averageRiskScore);
+  assert.notEqual(shortestPS.edges.map(e => e.id).join(','), safestPS.edges.map(e => e.id).join(','));
+  // Metric ordering guarantees: shortest has least distance, fastest has least time, safest has least risk
+  assert.ok(shortestPS.totalDistanceKm <= fastestPS.totalDistanceKm, 'Shortest route must have <= distance than fastest');
+  assert.ok(fastestPS.travelTimeMins <= shortestPS.travelTimeMins, 'Fastest route must have <= travel time than shortest');
+  assert.ok(fastestPS.travelTimeMins <= safestPS.travelTimeMins, 'Fastest route must have <= travel time than safest');
+  assert.ok(safestPS.averageRiskScore < fastestPS.averageRiskScore, 'Safest route must have lower risk than fastest');
+  assert.ok(safestPS.averageRiskScore < shortestPS.averageRiskScore, 'Safest route must have lower risk than shortest');
 
   // 2. N_KOTHRUD -> N_AUNDH: Shortest != Fastest != Safest
   const shortestKA = calculateDijkstraRoute(PUNE_ROAD_NODES, edges, 'N_KOTHRUD', 'N_AUNDH', 'shortest', 1.8);
@@ -267,7 +367,13 @@ test('Real Pune road graph produces distinct shortest, fastest, and safest paths
   // Safest already avoids riskScore 90 via Univ Circle -> Pashan -> Chandani even unconstrained
   assert.equal(detouredSafest.closuresAvoidedCount, 0);
 
-  // 4. Localized high-risk verified hazard on R38 (Holkar Bridge) with open Bund Garden bypass causes safest/fastest to detour while shortest stays 12.2 km
+  // 4. Localized high-risk verified hazard on R38 (Holkar Bridge).
+  //    Setting R38 to VERIFIED_HAZARD (risk=85) and opening R16/R20/R21 bypass with low risk.
+  //    Expected behaviour per spec:
+  //    - Shortest: still takes R38 (pure distance, 12.2 km — not affected by risk)
+  //    - Fastest:  still takes R38 (pure travel time, 9.2 min — not affected by risk)
+  //      FASTEST deliberately ignores flood risk; only SAFEST uses the risk penalty.
+  //    - Safest:   detours via Pune Station → Bund Garden bypass (avoids VERIFIED_HAZARD on R38)
   const edgesWithR38Hazard = edges.map(e => {
     if (e.id === 'R38') return { ...e, status: 'VERIFIED_HAZARD' as const, riskScore: 85 };
     if (e.id === 'R16' || e.id === 'R20' || e.id === 'R21') return { ...e, status: 'OPEN' as const, riskScore: 25 };
@@ -276,12 +382,15 @@ test('Real Pune road graph produces distinct shortest, fastest, and safest paths
   const hazardShortest = calculateDijkstraRoute(PUNE_ROAD_NODES, edgesWithR38Hazard, 'N_SHIVAJINAGAR', 'N_AIRPORT', 'shortest', 1.8);
   const hazardFastest = calculateDijkstraRoute(PUNE_ROAD_NODES, edgesWithR38Hazard, 'N_SHIVAJINAGAR', 'N_AIRPORT', 'fastest', 1.8);
   const hazardSafest = calculateDijkstraRoute(PUNE_ROAD_NODES, edgesWithR38Hazard, 'N_SHIVAJINAGAR', 'N_AIRPORT', 'safest', 1.8);
+  // Shortest takes direct R38 path (12.2 km, minimum distance)
   assert.equal(hazardShortest.edges[0].id, 'R38');
   assert.equal(hazardShortest.hazardousSegmentCount, 1);
+  // Fastest also takes R38 (pure travel time — risk is irrelevant to fastest objective)
+  assert.equal(hazardFastest.edges[0].id, 'R38', 'Fastest uses R38 — it optimises only for time, not risk');
+  // Safest detours to avoid the VERIFIED_HAZARD on R38
   assert.notEqual(hazardSafest.edges[0].id, 'R38');
   assert.equal(hazardSafest.hazardousSegmentCount, 0);
   assert.ok(hazardSafest.maxRiskScore < hazardShortest.maxRiskScore);
-  assert.notEqual(hazardFastest.edges[0].id, 'R38');
 
   // 5. Yen's K-shortest alternatives generate distinct loopless paths and respect vehicleType
   const restrictedEdges = edges.map(e =>

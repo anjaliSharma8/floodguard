@@ -4,6 +4,12 @@ export function isSpeechSynthesisSupported(): boolean {
   return typeof window !== 'undefined' && 'speechSynthesis' in window;
 }
 
+export function isSpeechVoiceAvailable(lang: Language): boolean {
+  if (!isSpeechSynthesisSupported()) return false;
+  const prefix = lang === 'hi' ? 'hi' : lang === 'mr' ? 'mr' : 'en';
+  return window.speechSynthesis.getVoices().some(voice => voice.lang.toLowerCase().startsWith(prefix));
+}
+
 export function isSpeechRecognitionSupported(): boolean {
   if (typeof window === 'undefined') return false;
   return Boolean(
@@ -15,7 +21,8 @@ export function isSpeechRecognitionSupported(): boolean {
 export function speakText(
   text: string,
   lang: Language = 'en',
-  onError?: (msg: string) => void
+  onError?: (msg: string) => void,
+  callbacks?: { onStart?: () => void; onEnd?: () => void }
 ): boolean {
   if (!isSpeechSynthesisSupported()) {
     onError?.('Text-to-speech is not supported in this browser.');
@@ -37,7 +44,10 @@ export function speakText(
 
     utterance.onerror = () => {
       onError?.('Audio playback failed on this device.');
+      callbacks?.onEnd?.();
     };
+    utterance.onstart = () => callbacks?.onStart?.();
+    utterance.onend = () => callbacks?.onEnd?.();
 
     window.speechSynthesis.speak(utterance);
     return true;
@@ -54,7 +64,9 @@ export function stopSpeaking(): void {
 }
 
 export interface SpeechRecognitionListener {
+  onStart?: () => void;
   onResult: (transcript: string) => void;
+  onInterim?: (transcript: string) => void;
   onError: (error: string) => void;
   onEnd: () => void;
 }
@@ -89,22 +101,32 @@ export function startSpeechRecognition(
   try {
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     recognition.lang = lang === 'hi' ? 'hi-IN' : lang === 'mr' ? 'mr-IN' : 'en-IN';
 
     let received = false;
+    let delivered = false;
 
     recognition.onresult = (event: any) => {
-      const transcript = event.results?.[0]?.[0]?.transcript?.trim();
-      if (!transcript) {
-        listener.onError('No speech detected. Please try speaking again or type your command.');
-        return;
+      let finalTranscript = '';
+      let interimTranscript = '';
+      for (let index = 0; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const text = result?.[0]?.transcript?.trim();
+        if (!text) continue;
+        if (result.isFinal) finalTranscript += `${text} `;
+        else interimTranscript += `${text} `;
       }
-      received = true;
-      listener.onResult(transcript);
+      if (interimTranscript) listener.onInterim?.(interimTranscript.trim());
+      if (finalTranscript.trim() && !delivered) {
+        received = true;
+        delivered = true;
+        listener.onResult(finalTranscript.trim());
+      }
     };
 
+    recognition.onstart = () => listener.onStart?.();
     recognition.onerror = (event: any) => {
       const code = event?.error;
       if (code === 'not-allowed' || code === 'service-not-allowed') {

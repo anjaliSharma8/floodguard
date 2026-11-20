@@ -31,7 +31,7 @@ export type RoadStatus =
 
 export type RiskCategory = 'Low' | 'Moderate' | 'High' | 'Severe' | 'Unknown';
 
-export type DataFreshness = 'LIVE' | 'OBSERVED_RECENT' | 'FORECAST' | 'DELAYED' | 'HISTORICAL' | 'UNAVAILABLE';
+export type DataFreshness = 'LIVE' | 'MODEL_ESTIMATE' | 'OBSERVED_RECENT' | 'FORECAST' | 'DELAYED' | 'HISTORICAL' | 'UNAVAILABLE';
 
 export interface User {
   id: string;
@@ -66,6 +66,7 @@ export interface ExpertApplication {
   reviewedAt?: string;
   reviewedBy?: string;
   authorityId?: string;
+  reviewedById?: string;
 }
 
 export interface AuditLog {
@@ -80,6 +81,32 @@ export interface AuditLog {
   authorityId?: string;
 }
 
+export interface OsmSyncLog {
+  syncId: string;
+  syncType: 'AUTOMATIC' | 'MANUAL';
+  status: 'SUCCESS' | 'FAILED' | 'VALIDATION_REJECTED';
+  nodesCount: number;
+  edgesCount: number;
+  roadsPreserved: number;
+  roadsAdded: number;
+  durationMs: number;
+  errorMessage?: string | null;
+  detailsJson?: string | null;
+  createdAt: string;
+  syncTimestamp?: string;
+  source?: string;
+}
+
+export interface OsmRoadMapping {
+  osmWayId: number;
+  segmentIndex: number;
+  mappedRoadId: string;
+  fromNode: string;
+  toNode: string;
+  confidence: number;
+  createdAt: string;
+}
+
 export interface AppNotification {
   id: string;
   userId?: string; // null/undefined = broadcast to all citizens
@@ -90,6 +117,12 @@ export interface AppNotification {
   relatedReportId?: string;
   isRead: boolean;
   createdAt: string;
+}
+
+export interface ExpertAlert extends AppNotification {
+  createdById: string;
+  createdBy: string;
+  deliveryStatus: 'NOT_CONFIGURED';
 }
 
 export interface EvacuationPreferences {
@@ -133,6 +166,10 @@ export interface RoadSegment {
   status: RoadStatus;
   coordinates: [number, number][]; // [lat, lng][] for Leaflet polyline
   geometrySource?: string;
+  riskSources?: string[];
+  riskExplanation?: string;
+  riskObservationTimestamp?: string;
+  riskUpdatedAt?: string;
   lastUpdated?: string;
   verifiedBy?: string;
   statusReason?: string;
@@ -169,9 +206,10 @@ export interface Hospital {
 export interface EmergencyFacility {
   id: string;
   name: string;
-  type: 'Disaster Control' | 'Fire & Rescue' | 'NDRF Post' | 'Animal Rescue' | 'Veterinary';
-  lat: number;
-  lng: number;
+  aliases?: string[];
+  type: string;
+  lat?: number;
+  lng?: number;
   contact: string;
   specialization: string;
   serviceHours: string;
@@ -253,6 +291,17 @@ export interface RainfallFeedMetadata {
   imdApiStatus: 'CONFIGURED' | 'KEY_MISSING' | 'UNAVAILABLE';
   imdNote: string;
   observations: RainfallObservation[];
+}
+
+export interface TrafficFeedStatus {
+  provider: string;
+  isLiveActive: boolean;
+  lastChecked: string | null;
+  lastSuccessfulUpdate?: string | null;
+  liveSegments?: number;
+  cachedSegments?: number;
+  coverageSector: string;
+  message: string;
 }
 
 export interface HistoricalFlood {

@@ -116,7 +116,7 @@ test('migration v2 preserves existing accounts, applications, audit rows, and ma
     assert.equal((migrated.db.prepare("SELECT COUNT(*) AS count FROM shelters WHERE shelter_id = 'legacy-shelter'").get() as { count: number }).count, 1);
     assert.deepEqual(
       (migrated.db.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as { version: number }[]).map(row => row.version),
-      [1, 2, 3]
+      [1, 2, 3, 4, 5, 6, 7]
     );
     assert.deepEqual(migrated.db.prepare('PRAGMA foreign_key_check').all(), []);
     assert.ok(fs.readdirSync(join(dbPath, '..')).some(name => name.startsWith('test.db.pre-authority-v3-') && name.endsWith('.bak')));

@@ -10,7 +10,7 @@ SanketSetu consolidates all flood-risk scoring, directed road-graph routing, aut
 
 - **Single Authoritative Engine**: Node.js + Express (`server.ts`) serves all REST APIs and executes the 5-factor flood-risk calculator and directed graph router (`src/utils/rules.ts`).
 - **Strictly Two Roles (`CITIZEN` and `EXPERT`)**:
-  - **Citizens** register/sign in directly, view live Open-Meteo rainfall & road risk maps, calculate Shortest / Fastest / Safest routes with Yen alternatives, submit geo-tagged waterlogging reports (with optional photo upload), vote once per poll, inspect notifications, and access 24x7 SOS directories and multilingual voice/chat assistance.
+  - **Citizens** register/sign in directly, view gridded Open-Meteo precipitation estimates & road risk maps, calculate Shortest / Fastest / Safest routes with Yen alternatives, submit geo-tagged waterlogging reports (with optional photo upload), vote once per poll, inspect notifications, and access 24x7 SOS directories and multilingual voice/chat assistance.
   - **Experts** register with organisation/designation and remain `PENDING_APPROVAL` until approved by an existing active `EXPERT` (`PATCH /api/expert/applications/:id/approve`) or server bootstrap secret (`POST /api/expert/applications/:id/bootstrap-approve` with `EXPERT_APPROVAL_SECRET`). Verified experts control official road closures (with mandatory audit reason and expiry), verify/reject/resolve citizen reports, view persistent audit logs, and run non-mutating what-if rainfall simulations.
   - No separate Admin role or Admin UI exists.
 
@@ -19,8 +19,8 @@ SanketSetu consolidates all flood-risk scoring, directed road-graph routing, aut
 ## Core Capabilities
 
 1. **Real Geospatial Road Network & Weather Telemetry**:
-   - **32 Pune/PCMC Intersections** and **46 OSM/OSRM Road Corridors** (`datasets/processed/roads.geojson`) with `isOneWay`, `accessRestriction`, bridge/tunnel metadata, and Copernicus DEM GLO-90 elevations.
-   - **Open-Meteo Weather Service** (`src/services/weatherService.ts`) fetching past-24h observed, current-hour, and 24h-forecast precipitation across 7 Pune/PCMC gauge points (15-minute SQLite cache).
+   - **69 Pune/PCMC Intersections** and **108 OSM/OSRM Road Corridors** (`src/data/roads.json`) with `isOneWay`, `accessRestriction`, bridge/tunnel metadata, and Copernicus DEM GLO-90 elevations.
+   - **Open-Meteo Weather Service** (`src/services/weatherService.ts`) fetching past-24h model estimates, a current-hour estimate, and a 24h forecast across 9 Pune/PCMC grid points (~11 km resolution). These are not gauge observations; successful responses are cached in memory for 15 minutes.
    - **Honest Data Disclosure**: Reports `imdApiStatus: "KEY_MISSING"` when `IMD_API_KEY` is unconfigured and `capacityKnown: false` on drainage channels where quantitative stormwater capacities are unavailable. See [`DATA_SOURCES.md`](./DATA_SOURCES.md).
 
 2. **Transparent Rule-Based Flood Risk & Safe-Route Engine (`src/utils/rules.ts`)**:
@@ -52,7 +52,9 @@ Copy `.env.example` to `.env` and set secrets for production deployments:
 ```bash
 cp .env.example .env
 ```
-Key variables: `PORT`, `NODE_ENV`, `DATABASE_URL`, `SESSION_SECRET`, `EXPERT_APPROVAL_SECRET`, `SEED_DEMO_ACCOUNTS`, `GEMINI_API_KEY`, `IMD_API_KEY`.
+Key variables: `HOST`, `PORT`, `NODE_ENV`, `DATABASE_URL`, `SESSION_SECRET`, `EXPERT_APPROVAL_SECRET`, `SEED_DEMO_ACCOUNTS`, `GEMINI_API_KEY`, `IMD_API_KEY`, `TOMTOM_API_KEY`.
+
+TomTom status is based on successful recent flow responses. Each route calculation requests traffic for at most 12 candidate-road segments; other segments use estimated road-class speeds and are identified in the route response's data-quality warnings. The scheduled road-graph task refreshes the bundled OSM-derived snapshot locally and does not fetch Overpass data.
 
 ### Commands
 ```bash

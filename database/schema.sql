@@ -32,8 +32,20 @@ CREATE TABLE IF NOT EXISTS expert_applications (
     status TEXT NOT NULL DEFAULT 'PENDING_APPROVAL' CHECK (status IN ('ACTIVE', 'PENDING_APPROVAL', 'REJECTED', 'SUSPENDED')),
     applied_at TEXT NOT NULL,
     reviewed_at TEXT,
-    reviewed_by TEXT
+    reviewed_by TEXT,
+    reviewed_by_id TEXT
 );
+
+CREATE TABLE IF NOT EXISTS expert_bootstrap_state (
+    singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+    completed_at TEXT,
+    application_id TEXT,
+    reviewer_id TEXT,
+    reviewer_name TEXT
+);
+
+INSERT OR IGNORE INTO expert_bootstrap_state (singleton_id, completed_at, application_id, reviewer_id, reviewer_name)
+VALUES (1, NULL, NULL, NULL, NULL);
 
 CREATE TABLE IF NOT EXISTS road_segments (
     road_id TEXT PRIMARY KEY,
@@ -97,6 +109,8 @@ CREATE TABLE IF NOT EXISTS community_reports (
     review_notes TEXT,
     reviewed_at TEXT,
     resolved_at TEXT,
+    client_request_id TEXT,
+    is_demo INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 
@@ -200,8 +214,47 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     timestamp TEXT NOT NULL
 );
 
+-- Version 2: Road Network Nodes, OSM Sync Logs & Mapping
+CREATE TABLE IF NOT EXISTS road_nodes (
+    node_id TEXT PRIMARY KEY,
+    node_name TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    sector TEXT,
+    elevation_m REAL,
+    osm_node_id INTEGER,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS osm_sync_log (
+    sync_id TEXT PRIMARY KEY,
+    sync_type TEXT NOT NULL CHECK (sync_type IN ('AUTOMATIC', 'MANUAL')),
+    status TEXT NOT NULL CHECK (status IN ('SUCCESS', 'FAILED', 'VALIDATION_REJECTED')),
+    nodes_count INTEGER NOT NULL,
+    edges_count INTEGER NOT NULL,
+    roads_preserved INTEGER NOT NULL,
+    roads_added INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    error_message TEXT,
+    details_json TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS osm_road_mappings (
+    osm_way_id INTEGER NOT NULL,
+    segment_index INTEGER NOT NULL DEFAULT 0,
+    mapped_road_id TEXT NOT NULL REFERENCES road_segments(road_id),
+    from_node TEXT NOT NULL,
+    to_node TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 1.0,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (osm_way_id, segment_index)
+);
+
 CREATE INDEX IF NOT EXISTS idx_reports_road ON community_reports(road_id);
 CREATE INDEX IF NOT EXISTS idx_reports_user ON community_reports(user_id);
 CREATE INDEX IF NOT EXISTS idx_road_updates_road ON road_updates(road_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp);
+CREATE INDEX IF NOT EXISTS idx_osm_sync_created ON osm_sync_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_road_mappings_road ON osm_road_mappings(mapped_road_id);

@@ -1,10 +1,12 @@
 import express, { Request, Response, NextFunction } from 'express';
 import crypto from 'node:crypto';
-import { FunctionDeclaration, GoogleGenAI, Type } from '@google/genai';
+import { Content, FunctionDeclaration, GenerateContentConfig, GoogleGenAI, Modality, Type } from '@google/genai';
 import dotenv from 'dotenv';
+import { createServer as createHttpServer } from 'node:http';
+import { createServer as createTcpServer } from 'node:net';
+import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import {
-  PUNE_ROAD_NODES,
   INITIAL_HOSPITALS,
   INITIAL_EMERGENCY_FACILITIES,
   INITIAL_HISTORICAL_FLOODS,
@@ -12,6 +14,22 @@ import {
 } from './src/data/puneData';
 import { SanketSetuDatabase } from './src/db/database';
 import { getLiveRainfallFeed, recomputeRoadRisksFromTelemetry } from './src/services/weatherService';
+import { getSegmentTrafficSpeed, getTrafficFeedStatus } from './src/services/trafficService';
+import {
+  classifyGeminiError,
+  getGeminiConfiguration,
+  isRetryableGeminiError,
+  requiresBackendGrounding,
+  SUPPORTED_LIVE_MODELS,
+  SUPPORTED_TEXT_MODELS,
+  withGeminiRetry
+} from './src/services/geminiConfig';
+import {
+  startScheduledOsmSync,
+  executeOsmSynchronization,
+  registerGraphUpdateListener,
+  stopScheduledOsmSync
+} from './src/services/osmSyncService';
 import {
   calculateFloodRisk,
   calculateDijkstraRoute,
@@ -30,6 +48,7 @@ import {
 import {
   CommunityReport,
   ExpertApplication,
+  RoadNode,
   RoadSegment,
   RoadStatus,
   RouteFeedback,
@@ -62,6 +81,31 @@ const PUNE_BOUNDS = {
   minLng: 73.58,
   maxLng: 74.12
 };
+const MAX_TOMTOM_SEGMENTS_PER_ROUTE = 12;
+const SANKETSETU_AI_SAFETY_INSTRUCTIONS =
+  'Never invent current weather, rainfall, flood levels, road closures, shelter or hospital availability, emergency contacts, route metrics, or dispatch status. Current local facts must come from SanketSetu backend tools. Distinguish expert-verified hazards from unverified community reports. Never guarantee a route is safe. Never claim an SOS or call was completed. Do not perform consequential actions; this assistant only reads backend data.';
+
+function getSanketSetuAiSystemInstruction(lang: string): string {
+  const langLabel = lang === 'hi' ? 'Hindi' : lang === 'mr' ? 'Marathi' : 'English';
+  return `You are SanketSetu AI, the emergency flood information assistant for Pune and Pimpri-Chinchwad, Maharashtra. ${SANKETSETU_AI_SAFETY_INSTRUCTIONS}
+Use the read-only backend tools for weather, hazards, roads, routes, shelters, hospitals, reports, alerts, and data sources before answering questions about those facts. Cite the source and update time when the tool provides them. Mark unknown or unavailable values honestly. Treat prior messages as context, not as verified current data. Reply concisely in ${langLabel}.`;
+}
+
+const LIVE_BACKEND_TOOL: FunctionDeclaration = {
+  name: 'querySanketSetuBackend',
+  description: 'Read verified SanketSetu backend data for a Pune/PCMC flood-safety question. This tool is read-only and cannot dispatch SOS, submit a report, or place a call.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      query: { type: Type.STRING, description: 'The current/local information requested by the user.' }
+    },
+    required: ['query']
+  }
+};
+
+const LIVE_AI_SYSTEM_INSTRUCTION =
+  `You are SanketSetu Live, a real-time voice interface for Pune and Pimpri-Chinchwad. ${SANKETSETU_AI_SAFETY_INSTRUCTIONS}
+For any current/local flood-safety fact, call querySanketSetuBackend first. Speak only what its result supports; preserve the result's unavailable state, source, timestamp, and distinction between verified and unverified reports. If the tool says AI is unavailable, state that clearly and read only its verified backend fallback. For general conversation, avoid claims about current local conditions. Never claim to submit reports, call emergency services, or dispatch SOS.`;
 
 function isValidPuneCoordinate(lat: number, lng: number): boolean {
   return (
@@ -114,6 +158,14 @@ export function createSanketSetuApp(dbPath?: string) {
   const app = express();
   const db = new SanketSetuDatabase(dbPath);
 
+  // Maintain active road network nodes dynamically in memory
+  let activeNodes: Record<string, RoadNode> = db.getRoadNodes();
+
+  // Refresh and validate the bundled OSM-derived graph on the scheduled interval.
+  startScheduledOsmSync(db, (updatedNodes) => {
+    activeNodes = updatedNodes;
+  });
+
   const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
   app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -131,16 +183,17 @@ export function createSanketSetuApp(dbPath?: string) {
   app.use(express.json({ limit: '4mb' }));
 
   // Initialize Gemini client strictly server-side
-  const geminiApiKey = process.env.GEMINI_API_KEY?.trim();
+  const geminiConfiguration = getGeminiConfiguration();
+  const geminiApiKey = geminiConfiguration.apiKey;
   let aiClient: GoogleGenAI | null = null;
   if (geminiApiKey) {
     try {
       aiClient = new GoogleGenAI({
         apiKey: geminiApiKey,
         httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build'
-          }
+          apiVersion: 'v1beta',
+          timeout: geminiConfiguration.timeoutMs,
+          retryOptions: { attempts: 1 }
         }
       });
     } catch (err) {
@@ -205,6 +258,14 @@ export function createSanketSetuApp(dbPath?: string) {
       }
       req.authorityMembership = membership;
       next();
+    };
+  }
+
+  function requireCitizenOrActiveExpert() {
+    return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+      if (req.user?.role === 'CITIZEN') return next();
+      if (req.user?.role === 'EXPERT') return requireAuthorityRole('EXPERT')(req, res, next);
+      return res.status(403).json({ error: 'Citizen or active Expert access is required.' });
     };
   }
 
@@ -327,7 +388,7 @@ export function createSanketSetuApp(dbPath?: string) {
     const reports = db.getReports();
     const computed = recomputeRoadRisksFromTelemetry(
       storedRoads,
-      PUNE_ROAD_NODES,
+      activeNodes,
       rainfall.observations,
       reports
     );
@@ -514,10 +575,7 @@ export function createSanketSetuApp(dbPath?: string) {
       appliedAt: now,
       authorityId: applicationAuthorityId || undefined
     };
-    withTransaction(() => {
-      db.createUser(newExpert);
-      db.createExpertApplication(application);
-    });
+    db.createExpertRegistration(newExpert, application);
 
     const { passwordHash, ...safeUser } = newExpert;
     res.status(201).json({
@@ -548,7 +606,8 @@ export function createSanketSetuApp(dbPath?: string) {
     if (found.accountStatus === 'PENDING_APPROVAL') {
       return res.status(403).json({
         error: 'Your expert application is awaiting verification. Access to operational controls is restricted until approval.',
-        accountStatus: 'PENDING_APPROVAL'
+        accountStatus: 'PENDING_APPROVAL',
+        applicationId: db.getExpertApplicationForUser(found.id)?.id
       });
     }
     if (found.accountStatus === 'REJECTED') {
@@ -908,7 +967,8 @@ export function createSanketSetuApp(dbPath?: string) {
     const rows = db.db.prepare(`
       SELECT application_id AS id, user_id AS userId, full_name AS fullName, email,
              organisation, designation, status, applied_at AS appliedAt,
-             reviewed_at AS reviewedAt, reviewed_by AS reviewedBy, authority_id AS authorityId
+             reviewed_at AS reviewedAt, reviewed_by AS reviewedBy,
+             reviewed_by_id AS reviewedById, authority_id AS authorityId
       FROM expert_applications WHERE authority_id = ? ORDER BY applied_at DESC
     `).all(req.authorityMembership!.authorityId);
     res.json(rows);
@@ -938,9 +998,9 @@ export function createSanketSetuApp(dbPath?: string) {
           `).run(`MEM_${crypto.randomUUID()}`, authorityId, userId, req.user!.id, now, now);
         }
         db.db.prepare(`
-          UPDATE expert_applications SET status = ?, reviewed_at = ?, reviewed_by = ?
+          UPDATE expert_applications SET status = ?, reviewed_at = ?, reviewed_by = ?, reviewed_by_id = ?
           WHERE application_id = ? AND authority_id = ? AND status = 'PENDING_APPROVAL'
-        `).run(status, now, req.user!.fullName, req.params.id, authorityId);
+        `).run(status, now, req.user!.fullName, req.user!.id, req.params.id, authorityId);
         db.db.prepare('UPDATE users SET account_status = ?, updated_at = ? WHERE id = ?')
           .run(status, now, userId);
         db.appendAuthorityAuditLog(req.user!, authorityId,
@@ -969,9 +1029,11 @@ export function createSanketSetuApp(dbPath?: string) {
         severity: 'info'
       });
     }
+    const reviewedApplication = db.getExpertApplicationById(String(application.application_id));
+    if (!reviewedApplication) throw new Error('Reviewed expert application could not be reloaded.');
     return res.json({
       success: true,
-      application: { ...application, status, reviewedAt: now, reviewedBy: req.user!.fullName }
+      application: reviewedApplication
     });
   }
 
@@ -1095,21 +1157,29 @@ export function createSanketSetuApp(dbPath?: string) {
 
   // ----------------- OPERATIONAL & GEOSPATIAL ENDPOINTS -----------------
 
-  app.get('/api/health', async (_req: Request, res: Response) => {
+  app.get('/api/health', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
     const rainfall = await getLiveRainfallFeed(false);
+    const isActiveExpert =
+      req.user?.role === 'EXPERT' &&
+      req.user.accountStatus === 'ACTIVE' &&
+      Boolean(db.getActiveAuthorityMembership(req.user.id));
     res.json({
       status: 'ok',
-      service: 'SanketSetu Intelligence Platform',
       region: 'Pune & Pimpri-Chinchwad, Maharashtra, India',
-      database: 'sqlite_persistent',
       rolesSupported: ['CITIZEN', 'AUTHORITY_ADMIN', 'EXPERT'],
       weatherFeed: {
         openMeteoStatus: rainfall.openMeteoStatus,
-        imdApiStatus: rainfall.imdApiStatus,
-        lastSuccessfulUpdate: rainfall.lastSuccessfulUpdate
+        lastSuccessfulUpdate: rainfall.lastSuccessfulUpdate,
+        ...(isActiveExpert ? { imdApiStatus: rainfall.imdApiStatus } : {})
       },
-      geminiConfigured: Boolean(aiClient),
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      ...(isActiveExpert
+        ? {
+            service: 'SanketSetu Intelligence Platform',
+            database: 'sqlite_persistent',
+            geminiConfigured: Boolean(aiClient)
+          }
+        : {})
     });
   });
 
@@ -1123,10 +1193,37 @@ export function createSanketSetuApp(dbPath?: string) {
     const force = req.query.refresh === 'true';
     const { roads, rainfall } = await getAuthoritativeRoads(force);
     res.json({
-      nodes: PUNE_ROAD_NODES,
+      nodes: activeNodes,
       segments: roads,
       rainfall,
       lastUpdated: new Date().toISOString()
+    });
+  });
+
+  app.get('/api/roads/status', (_req: Request, res: Response) => {
+    const roads = db.getRoadSegments();
+    const reports = db.getReports();
+    const activeReportedRoadIds = new Set(
+      reports.flatMap(report =>
+        report.roadId &&
+        report.verificationStatus !== 'Rejected' &&
+        report.verificationStatus !== 'Resolved'
+          ? [report.roadId]
+          : []
+      )
+    );
+    const now = Date.now();
+    res.json({
+      roads: roads.map(road => {
+        const expired = Boolean(road.expiresAt && Date.parse(road.expiresAt) <= now);
+        const hasActiveReport = activeReportedRoadIds.has(road.id);
+        return {
+          id: road.id,
+          status: expired ? (hasActiveReport ? 'REPORTED_WATERLOGGING' : 'OPEN') : road.status,
+          riskScore: road.riskScore,
+          expiresAt: road.expiresAt
+        };
+      })
     });
   });
 
@@ -1154,12 +1251,14 @@ export function createSanketSetuApp(dbPath?: string) {
       });
     }
 
-    let nextRisk: number | null = typeof riskScore === 'number' ? Math.max(0, Math.min(100, riskScore)) : null;
-    if (nextRisk === null) {
-      if (status === 'CLOSED') nextRisk = 100;
-      else if (status === 'VERIFIED_HAZARD') nextRisk = 80;
-      else if (status === 'OPEN') nextRisk = 20;
+    const currentRoad = db.getRoadSegments().find(road => road.id === id);
+    if (!currentRoad) {
+      return res.status(404).json({ error: 'Road segment not found.' });
     }
+    const nextRisk: number | null =
+      typeof riskScore === 'number'
+        ? Math.max(0, Math.min(100, riskScore))
+        : currentRoad.riskScore;
 
     const expiresAt = expiry.expiresAt;
 
@@ -1174,9 +1273,7 @@ export function createSanketSetuApp(dbPath?: string) {
       actor: req.user!
     });
 
-    if (!updatedRoad) {
-      return res.status(404).json({ error: 'Road segment not found.' });
-    }
+    if (!updatedRoad) return res.status(404).json({ error: 'Road segment not found.' });
 
     db.appendAuditLog(
       req.user!,
@@ -1203,6 +1300,40 @@ export function createSanketSetuApp(dbPath?: string) {
     res.json({ success: true, updatedRoad });
   });
 
+  app.get('/api/traffic/status', authenticateToken, requireAuthorityRole('EXPERT'), (_req: AuthenticatedRequest, res: Response) => {
+    res.json(getTrafficFeedStatus());
+  });
+
+  app.get('/api/network/status', authenticateToken, requireAuthorityRole('EXPERT'), (_req: AuthenticatedRequest, res: Response) => {
+    const latestSync = db.getLatestOsmSync();
+    res.json({
+      provider: 'OpenStreetMap ODbL-derived bundled road snapshot',
+      syncMode: 'LOCAL_CANONICAL_SNAPSHOT_REFRESH',
+      externalFetchEnabled: false,
+      statusMessage: 'The scheduled task refreshes and validates the bundled road graph; it does not fetch current data from Overpass.',
+      syncIntervalHours: parseFloat(process.env.OSM_SYNC_INTERVAL_HOURS || '24'),
+      syncEnabled: process.env.OSM_SYNC_ENABLED !== 'false',
+      nodesCount: Object.keys(activeNodes).length,
+      edgesCount: db.getRoadSegments().length,
+      lastSync: latestSync,
+      lastValidation: latestSync,
+      recentLogs: db.getOsmSyncLogs(5),
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  app.post('/api/expert/network/sync', writeLimiter, authenticateToken, requireAuthorityRole('EXPERT'), async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const result = await executeOsmSynchronization(db, 'MANUAL', req.user);
+      if (!result.success) {
+        return res.status(400).json({ error: result.message, details: result.error });
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to refresh the bundled OSM-derived road graph: ' + (err.message || String(err)) });
+    }
+  });
+
   app.post('/api/routes/snap', async (req: Request, res: Response) => {
     const lat = Number(req.body?.lat);
     const lng = Number(req.body?.lng);
@@ -1212,7 +1343,7 @@ export function createSanketSetuApp(dbPath?: string) {
       });
     }
     const { roads } = await getAuthoritativeRoads(false);
-    const snapped = snapCoordinateToRoadNetwork(lat, lng, PUNE_ROAD_NODES, roads);
+    const snapped = snapCoordinateToRoadNetwork(lat, lng, activeNodes, roads);
     res.json({ success: true, ...snapped });
   });
 
@@ -1223,7 +1354,7 @@ export function createSanketSetuApp(dbPath?: string) {
     }
 
     const lower = q.toLowerCase();
-    const localMatches = Object.values(PUNE_ROAD_NODES)
+    const localMatches = Object.values(activeNodes)
       .filter(n => n.name.toLowerCase().includes(lower) || (n.sector || '').toLowerCase().includes(lower))
       .slice(0, 6)
       .map(n => ({
@@ -1252,7 +1383,7 @@ export function createSanketSetuApp(dbPath?: string) {
           .map(item => {
             const lat = Number(item.lat);
             const lng = Number(item.lon);
-            const snapped = snapCoordinateToRoadNetwork(lat, lng, PUNE_ROAD_NODES, roads);
+            const snapped = snapCoordinateToRoadNetwork(lat, lng, activeNodes, roads);
             return {
               label: item.display_name.split(',').slice(0, 3).join(','),
               sector: snapped.nearestNode.name,
@@ -1289,7 +1420,7 @@ export function createSanketSetuApp(dbPath?: string) {
       vehicleType = 'car'
     } = req.body || {};
 
-    const { roads } = await getAuthoritativeRoads(false);
+    const { roads, rainfall } = await getAuthoritativeRoads(false);
 
     let effectiveStartId = startNodeId;
     let effectiveTargetId = targetNodeId;
@@ -1302,7 +1433,7 @@ export function createSanketSetuApp(dbPath?: string) {
       if (!isValidPuneCoordinate(lat, lng)) {
         return res.status(400).json({ error: 'Origin coordinates outside Pune/PCMC coverage.' });
       }
-      snappedOrigin = snapCoordinateToRoadNetwork(lat, lng, PUNE_ROAD_NODES, roads);
+      snappedOrigin = snapCoordinateToRoadNetwork(lat, lng, activeNodes, roads);
       effectiveStartId = snappedOrigin.nearestNode.id;
     }
 
@@ -1312,11 +1443,11 @@ export function createSanketSetuApp(dbPath?: string) {
       if (!isValidPuneCoordinate(lat, lng)) {
         return res.status(400).json({ error: 'Destination coordinates outside Pune/PCMC coverage.' });
       }
-      snappedDest = snapCoordinateToRoadNetwork(lat, lng, PUNE_ROAD_NODES, roads);
+      snappedDest = snapCoordinateToRoadNetwork(lat, lng, activeNodes, roads);
       effectiveTargetId = snappedDest.nearestNode.id;
     }
 
-    if (!effectiveStartId || !effectiveTargetId || !PUNE_ROAD_NODES[effectiveStartId] || !PUNE_ROAD_NODES[effectiveTargetId]) {
+    if (!effectiveStartId || !effectiveTargetId || !activeNodes[effectiveStartId] || !activeNodes[effectiveTargetId]) {
       return res.status(400).json({ error: 'Valid origin and destination nodes or Pune coordinates are required.' });
     }
 
@@ -1326,23 +1457,110 @@ export function createSanketSetuApp(dbPath?: string) {
 
     const rawLambda = Number(lambdaRisk);
     const parsedLambda = Number.isFinite(rawLambda) ? Math.max(0, Math.min(5.0, rawLambda)) : 1.5;
-    const graphEdges: GraphEdge[] = roads.map(r => ({
-      id: r.id,
-      from: r.from,
-      to: r.to,
-      name: r.name,
-      distanceKm: r.distanceKm,
-      speedKmph: r.speedKmph,
-      riskScore: r.riskScore,
-      status: r.status,
-      baseElevationM: r.baseElevationM,
-      isOneWay: r.isOneWay,
-      accessRestriction: r.accessRestriction,
-      coordinates: r.coordinates
+
+    const baseGraphEdges: GraphEdge[] = roads.map(road => ({
+      id: road.id,
+      from: road.from,
+      to: road.to,
+      name: road.name,
+      distanceKm: road.distanceKm,
+      speedKmph: road.speedKmph,
+      riskScore: road.riskScore,
+      status: road.status,
+      riskCategory: road.riskCategory,
+      riskSources: road.riskSources,
+      riskExplanation: road.riskExplanation,
+      riskObservationTimestamp: road.riskObservationTimestamp,
+      riskUpdatedAt: road.riskUpdatedAt,
+      lastUpdated: road.lastUpdated,
+      verifiedBy: road.verifiedBy,
+      statusReason: road.statusReason,
+      expiresAt: road.expiresAt,
+      baseElevationM: road.baseElevationM,
+      slopePct: road.slopePct,
+      drainageCondition: road.drainageCondition,
+      confidenceScore: road.confidenceScore,
+      isOneWay: road.isOneWay,
+      accessRestriction: road.accessRestriction,
+      coordinates: road.coordinates
     }));
 
+    const initialShortest = calculateDijkstraRoute(
+      activeNodes,
+      baseGraphEdges,
+      effectiveStartId,
+      effectiveTargetId,
+      'shortest',
+      parsedLambda,
+      new Set(),
+      new Set(),
+      effectiveVehicleType
+    );
+    const initialFastest = calculateDijkstraRoute(
+      activeNodes,
+      baseGraphEdges,
+      effectiveStartId,
+      effectiveTargetId,
+      'fastest',
+      parsedLambda,
+      new Set(),
+      new Set(),
+      effectiveVehicleType
+    );
+    const initialSafestAlternatives = calculateKShortestPaths(
+      activeNodes,
+      baseGraphEdges,
+      effectiveStartId,
+      effectiveTargetId,
+      'safest',
+      parsedLambda,
+      3,
+      effectiveVehicleType
+    );
+    const candidateRoutes = [
+      initialFastest,
+      initialShortest,
+      ...initialSafestAlternatives
+    ];
+    const candidateRoadIds = new Set<string>();
+    for (let routePosition = 0; candidateRoadIds.size < MAX_TOMTOM_SEGMENTS_PER_ROUTE; routePosition++) {
+      let foundCandidate = false;
+      for (const candidateRoute of candidateRoutes) {
+        const edge = candidateRoute.edges[routePosition];
+        if (!edge) continue;
+        foundCandidate = true;
+        candidateRoadIds.add(edge.id);
+        if (candidateRoadIds.size >= MAX_TOMTOM_SEGMENTS_PER_ROUTE) break;
+      }
+      if (!foundCandidate) break;
+    }
+
+    // Sample only roads on the estimated candidate routes, never the entire network.
+    const roadsById = new Map(roads.map(road => [road.id, road]));
+    const candidateRoads = [...candidateRoadIds]
+      .map(roadId => roadsById.get(roadId))
+      .filter((road): road is RoadSegment => road !== undefined);
+    const trafficResults = await Promise.all(candidateRoads.map(async road => ({
+      roadId: road.id,
+      traffic: await getSegmentTrafficSpeed(
+        road.id,
+        road.roadType,
+        road.speedKmph,
+        road.coordinates
+      )
+    })));
+    const trafficByRoadId = new Map(
+      trafficResults.map(result => [result.roadId, result.traffic])
+    );
+    const graphEdges: GraphEdge[] = baseGraphEdges.map(edge => {
+      const traffic = trafficByRoadId.get(edge.id);
+      return traffic
+        ? { ...edge, speedKmph: traffic.currentSpeedKmph }
+        : edge;
+    });
+
     const shortest = calculateDijkstraRoute(
-      PUNE_ROAD_NODES,
+      activeNodes,
       graphEdges,
       effectiveStartId,
       effectiveTargetId,
@@ -1354,7 +1572,7 @@ export function createSanketSetuApp(dbPath?: string) {
     );
 
     const fastest = calculateDijkstraRoute(
-      PUNE_ROAD_NODES,
+      activeNodes,
       graphEdges,
       effectiveStartId,
       effectiveTargetId,
@@ -1366,7 +1584,7 @@ export function createSanketSetuApp(dbPath?: string) {
     );
 
     const safestAlternatives = calculateKShortestPaths(
-      PUNE_ROAD_NODES,
+      activeNodes,
       graphEdges,
       effectiveStartId,
       effectiveTargetId,
@@ -1379,7 +1597,7 @@ export function createSanketSetuApp(dbPath?: string) {
     const safest =
       safestAlternatives[0] ||
       calculateDijkstraRoute(
-        PUNE_ROAD_NODES,
+        activeNodes,
         graphEdges,
         effectiveStartId,
         effectiveTargetId,
@@ -1390,16 +1608,45 @@ export function createSanketSetuApp(dbPath?: string) {
         effectiveVehicleType
       );
 
+    const trafficStatus = getTrafficFeedStatus();
+    const liveTrafficSegments = trafficResults.filter(
+      result => result.traffic.isLive
+    ).length;
+    const warnings = [
+      rainfall.openMeteoStatus === 'OK'
+        ? 'Flood-risk scores use gridded Open-Meteo rainfall data, not street-level sensor measurements.'
+        : 'Open-Meteo rainfall is unavailable; rainfall-dependent risk is handled as unknown.',
+      liveTrafficSegments === 0
+        ? 'No successful live TomTom response was confirmed for this calculation; estimated road-class speeds were used.'
+        : `Live TomTom speeds cover ${liveTrafficSegments} of ${roads.length} road segments; estimated speeds were used for the rest.`
+    ];
+
     res.json({
-      originNode: PUNE_ROAD_NODES[effectiveStartId],
-      targetNode: PUNE_ROAD_NODES[effectiveTargetId],
+      originNode: activeNodes[effectiveStartId],
+      targetNode: activeNodes[effectiveTargetId],
       snappedOrigin,
       snappedDest,
       lambdaRisk: parsedLambda,
       shortest,
       fastest,
       safest,
-      alternatives: safestAlternatives
+      alternatives: safestAlternatives,
+      dataQuality: {
+        weather: {
+          provider: rainfall.observations.find(observation => observation.source)?.source
+            ?? 'Open-Meteo Forecast API',
+          status: rainfall.openMeteoStatus,
+          lastSuccessfulUpdate: rainfall.lastSuccessfulUpdate
+        },
+        traffic: {
+          provider: trafficStatus.provider,
+          liveSegments: liveTrafficSegments,
+          sampledSegments: candidateRoads.length,
+          networkSegments: roads.length,
+          lastSuccessfulUpdate: trafficStatus.lastSuccessfulUpdate
+        },
+        warnings
+      }
     });
   });
 
@@ -1486,9 +1733,25 @@ export function createSanketSetuApp(dbPath?: string) {
   });
 
   app.post('/api/reports', writeLimiter, authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-    const { locationName, lat, lng, reportType, description, severity, roadId, imageUrl } = req.body || {};
+    const {
+      locationName,
+      lat,
+      lng,
+      reportType,
+      description,
+      severity,
+      roadId,
+      imageUrl,
+      clientRequestId
+    } = req.body || {};
     if (!locationName || !reportType || !severity) {
       return res.status(400).json({ error: 'Location name, report type, and severity are required.' });
+    }
+    if (
+      clientRequestId !== undefined &&
+      (typeof clientRequestId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/.test(clientRequestId))
+    ) {
+      return res.status(400).json({ error: 'Client request ID must be a 1-128 character identifier.' });
     }
 
     const photoCheck = validateOptionalDataImage(imageUrl);
@@ -1505,20 +1768,40 @@ export function createSanketSetuApp(dbPath?: string) {
     const currentRoads = db.getRoadSegments();
     let targetRoadId = roadId ? String(roadId) : undefined;
     if (!targetRoadId) {
-      const snapped = snapCoordinateToRoadNetwork(parsedLat, parsedLng, PUNE_ROAD_NODES, currentRoads);
+      const snapped = snapCoordinateToRoadNetwork(parsedLat, parsedLng, activeNodes, currentRoads);
       targetRoadId = snapped.nearestRoad?.id;
     }
 
-    const newReport: CommunityReport = {
+    const normalizedLocationName = String(locationName).trim();
+    const normalizedDescription = String(description || 'Citizen reported water hazard').trim();
+    const existingReport = clientRequestId
+      ? db.getReportByClientRequestId(req.user!.id, clientRequestId)
+      : null;
+    if (
+      existingReport &&
+      (
+        existingReport.locationName !== normalizedLocationName ||
+        existingReport.lat !== parsedLat ||
+        existingReport.lng !== parsedLng ||
+        existingReport.reportType !== reportType ||
+        existingReport.description !== normalizedDescription ||
+        existingReport.severity !== severity ||
+        existingReport.roadId !== targetRoadId
+      )
+    ) {
+      return res.status(409).json({ error: 'Client request ID was already used for a different report.' });
+    }
+
+    const newReport: CommunityReport = existingReport || {
       id: `REP_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       userId: req.user!.id,
       userName: req.user!.fullName,
       roadId: targetRoadId,
-      locationName: String(locationName).trim(),
+      locationName: normalizedLocationName,
       lat: parsedLat,
       lng: parsedLng,
       reportType,
-      description: String(description || 'Citizen reported water hazard').trim(),
+      description: normalizedDescription,
       severity,
       imageUrl: photoCheck.value,
       timestamp: new Date().toISOString(),
@@ -1526,7 +1809,9 @@ export function createSanketSetuApp(dbPath?: string) {
       confidenceScore: photoCheck.value ? 0.78 : 0.65
     };
 
-    db.createReport(newReport);
+    if (!existingReport) {
+      db.createReport(newReport, clientRequestId);
+    }
 
     // IMPORTANT REQUIREMENT: Citizen reports NEVER auto-close a road.
     // They flag it as REPORTED_WATERLOGGING so routing warns users while awaiting expert verification.
@@ -1545,7 +1830,7 @@ export function createSanketSetuApp(dbPath?: string) {
     }
 
     const { roads } = await getAuthoritativeRoads(false);
-    res.status(201).json({ success: true, report: newReport, roads });
+    res.status(existingReport ? 200 : 201).json({ success: true, report: newReport, roads });
   });
 
   app.patch('/api/reports/:id/verify', writeLimiter, authenticateToken, requireAuthorityPermission('REPORTS_VERIFY'), async (req: AuthenticatedRequest, res: Response) => {
@@ -1762,6 +2047,64 @@ export function createSanketSetuApp(dbPath?: string) {
     res.status(201).json({ success: true, feedback: fb });
   });
 
+  app.post('/api/expert/alerts', writeLimiter, authenticateToken, requireAuthorityPermission('ALERT_CREATE'), (req: AuthenticatedRequest, res: Response) => {
+    const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+    const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+    const severity = req.body?.severity;
+    const relatedRoadId = typeof req.body?.relatedRoadId === 'string' && req.body.relatedRoadId
+      ? req.body.relatedRoadId
+      : undefined;
+
+    if (!title || title.length > 120 || !message || message.length > 2000) {
+      return res.status(400).json({ error: 'Alert title (1–120 characters) and message (1–2000 characters) are required.' });
+    }
+    if (severity !== 'info' && severity !== 'warning' && severity !== 'critical') {
+      return res.status(400).json({ error: 'Invalid alert severity.' });
+    }
+    if (relatedRoadId) {
+      const scopedRoad = db.db.prepare(
+        'SELECT road_id FROM road_segments WHERE road_id = ? AND authority_id = ?'
+      ).get(relatedRoadId, req.authorityMembership!.authorityId);
+      if (!scopedRoad) {
+        return res.status(404).json({ error: 'Affected road was not found in this authority.' });
+      }
+    }
+
+    const notification = withTransaction(() => {
+      const created = db.createNotification({
+        title,
+        message,
+        severity,
+        ...(relatedRoadId ? { relatedRoadId } : {})
+      });
+      db.appendAuditLog(
+        req.user!,
+        'EXPERT_ALERT_CREATE',
+        created.id,
+        `Created in-app alert "${title}"${relatedRoadId ? ` for road ${relatedRoadId}` : ' for Pune & PCMC'}; external delivery is not configured.`,
+        req.authorityMembership!.authorityId
+      );
+      return created;
+    });
+
+    res.status(201).json({
+      success: true,
+      notification,
+      alert: {
+        ...notification,
+        createdById: req.user!.id,
+        createdBy: req.user!.fullName,
+        deliveryStatus: 'NOT_CONFIGURED'
+      },
+      publication: 'IN_APP_ONLY',
+      deliveryStatus: 'NOT_CONFIGURED'
+    });
+  });
+
+  app.get('/api/expert/alerts', authenticateToken, requireAuthorityRole('EXPERT'), (_req: AuthenticatedRequest, res: Response) => {
+    res.json({ alerts: db.getExpertAlerts() });
+  });
+
   app.get('/api/notifications', optionalAuth, (req: AuthenticatedRequest, res: Response) => {
     res.json(db.getNotificationsForUser(req.user?.id));
   });
@@ -1771,20 +2114,213 @@ export function createSanketSetuApp(dbPath?: string) {
     res.json({ success: true });
   });
 
+  app.post('/api/ai/live-token', createRateLimiter(60_000, 6), authenticateToken, requireCitizenOrActiveExpert(), async (req: AuthenticatedRequest, res: Response) => {
+    if (!aiClient || !geminiApiKey) {
+      return res.status(503).json({ error: 'Gemini Live is not configured.', errorCategory: 'not_configured' });
+    }
+    if (!SUPPORTED_LIVE_MODELS.has(geminiConfiguration.liveModel)) {
+      return res.status(503).json({ error: 'The configured Gemini Live model is not supported.', errorCategory: 'unsupported_model' });
+    }
+
+    const now = Date.now();
+    const expiresAt = new Date(now + 5 * 60_000).toISOString();
+    const language = req.body?.lang === 'hi' ? 'Hindi' : req.body?.lang === 'mr' ? 'Marathi' : 'English';
+    const liveSystemInstruction = `${LIVE_AI_SYSTEM_INSTRUCTION}\nRespond in ${language}.`;
+    try {
+      const token = await aiClient.authTokens.create({
+        config: {
+          uses: 1,
+          expireTime: expiresAt,
+          newSessionExpireTime: new Date(now + 60_000).toISOString(),
+          // Constrained token configs lock their supplied fields; an extra mask rejects the tool schema.
+          liveConnectConstraints: {
+            model: geminiConfiguration.liveModel,
+            config: {
+              responseModalities: [Modality.AUDIO],
+              inputAudioTranscription: {},
+              outputAudioTranscription: {},
+              systemInstruction: liveSystemInstruction,
+              tools: [{ functionDeclarations: [LIVE_BACKEND_TOOL] }],
+              maxOutputTokens: geminiConfiguration.maxOutputTokens,
+              sessionResumption: {}
+            }
+          },
+          abortSignal: AbortSignal.timeout(geminiConfiguration.timeoutMs)
+        }
+      });
+      if (!token.name) {
+        return res.status(502).json({ error: 'Gemini did not issue a Live session token.', errorCategory: 'live_api_unavailable' });
+      }
+      return res.json({
+        token: token.name,
+        model: geminiConfiguration.liveModel,
+        expiresAt
+      });
+    } catch (error) {
+      const category = classifyGeminiError(error);
+      console.warn(`[SanketSetu] Gemini Live token request failed (${category}).`);
+      return res.status(503).json({
+        error: 'Gemini Live is temporarily unavailable. Browser speech fallback remains available.',
+        errorCategory: category === 'unknown' ? 'live_api_unavailable' : category
+      });
+    }
+  });
+
+  app.get('/api/ai/health', createRateLimiter(60_000, 10), authenticateToken, requireAuthorityRole('EXPERT'), async (_req: AuthenticatedRequest, res: Response) => {
+    const textModelSupported = SUPPORTED_TEXT_MODELS.has(geminiConfiguration.textModel);
+    const liveModelSupported = SUPPORTED_LIVE_MODELS.has(geminiConfiguration.liveModel);
+    let textGenerationWorking: boolean | null = null;
+    let liveApiAvailable: boolean | null = null;
+    let textErrorCategory: string | null = null;
+    let liveErrorCategory: string | null = null;
+
+    if (!aiClient) {
+      textErrorCategory = 'not_configured';
+      liveErrorCategory = 'not_configured';
+    } else {
+      if (textModelSupported) {
+        try {
+          const result = await withGeminiRetry(() => aiClient!.models.generateContent({
+            model: geminiConfiguration.textModel,
+            contents: 'Reply with OK only.',
+            config: {
+              maxOutputTokens: 16,
+              abortSignal: AbortSignal.timeout(geminiConfiguration.timeoutMs)
+            }
+          }));
+          textGenerationWorking = Boolean(result.text?.trim());
+          if (!textGenerationWorking) textErrorCategory = 'unknown';
+        } catch (error) {
+          textErrorCategory = classifyGeminiError(error);
+        }
+      } else {
+        textErrorCategory = 'unsupported_model';
+      }
+
+      if (liveModelSupported) {
+        try {
+          const now = Date.now();
+          await aiClient.authTokens.create({
+            config: {
+              uses: 1,
+              expireTime: new Date(now + 5 * 60_000).toISOString(),
+              newSessionExpireTime: new Date(now + 30_000).toISOString(),
+              liveConnectConstraints: {
+                model: geminiConfiguration.liveModel,
+                config: {
+                  responseModalities: [Modality.AUDIO],
+                  systemInstruction: 'You are SanketSetu, a flood-safety assistant. Never invent live conditions or guarantee a route is safe.'
+                }
+              },
+              abortSignal: AbortSignal.timeout(geminiConfiguration.timeoutMs)
+            }
+          });
+          liveApiAvailable = true;
+        } catch (error) {
+          liveErrorCategory = 'live_api_unavailable';
+          console.warn(`[SanketSetu] Gemini Live health check failed (${classifyGeminiError(error)}).`);
+        }
+      } else {
+        liveErrorCategory = 'unsupported_model';
+      }
+    }
+
+    res.json({
+      configured: Boolean(geminiApiKey),
+      textModelSupported,
+      textGenerationWorking,
+      textErrorCategory,
+      liveModelSupported,
+      liveApiAvailable,
+      liveErrorCategory,
+      checkedAt: new Date().toISOString()
+    });
+  });
+
   // ----------------- GEMINI AI ASSISTANT WITH LIVE BACKEND TOOLS -----------------
 
-  app.post('/api/chatbot/message', writeLimiter, async (req: Request, res: Response) => {
-    const { message, lang = 'en' } = req.body || {};
+  app.post('/api/chatbot/message', writeLimiter, optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+    const requestId = randomUUID();
+    const endpoint = '/api/chatbot/message';
+    const startedAt = Date.now();
+    res.setHeader('X-Request-ID', requestId);
+    const logCompletion = (status: number, aiStatus?: unknown, errorCategory?: unknown) => {
+      console.info('[SanketSetu] Chatbot request completed.', {
+        requestId,
+        endpoint,
+        httpStatus: status,
+        durationMs: Date.now() - startedAt,
+        aiStatus: aiStatus === 'available' || aiStatus === 'unavailable' ? aiStatus : undefined,
+        errorCategory: typeof errorCategory === 'string' ? errorCategory : undefined
+      });
+    };
+    const { message, lang = 'en', history, stream } = req.body || {};
     if (!message || !String(message).trim()) {
-      return res.status(400).json({ error: 'Message is required.' });
+      logCompletion(400, 'unavailable', 'invalid_request');
+      return res.status(400).json({
+        error: 'Message is required.',
+        errorCategory: 'invalid_request',
+        requestId
+      });
     }
     const userMessage = String(message).trim();
+    if (userMessage.length > 4000) {
+      logCompletion(400, 'unavailable', 'invalid_request');
+      return res.status(400).json({
+        error: 'Message must be 4,000 characters or fewer.',
+        errorCategory: 'invalid_request',
+        requestId
+      });
+    }
+    const streamRequested = stream === true;
+    const emitEvent = (event: string, value: unknown) => {
+      if (!streamRequested || res.destroyed) return;
+      res.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`);
+    };
+    const respond = (value: Record<string, unknown>) => {
+      const responseValue: Record<string, unknown> = { ...value, requestId };
+      logCompletion(
+        res.statusCode,
+        responseValue.aiStatus,
+        responseValue.errorCategory
+      );
+      if (!streamRequested) return res.json(responseValue);
+      emitEvent('complete', responseValue);
+      return res.end();
+    };
+    if (streamRequested) {
+      res.status(200).set({
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no'
+      });
+      res.flushHeaders();
+    }
+    const safeHistory = Array.isArray(history) && geminiConfiguration.maxHistoryMessages > 0
+      ? history
+        .slice(-geminiConfiguration.maxHistoryMessages)
+        .filter((entry: unknown): entry is { role: 'user' | 'model'; text: string } =>
+          Boolean(
+            entry &&
+            typeof entry === 'object' &&
+            ((entry as { role?: unknown }).role === 'user' || (entry as { role?: unknown }).role === 'model') &&
+            typeof (entry as { text?: unknown }).text === 'string' &&
+            (entry as { text: string }).text.trim()
+          )
+        )
+        .map(entry => ({
+          role: entry.role,
+          parts: [{ text: entry.text.slice(0, 4000) }]
+        }))
+      : [];
     const { roads, rainfall } = await getAuthoritativeRoads(false);
     const shelters = db.getShelters();
     const reports = db.getReports();
+    let aiErrorCategory: string | null = aiClient ? null : 'not_configured';
 
     // Live backend tool handlers (single source of truth)
-    const executeTool = (name: string, args: Record<string, any> = {}) => {
+    const executeTool = (name: string, args: Record<string, any> = {}): Record<string, unknown> => {
       if (name === 'getLiveRainfallSummary') {
         return {
           openMeteoStatus: rainfall.openMeteoStatus,
@@ -1832,7 +2368,7 @@ export function createSanketSetuApp(dbPath?: string) {
       if (name === 'findSafeRouteBetweenNodes') {
         const qOrigin = String(args.originQuery || '').toLowerCase();
         const qDest = String(args.destinationQuery || '').toLowerCase();
-        const nodesList = Object.values(PUNE_ROAD_NODES);
+        const nodesList = Object.values(activeNodes);
         const oNode = nodesList.find(n => n.name.toLowerCase().includes(qOrigin) || n.id.toLowerCase() === qOrigin);
         const dNode = nodesList.find(n => n.name.toLowerCase().includes(qDest) || n.id.toLowerCase() === qDest);
         if (!oNode || !dNode) {
@@ -1854,9 +2390,9 @@ export function createSanketSetuApp(dbPath?: string) {
           isOneWay: r.isOneWay,
           accessRestriction: r.accessRestriction
         }));
-        const safest = calculateDijkstraRoute(PUNE_ROAD_NODES, graphEdges, oNode.id, dNode.id, 'safest', 1.8);
-        const fastest = calculateDijkstraRoute(PUNE_ROAD_NODES, graphEdges, oNode.id, dNode.id, 'fastest', 1.8);
-        const shortest = calculateDijkstraRoute(PUNE_ROAD_NODES, graphEdges, oNode.id, dNode.id, 'shortest', 1.8);
+        const safest = calculateDijkstraRoute(activeNodes, graphEdges, oNode.id, dNode.id, 'safest', 1.8);
+        const fastest = calculateDijkstraRoute(activeNodes, graphEdges, oNode.id, dNode.id, 'fastest', 1.8);
+        const shortest = calculateDijkstraRoute(activeNodes, graphEdges, oNode.id, dNode.id, 'shortest', 1.8);
         return {
           origin: oNode.name,
           destination: dNode.name,
@@ -1908,6 +2444,50 @@ export function createSanketSetuApp(dbPath?: string) {
           rescueAndHelplines: INITIAL_EMERGENCY_FACILITIES
         };
       }
+      if (name === 'getCommunityReports') {
+        return { reports: reports.slice(0, 25).map(report => ({
+          locationName: report.locationName,
+          type: report.reportType,
+          severity: report.severity,
+          verificationStatus: report.verificationStatus,
+          timestamp: report.timestamp
+        })) };
+      }
+      if (name === 'getAlerts') {
+        return { alerts: db.getNotificationsForUser(req.user?.id).map(notification => ({
+          title: notification.title,
+          message: notification.message,
+          severity: notification.severity,
+          createdAt: notification.createdAt
+        })) };
+      }
+      if (
+        name === 'getDatasetStatus' &&
+        req.user?.role === 'EXPERT' &&
+        req.user.accountStatus === 'ACTIVE' &&
+        db.getActiveAuthorityMembership(req.user.id)
+      ) {
+        const traffic = getTrafficFeedStatus();
+        const rainfallTimestamp = rainfall.lastSuccessfulUpdate;
+        const latestOsm = db.getLatestOsmSync();
+        return {
+          weather: {
+            source: rainfall.observations.find(observation => observation.source)?.source ?? 'Open-Meteo Forecast API',
+            status: rainfall.openMeteoStatus,
+            lastSuccessfulUpdate: rainfallTimestamp
+          },
+          traffic: {
+            source: traffic.provider,
+            status: traffic.isLiveActive ? 'LIVE' : 'UNAVAILABLE',
+            lastSuccessfulUpdate: traffic.lastSuccessfulUpdate
+          },
+          roadGraph: {
+            source: 'OpenStreetMap ODbL-derived bundled road snapshot',
+            lastSynchronization: latestOsm?.createdAt ?? null,
+            status: latestOsm?.status ?? 'UNKNOWN'
+          }
+        };
+      }
       return { error: 'Unknown tool' };
     };
 
@@ -1945,67 +2525,182 @@ export function createSanketSetuApp(dbPath?: string) {
             name: 'getEmergencyResources',
             description: 'List verified Pune & PCMC flood shelters, hospitals, animal rescue (RESQ), fire brigade, and disaster control helplines.',
             parameters: { type: Type.OBJECT, properties: {} }
+          },
+          {
+            name: 'getCommunityReports',
+            description: 'List recent community flood reports with their recorded verification status. Never present unverified reports as verified hazards.',
+            parameters: { type: Type.OBJECT, properties: {} }
+          },
+          {
+            name: 'getAlerts',
+            description: 'List alerts available to the authenticated user or public alerts when the user is not signed in.',
+            parameters: { type: Type.OBJECT, properties: {} }
           }
         ];
-
-        const langLabel = lang === 'hi' ? 'Hindi' : lang === 'mr' ? 'Marathi' : 'English';
-        const systemInstruction =
-          `You are SanketSetu AI, the emergency flood intelligence assistant for Pune & Pimpri-Chinchwad, Maharashtra.
-STRICT GROUNDING RULES:
-1. Always invoke the provided backend tools to read live rainfall, road risk/closures, routes, or shelters before answering factual questions.
-2. NEVER invent rainfall numbers, road closures, dam discharge values, or route times. If data is unavailable (e.g. IMD API key missing), state that explicitly.
-3. Never claim any flooded corridor is 100% safe. Distinguish unverified citizen reports from expert-verified hazards/closures.
-4. Reply clearly and concisely in ${langLabel}.`;
-
-        const userContents = [{ role: 'user', parts: [{ text: userMessage }] }];
-        const resp1 = await aiClient.models.generateContent({
-          model: 'gemini-4-hydrogen',
-          contents: userContents,
-          config: {
-            systemInstruction,
-            tools: [{ functionDeclarations: declarations }]
-          }
-        });
-
-        const calls = resp1.functionCalls;
-        if (calls && calls.length > 0 && resp1.candidates?.[0]?.content) {
-          const functionResponses = calls.map(call => ({
-            functionResponse: {
-              id: call.id,
-              name: call.name!,
-              response: executeTool(call.name!, (call.args || {}) as Record<string, any>)
-            }
-          }));
-
-          const resp2 = await aiClient.models.generateContent({
-            model: 'gemini-4-hydrogen',
-            contents: [
-              ...userContents,
-              resp1.candidates[0].content,
-              { role: 'user', parts: functionResponses }
-            ],
-            config: {
-              systemInstruction,
-              tools: [{ functionDeclarations: declarations }]
-            }
-          });
-
-          if (resp2.text) {
-            return res.json({
-              reply: resp2.text,
-              source: 'Gemini AI (gemini-4-hydrogen) grounded in Live SanketSetu Backend Tools',
-              timestamp: new Date().toISOString()
-            });
-          }
-        } else if (resp1.text) {
-          return res.json({
-            reply: resp1.text,
-            source: 'Gemini AI (gemini-4-hydrogen) grounded in SanketSetu Context',
-            timestamp: new Date().toISOString()
+        if (
+          req.user?.role === 'EXPERT' &&
+          req.user.accountStatus === 'ACTIVE' &&
+          db.getActiveAuthorityMembership(req.user.id)
+        ) {
+          declarations.push({
+            name: 'getDatasetStatus',
+            description: 'Expert-only diagnostics for weather, traffic, and OSM road graph source status and update timestamps.',
+            parameters: { type: Type.OBJECT, properties: {} }
           });
         }
+
+        const systemInstruction = getSanketSetuAiSystemInstruction(lang);
+
+        const userContents: Content[] = [
+          ...safeHistory,
+          { role: 'user' as const, parts: [{ text: userMessage }] }
+        ];
+        const generationConfig = {
+          systemInstruction,
+          tools: [{ functionDeclarations: declarations }],
+          maxOutputTokens: geminiConfiguration.maxOutputTokens,
+          abortSignal: AbortSignal.timeout(geminiConfiguration.timeoutMs)
+        };
+        const conversationConfig = {
+          systemInstruction,
+          maxOutputTokens: geminiConfiguration.maxOutputTokens,
+          abortSignal: AbortSignal.timeout(geminiConfiguration.timeoutMs)
+        };
+        const requiresGrounding = requiresBackendGrounding(userMessage);
+
+        const streamText = async (contents: Content[], config: GenerateContentConfig): Promise<string> => {
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            let generated = '';
+            try {
+              const chunks = await aiClient!.models.generateContentStream({
+                model: geminiConfiguration.textModel,
+                contents,
+                config: { ...config, abortSignal: AbortSignal.timeout(geminiConfiguration.timeoutMs) }
+              });
+              for await (const chunk of chunks) {
+                if (!chunk.text) continue;
+                generated += chunk.text;
+                emitEvent('delta', { text: chunk.text });
+              }
+              return generated;
+            } catch (error) {
+              if (generated) emitEvent('reset', {});
+              if (attempt === 0 && isRetryableGeminiError(error) && !res.destroyed) {
+                await new Promise(resolve => setTimeout(resolve, 400));
+                continue;
+              }
+              throw error;
+            }
+          }
+          return '';
+        };
+
+        if (streamRequested && !requiresGrounding) {
+          const reply = await streamText(userContents, conversationConfig);
+          if (reply.trim()) {
+            return respond({
+              reply,
+              source: `Gemini AI (${geminiConfiguration.textModel})`,
+              timestamp: new Date().toISOString(),
+              aiStatus: 'available'
+            });
+          }
+          aiErrorCategory = 'unknown';
+        } else {
+          const resp1 = await withGeminiRetry(() => aiClient!.models.generateContent({
+            model: geminiConfiguration.textModel,
+            contents: userContents,
+            config: generationConfig
+          }));
+
+          const calls = resp1.functionCalls;
+          const responseContent = resp1.candidates?.[0]?.content;
+          if (calls && calls.length > 0 && responseContent) {
+            const functionResponses: Content[] = calls.flatMap(call => {
+              if (!call.name) return [];
+              return [{
+                role: 'user',
+                parts: [{
+                  functionResponse: {
+                    ...(call.id ? { id: call.id } : {}),
+                    name: call.name,
+                    response: executeTool(call.name, (call.args || {}) as Record<string, any>)
+                  }
+                }]
+              }];
+            });
+
+            const groundedContents = [
+              ...userContents,
+              responseContent,
+              ...functionResponses
+            ];
+            const responseConfig: GenerateContentConfig = {
+              ...generationConfig,
+              abortSignal: AbortSignal.timeout(geminiConfiguration.timeoutMs)
+            };
+
+            let reply = '';
+            if (streamRequested) {
+              reply = await streamText(groundedContents, {
+                systemInstruction,
+                maxOutputTokens: geminiConfiguration.maxOutputTokens,
+                tools: [{ functionDeclarations: declarations }],
+                abortSignal: responseConfig.abortSignal
+              });
+            } else {
+              const resp2 = await withGeminiRetry(() => aiClient!.models.generateContent({
+                model: geminiConfiguration.textModel,
+                contents: groundedContents,
+                config: responseConfig
+              }));
+              reply = resp2.text || '';
+            }
+
+            if (reply.trim()) {
+              return respond({
+                reply,
+                source: `Gemini AI (${geminiConfiguration.textModel}) grounded in SanketSetu Backend Tools`,
+                timestamp: new Date().toISOString(),
+                aiStatus: 'available'
+              });
+            }
+            aiErrorCategory = 'tool_call_missing';
+            if (streamRequested) emitEvent('reset', {});
+          } else if (resp1.text && !requiresGrounding) {
+            return respond({
+              reply: resp1.text,
+              source: `Gemini AI (${geminiConfiguration.textModel}) grounded in SanketSetu Context`,
+              timestamp: new Date().toISOString(),
+              aiStatus: 'available'
+            });
+          } else if (requiresGrounding) {
+            aiErrorCategory = 'tool_call_missing';
+          }
+        }
       } catch (llmErr) {
-        console.warn('[SanketSetu] Gemini assistant call failed, returning honest live-telemetry summary:', llmErr);
+        aiErrorCategory = classifyGeminiError(llmErr);
+        const errorDetails = llmErr && typeof llmErr === 'object'
+          ? llmErr as { name?: unknown; status?: unknown; code?: unknown }
+          : {};
+        const errorName = typeof errorDetails.name === 'string'
+          ? errorDetails.name.replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 40)
+          : 'UnknownError';
+        const providerStatus = typeof errorDetails.status === 'number' &&
+          Number.isInteger(errorDetails.status) ? errorDetails.status : undefined;
+        const providerCode = typeof errorDetails.code === 'string' &&
+          /^[A-Za-z0-9_.-]{1,60}$/.test(errorDetails.code) ? errorDetails.code : undefined;
+        console.warn('[SanketSetu] Gemini request failed.', {
+          requestId,
+          endpoint,
+          httpStatus: res.statusCode,
+          providerStatus: providerStatus ?? null,
+          durationMs: Date.now() - startedAt,
+          errorCategory: aiErrorCategory,
+          errorName,
+          providerCode
+        });
+        if (streamRequested) emitEvent('reset', {});
       }
     }
 
@@ -2013,55 +2708,192 @@ STRICT GROUNDING RULES:
     const closed = roads.filter(r => r.status === 'CLOSED');
     const hazards = roads.filter(r => r.status === 'VERIFIED_HAZARD');
     const reported = roads.filter(r => r.status === 'REPORTED_WATERLOGGING');
-    const maxRain = rainfall.observations.reduce((m, o) => Math.max(m, o.observedPast24hMm ?? 0), 0);
+    const observedRainfall = rainfall.observations
+      .map(observation => observation.observedPast24hMm)
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    const maxRain = observedRainfall.length ? Math.max(...observedRainfall) : null;
 
     const summary =
       lang === 'mr'
-        ? `संकेतसेतू थेट स्थिती (LLM की उपलब्ध नाही): पुणे २४ तास पर्जन्यमान ${rainfall.openMeteoStatus === 'OK' ? `${maxRain} मि.मी.` : 'उपलब्ध नाही'}. अधिकृत बंद रस्ते: ${closed.length}, तज्ञ-पडताळलेले धोके: ${hazards.length}, नागरिक अहवाल: ${reported.length}. आपत्कालीन मदत: PMC +91-20-25501269 | अग्निशमन 101 | रुग्णवाहिका 108 | RESQ प्राणी मदत +91-9890999111.`
+        ? `संकेतसेतूचा पडताळलेला बॅकएंड डेटा (AI उपलब्ध नाही: ${aiErrorCategory}): पुणे २४ तास पर्जन्यमान ${rainfall.openMeteoStatus === 'OK' && maxRain !== null ? `${maxRain} मि.मी.` : 'उपलब्ध नाही'}. अधिकृत बंद रस्ते: ${closed.length}, तज्ञ-पडताळलेले धोके: ${hazards.length}, अपडताळलेले नागरिक अहवाल: ${reported.length}. पर्जन्यमानाची शेवटची यशस्वी नोंद: ${rainfall.lastSuccessfulUpdate || 'अज्ञात'}.`
         : lang === 'hi'
-        ? `संकेतसेतु लाइव स्थिति (AI सेवा अनउपलब्ध): पुणे 24 घंटे वर्षा ${rainfall.openMeteoStatus === 'OK' ? `${maxRain} मिमी` : 'अनुपलब्ध'}। आधिकारिक बंद सड़कें: ${closed.length}, सत्यापित खतरे: ${hazards.length}, नागरिक रिपोर्ट: ${reported.length}। आपातकालीन हेल्पलाइन: PMC +91-20-25501269 | दमकल 101 | एम्बुलेंस 108 | RESQ पशु बचाव +91-9890999111।`
-        : `SanketSetu Live Telemetry Summary (AI LLM unavailable — showing verified backend data): ` +
-          `Pune max 24h Open-Meteo rainfall: ${rainfall.openMeteoStatus === 'OK' ? `${maxRain} mm` : 'Unavailable'}. ` +
+        ? `संकेतसेतु सत्यापित बैकएंड डेटा (AI उपलब्ध नहीं: ${aiErrorCategory}): पुणे में पिछले 24 घंटे की वर्षा ${rainfall.openMeteoStatus === 'OK' && maxRain !== null ? `${maxRain} मिमी` : 'उपलब्ध नहीं'}। आधिकारिक बंद सड़कें: ${closed.length}, सत्यापित खतरे: ${hazards.length}, अप्रमाणित नागरिक रिपोर्ट: ${reported.length}। वर्षा डेटा का अंतिम सफल अपडेट: ${rainfall.lastSuccessfulUpdate || 'अज्ञात'}।`
+        : `SanketSetu verified backend data (AI unavailable: ${aiErrorCategory}): ` +
+          `Pune maximum observed 24-hour rainfall: ${rainfall.openMeteoStatus === 'OK' && maxRain !== null ? `${maxRain} mm` : 'Unavailable'}. ` +
           `Official closures: ${closed.length > 0 ? closed.map(r => r.name).join(', ') : 'None'}. ` +
           `Verified hazards: ${hazards.length > 0 ? hazards.map(r => r.name).join(', ') : 'None'}. ` +
           `Unverified citizen waterlogging reports: ${reported.length}. ` +
-          `24x7 Helplines: PMC Disaster +91-20-25501269, Fire 101, Ambulance 108, NDRF 1070, RESQ Animal Rescue +91-9890999111.`;
+          `Rainfall last successful update: ${rainfall.lastSuccessfulUpdate || 'Unknown'}.`;
 
-    res.json({
+    respond({
       reply: summary,
-      source: aiClient ? 'Live Backend Telemetry (Gemini fallback)' : 'Live Backend Telemetry (GEMINI_API_KEY not configured)',
-      timestamp: new Date().toISOString()
+      source: 'Verified SanketSetu backend telemetry (not an AI-generated answer)',
+      timestamp: new Date().toISOString(),
+      aiStatus: 'unavailable',
+      errorCategory: aiErrorCategory
     });
   });
 
   return { app, db };
 }
 
-async function startServer() {
-  const PORT = Number(process.env.PORT) || 3000;
-  const { app } = createSanketSetuApp();
-  const isDev = process.env.NODE_ENV !== 'production';
+async function isPortAvailable(port: number, host: string): Promise<boolean> {
+  const probe = createTcpServer();
 
-  if (isDev) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa'
+  return new Promise<boolean>((resolve, reject) => {
+    probe.once('error', error => {
+      if ('code' in error && error.code === 'EADDRINUSE') {
+        resolve(false);
+        return;
+      }
+      reject(error);
     });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(resolve('dist')));
-    app.get('*', (_req, res) => {
-      res.sendFile(resolve('dist/index.html'));
+
+    probe.listen(port, host, () => {
+      probe.close(error => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(true);
+      });
     });
+  });
+}
+
+async function isHealthyFloodGuard(port: number): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/health`, {
+      signal: controller.signal
+    });
+    if (!response.ok) return false;
+
+    const health: unknown = await response.json();
+    return (
+      typeof health === 'object' &&
+      health !== null &&
+      'status' in health &&
+      health.status === 'ok' &&
+      'service' in health &&
+      health.service === 'SanketSetu Intelligence Platform'
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[FloodGuard] Existing listener health check failed: ${message}`);
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function startServer(): Promise<void> {
+  const port = Number(process.env.PORT ?? 3000);
+  const host = process.env.HOST || '0.0.0.0';
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`PORT must be an integer from 1 to 65535; received "${process.env.PORT}".`);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`SanketSetu Secure Server running on http://0.0.0.0:${PORT}`);
-  });
+  if (!(await isPortAvailable(port, host))) {
+    if (await isHealthyFloodGuard(port)) {
+      console.log(`[FloodGuard] Frontend already serving at http://localhost:${port}/.`);
+      console.log(`[FloodGuard] Backend API is healthy at http://localhost:${port}/api/health.`);
+      console.log('[FloodGuard] Duplicate development launch skipped; the existing server was left untouched.');
+      return;
+    }
+
+    console.error(`[FloodGuard] Port ${port} is already occupied by a service that did not identify itself as FloodGuard.`);
+    console.error('[FloodGuard] No second server was started. Identify the listener with Get-NetTCPConnection and Get-CimInstance Win32_Process.');
+    process.exitCode = 1;
+    return;
+  }
+
+  const { app, db } = createSanketSetuApp();
+  const httpServer = createHttpServer(app);
+  const isDev = process.env.NODE_ENV !== 'production';
+  let closeVite: (() => Promise<void>) | undefined;
+  let isShuttingDown = false;
+
+  const cleanup = async (): Promise<void> => {
+    stopScheduledOsmSync();
+    if (closeVite) {
+      try {
+        await closeVite();
+      } catch (error) {
+        console.error('[FloodGuard] Failed to close Vite cleanly:', error);
+      }
+    }
+    if (httpServer.listening) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          httpServer.close(error => error ? reject(error) : resolve());
+        });
+      } catch (error) {
+        console.error('[FloodGuard] Failed to close the HTTP server cleanly:', error);
+      }
+    }
+    try {
+      db.close();
+    } catch (error) {
+      console.error('[FloodGuard] Failed to close SQLite cleanly:', error);
+    }
+  };
+
+  try {
+    if (isDev) {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          hmr: process.env.DISABLE_HMR === 'true'
+            ? false
+            : { server: httpServer }
+        },
+        appType: 'spa'
+      });
+      closeVite = () => vite.close();
+      app.use(vite.middlewares);
+    } else {
+      app.use(express.static(resolve('dist')));
+      app.get('*', (_req, res) => {
+        res.sendFile(resolve('dist/index.html'));
+      });
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => reject(error);
+      httpServer.once('error', onError);
+      httpServer.listen(port, host, () => {
+        httpServer.off('error', onError);
+        resolve();
+      });
+    });
+
+    console.log(`[FloodGuard] Backend API listening on http://${host}:${port}.`);
+    console.log(`[FloodGuard] ${isDev ? 'Vite frontend middleware' : 'Built frontend'} serving on http://localhost:${port}/.`);
+    console.log(`[FloodGuard] SQLite connected at ${db.dbPath}.`);
+
+    const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+      if (isShuttingDown) return;
+      isShuttingDown = true;
+      console.log(`[FloodGuard] ${signal} received; closing frontend, backend, OSM scheduler, and SQLite.`);
+      await cleanup();
+      console.log('[FloodGuard] Shutdown complete.');
+    };
+    process.once('SIGINT', () => { void shutdown('SIGINT'); });
+    process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
 }
 
 const isEntrypoint = Boolean(process.argv[1] && process.argv[1].endsWith('server.ts'));
 if (isEntrypoint && process.env.SANKETSETU_NO_LISTEN !== '1') {
-  startServer();
+  startServer().catch(error => {
+    console.error('[FloodGuard] Startup failed:', error);
+    process.exitCode = 1;
+  });
 }

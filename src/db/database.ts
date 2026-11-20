@@ -3,10 +3,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  INITIAL_COMMUNITY_REPORTS,
   INITIAL_POLLS,
   INITIAL_ROAD_SEGMENTS,
-  INITIAL_SHELTERS
+  INITIAL_SHELTERS,
+  PUNE_ROAD_NODES
 } from '../data/puneData';
 import {
   AccountStatus,
@@ -16,13 +16,17 @@ import {
   AuditLog,
   CommunityReport,
   ExpertApplication,
+  ExpertAlert,
   LivePoll,
   RoadSegment,
+  RoadNode,
   RoadStatus,
   RouteFeedback,
   Shelter,
   User,
-  UserRole
+  UserRole,
+  OsmSyncLog,
+  OsmRoadMapping
 } from '../types';
 import { hashPassword } from '../utils/auth';
 
@@ -49,19 +53,35 @@ export class SanketSetuDatabase {
     this.db.exec('PRAGMA journal_mode = WAL;');
     this.db.exec('PRAGMA foreign_keys = ON;');
     if (databaseAlreadyExisted && fs.statSync(resolvedPath).size > 0) {
-      const hasMigrationsTable = this.db.prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+      const authoritySchema = this.db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'authorities'"
       ).get();
-      const migration = hasMigrationsTable
-        ? this.db.prepare('SELECT version FROM schema_migrations WHERE version = 3').get()
-        : undefined;
-      if (!migration) {
+      if (!authoritySchema) {
         const backupPath = `${resolvedPath}.pre-authority-v3-${Date.now()}.bak`;
         this.db.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
       }
     }
     this.migrate();
     this.seedInitialData();
+    this.markInitialExpertBootstrapCompleteIfActive();
+  }
+
+  private recordMigration(preferredVersion: number, name: string): void {
+    const existing = this.db.prepare('SELECT version FROM schema_migrations WHERE name = ?').get(name);
+    if (existing) return;
+
+    const versionInUse = this.db
+      .prepare('SELECT version FROM schema_migrations WHERE version = ?')
+      .get(preferredVersion);
+    let version = preferredVersion;
+    if (versionInUse) {
+      const maximum = this.db.prepare('SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations')
+        .get() as { version: number };
+      version = Number(maximum.version) + 1;
+    }
+
+    this.db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
+      .run(version, name, new Date().toISOString());
   }
 
   private migrate(): void {
@@ -69,19 +89,13 @@ export class SanketSetuDatabase {
     const sql = fs.readFileSync(schemaPath, 'utf-8');
     this.db.exec(sql);
 
-    const existing = this.db
-      .prepare('SELECT version FROM schema_migrations WHERE version = 1')
-      .get();
-    if (!existing) {
-      this.db
-        .prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
-        .run(1, 'initial_sanketsetu_2role_schema', new Date().toISOString());
-    }
+    const existingV1 = this.db.prepare('SELECT version FROM schema_migrations WHERE version = 1').get();
+    if (!existingV1) this.recordMigration(1, 'initial_sanketsetu_2role_schema');
 
-    const authorityMigration = this.db
-      .prepare('SELECT version FROM schema_migrations WHERE version = 2')
-      .get();
-    if (!authorityMigration) {
+    const authoritySchema = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'authorities'"
+    ).get();
+    if (!authoritySchema) {
       this.db.exec('PRAGMA foreign_keys = OFF;');
       let transactionStarted = false;
       try {
@@ -193,8 +207,6 @@ export class SanketSetuDatabase {
           CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp);
           CREATE INDEX idx_audit_authority_timestamp ON audit_logs(authority_id, timestamp);
 
-          INSERT INTO schema_migrations (version, name, applied_at)
-          VALUES (2, 'authority_memberships_and_admin_access', '${new Date().toISOString()}');
         `);
         this.db.exec('COMMIT;');
         transactionStarted = false;
@@ -205,20 +217,31 @@ export class SanketSetuDatabase {
         this.db.exec('PRAGMA foreign_keys = ON;');
       }
     }
+    this.recordMigration(6, 'authority_memberships_and_admin_access');
 
-    const resourceScopeMigration = this.db
-      .prepare('SELECT version FROM schema_migrations WHERE version = 3')
-      .get();
-    if (!resourceScopeMigration) {
+    const roadColumns = this.db.prepare('PRAGMA table_info(road_segments)').all() as Array<{ name: string }>;
+    const shelterColumns = this.db.prepare('PRAGMA table_info(shelters)').all() as Array<{ name: string }>;
+    const roadUpdateColumns = this.db.prepare('PRAGMA table_info(road_updates)').all() as Array<{ name: string }>;
+    const hasResourceScope =
+      roadColumns.some(column => column.name === 'authority_id') &&
+      shelterColumns.some(column => column.name === 'authority_id') &&
+      roadUpdateColumns.some(column => column.name === 'authority_id');
+    if (!hasResourceScope) {
       this.db.exec('BEGIN IMMEDIATE;');
       try {
+        if (!roadColumns.some(column => column.name === 'authority_id')) {
+          this.db.exec('ALTER TABLE road_segments ADD COLUMN authority_id TEXT REFERENCES authorities(id)');
+        }
+        if (!shelterColumns.some(column => column.name === 'authority_id')) {
+          this.db.exec('ALTER TABLE shelters ADD COLUMN authority_id TEXT REFERENCES authorities(id)');
+        }
+        if (!roadUpdateColumns.some(column => column.name === 'authority_id')) {
+          this.db.exec('ALTER TABLE road_updates ADD COLUMN authority_id TEXT REFERENCES authorities(id)');
+        }
         this.db.exec(`
-          ALTER TABLE road_segments ADD COLUMN authority_id TEXT REFERENCES authorities(id);
-          ALTER TABLE shelters ADD COLUMN authority_id TEXT REFERENCES authorities(id);
-          ALTER TABLE road_updates ADD COLUMN authority_id TEXT REFERENCES authorities(id);
-          CREATE INDEX idx_road_segments_authority ON road_segments(authority_id);
-          CREATE INDEX idx_shelters_authority ON shelters(authority_id);
-          CREATE INDEX idx_road_updates_authority ON road_updates(authority_id, created_at);
+          CREATE INDEX IF NOT EXISTS idx_road_segments_authority ON road_segments(authority_id);
+          CREATE INDEX IF NOT EXISTS idx_shelters_authority ON shelters(authority_id);
+          CREATE INDEX IF NOT EXISTS idx_road_updates_authority ON road_updates(authority_id, created_at);
 
           UPDATE road_updates
           SET authority_id = (
@@ -243,10 +266,58 @@ export class SanketSetuDatabase {
           `).run();
         }
 
-        this.db.prepare(`
-          INSERT INTO schema_migrations (version, name, applied_at)
-          VALUES (3, 'authority_scoped_operational_resources', ?)
-        `).run(new Date().toISOString());
+        this.recordMigration(7, 'authority_scoped_operational_resources');
+        this.db.exec('COMMIT;');
+      } catch (error) {
+        this.db.exec('ROLLBACK;');
+        throw error;
+      }
+    }
+    this.recordMigration(7, 'authority_scoped_operational_resources');
+
+    this.recordMigration(2, 'v2_osm_road_nodes_and_sync_log');
+
+    this.db.exec('BEGIN IMMEDIATE;');
+    try {
+      const reportColumns = this.db
+        .prepare('PRAGMA table_info(community_reports)')
+        .all() as Array<{ name: string }>;
+      if (!reportColumns.some(column => column.name === 'client_request_id')) {
+        this.db.exec('ALTER TABLE community_reports ADD COLUMN client_request_id TEXT');
+      }
+      if (!reportColumns.some(column => column.name === 'is_demo')) {
+        this.db.exec('ALTER TABLE community_reports ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0');
+      }
+      this.db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_community_reports_client_request
+        ON community_reports(user_id, client_request_id)
+        WHERE client_request_id IS NOT NULL
+      `);
+      this.recordMigration(3, 'v3_offline_report_idempotency');
+      this.db.exec('COMMIT;');
+    } catch (error) {
+      this.db.exec('ROLLBACK;');
+      throw error;
+    }
+
+    const existingV4 = this.db
+      .prepare('SELECT version FROM schema_migrations WHERE name = ?')
+      .get('v4_exclude_demo_reports_and_clear_inferred_live_road_status');
+    if (!existingV4) {
+      this.db.exec('BEGIN IMMEDIATE;');
+      try {
+        this.db.exec(`
+          UPDATE community_reports
+          SET is_demo = 1
+          WHERE report_id IN ('REP_101', 'REP_102');
+
+          UPDATE road_segments
+          SET status = 'UNKNOWN'
+          WHERE status = 'REPORTED_WATERLOGGING'
+            AND verified_by IS NULL
+            AND status_reason IS NULL;
+        `);
+        this.recordMigration(4, 'v4_exclude_demo_reports_and_clear_inferred_live_road_status');
         this.db.exec('COMMIT;');
       } catch (error) {
         this.db.exec('ROLLBACK;');
@@ -254,24 +325,72 @@ export class SanketSetuDatabase {
       }
     }
 
+    this.db.exec('BEGIN IMMEDIATE;');
+    try {
+      const applicationColumns = this.db
+        .prepare('PRAGMA table_info(expert_applications)')
+        .all() as Array<{ name: string }>;
+      if (!applicationColumns.some(column => column.name === 'reviewed_by_id')) {
+        this.db.exec('ALTER TABLE expert_applications ADD COLUMN reviewed_by_id TEXT');
+      }
+      this.recordMigration(5, 'v5_expert_reviewer_identity_and_one_time_bootstrap');
+      this.db.exec('COMMIT;');
+    } catch (error) {
+      this.db.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+
+  private markInitialExpertBootstrapCompleteIfActive(): void {
+    const activeCount = (this.db
+      .prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'EXPERT' AND account_status = 'ACTIVE'")
+      .get() as { count: number }).count;
+    if (activeCount > 0) {
+      this.db
+        .prepare('UPDATE expert_bootstrap_state SET completed_at = COALESCE(completed_at, ?) WHERE singleton_id = 1')
+        .run(new Date().toISOString());
+    }
   }
 
   private seedInitialData(): void {
     const now = new Date().toISOString();
 
-    // Seed roads from GeoJSON-backed INITIAL_ROAD_SEGMENTS if empty
-    const roadCount = (this.db.prepare('SELECT COUNT(*) as c FROM road_segments').get() as { c: number }).c;
-    if (roadCount === 0) {
-      const insertRoad = this.db.prepare(`
-        INSERT INTO road_segments (
-          road_id, road_name, from_node, to_node, road_type, distance_km, speed_kmph,
-          base_elevation_m, slope_pct, drainage_condition, is_one_way, access_restriction,
-          is_bridge, is_tunnel, surface, has_historical_flood, waterway_proximity,
-          risk_score, risk_category, confidence_score, status, coordinates_json,
-          geometry_source, verified_by, status_reason, expires_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    // 1. Seed road nodes if empty
+    const nodeCount = (this.db.prepare('SELECT COUNT(*) as c FROM road_nodes').get() as { c: number }).c;
+    if (nodeCount === 0) {
+      const insertNode = this.db.prepare(`
+        INSERT INTO road_nodes (node_id, node_name, latitude, longitude, sector, elevation_m, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
-      for (const r of INITIAL_ROAD_SEGMENTS) {
+      for (const node of Object.values(PUNE_ROAD_NODES)) {
+        insertNode.run(
+          node.id,
+          node.name,
+          node.lat,
+          node.lng,
+          node.sector ?? null,
+          node.elevationM ?? null,
+          now
+        );
+      }
+    }
+
+    // 2. Seed missing road segments from INITIAL_ROAD_SEGMENTS (preserving existing records & closures)
+    const existingRoadRows = this.db.prepare('SELECT road_id FROM road_segments').all() as Array<{ road_id: string }>;
+    const existingIds = new Set(existingRoadRows.map(r => r.road_id));
+
+    const insertRoad = this.db.prepare(`
+      INSERT INTO road_segments (
+        road_id, road_name, from_node, to_node, road_type, distance_km, speed_kmph,
+        base_elevation_m, slope_pct, drainage_condition, is_one_way, access_restriction,
+        is_bridge, is_tunnel, surface, has_historical_flood, waterway_proximity,
+        risk_score, risk_category, confidence_score, status, coordinates_json,
+        geometry_source, verified_by, status_reason, expires_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const r of INITIAL_ROAD_SEGMENTS) {
+      if (!existingIds.has(r.id)) {
         insertRoad.run(
           r.id,
           r.name,
@@ -353,41 +472,7 @@ export class SanketSetuDatabase {
       }
     }
 
-    // Seed community reports if empty
-    const reportCount = (this.db.prepare('SELECT COUNT(*) as c FROM community_reports').get() as { c: number }).c;
-    if (reportCount === 0) {
-      const insertReport = this.db.prepare(`
-        INSERT INTO community_reports (
-          report_id, user_id, user_name, road_id, location_name, latitude, longitude,
-          report_type, description, severity, image_url, verification_status,
-          confidence_score, reviewed_by, review_notes, reviewed_at, resolved_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      for (const rep of INITIAL_COMMUNITY_REPORTS) {
-        insertReport.run(
-          rep.id,
-          rep.userId,
-          rep.userName || 'Citizen Reporter',
-          rep.roadId ?? null,
-          rep.locationName,
-          rep.lat,
-          rep.lng,
-          rep.reportType,
-          rep.description,
-          rep.severity,
-          rep.imageUrl ?? null,
-          rep.verificationStatus,
-          rep.confidenceScore,
-          rep.reviewedBy ?? null,
-          rep.reviewNotes ?? null,
-          rep.reviewedAt ?? null,
-          rep.resolvedAt ?? null,
-          rep.timestamp
-        );
-      }
-    }
-
-    // Development-only citizen and Expert demo accounts.
+    // Development-only demo users. Authority Admins are provisioned separately.
     const shouldSeedDemo =
       process.env.NODE_ENV !== 'production' &&
       process.env.SEED_DEMO_ACCOUNTS !== 'false';
@@ -601,60 +686,227 @@ export class SanketSetuDatabase {
       );
   }
 
+  public createExpertRegistration(user: StoredUser, appItem: ExpertApplication): void {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.createUser(user);
+      this.createExpertApplication(appItem);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  private mapExpertApplicationRow(row: Record<string, unknown>): ExpertApplication {
+    return {
+      id: String(row.application_id),
+      userId: String(row.user_id),
+      fullName: String(row.full_name),
+      email: String(row.email),
+      organisation: String(row.organisation),
+      designation: String(row.designation),
+      status: String(row.status) as AccountStatus,
+      appliedAt: String(row.applied_at),
+      reviewedAt: row.reviewed_at ? String(row.reviewed_at) : undefined,
+      reviewedBy: row.reviewed_by ? String(row.reviewed_by) : undefined,
+      authorityId: row.authority_id ? String(row.authority_id) : undefined,
+      reviewedById: row.reviewed_by_id ? String(row.reviewed_by_id) : undefined
+    };
+  }
+
   public getExpertApplications(): ExpertApplication[] {
     const rows = this.db
       .prepare('SELECT * FROM expert_applications ORDER BY applied_at DESC')
       .all() as Record<string, unknown>[];
-    return rows.map(r => ({
-      id: String(r.application_id),
-      userId: String(r.user_id),
-      fullName: String(r.full_name),
-      email: String(r.email),
-      organisation: String(r.organisation),
-      designation: String(r.designation),
-      status: String(r.status) as AccountStatus,
-      appliedAt: String(r.applied_at),
-      reviewedAt: r.reviewed_at ? String(r.reviewed_at) : undefined,
-      reviewedBy: r.reviewed_by ? String(r.reviewed_by) : undefined,
-      authorityId: r.authority_id ? String(r.authority_id) : undefined
-    }));
+    return rows.map(row => this.mapExpertApplicationRow(row));
+  }
+
+  public getExpertApplicationById(applicationId: string): ExpertApplication | null {
+    const row = this.db
+      .prepare('SELECT * FROM expert_applications WHERE application_id = ?')
+      .get(applicationId) as Record<string, unknown> | undefined;
+    return row ? this.mapExpertApplicationRow(row) : null;
+  }
+
+  public getExpertApplicationForUser(userId: string): ExpertApplication | null {
+    const row = this.db
+      .prepare('SELECT * FROM expert_applications WHERE user_id = ? ORDER BY applied_at DESC LIMIT 1')
+      .get(userId) as Record<string, unknown> | undefined;
+    return row ? this.mapExpertApplicationRow(row) : null;
   }
 
   public updateExpertApplicationStatus(
     applicationId: string,
-    status: AccountStatus,
-    reviewerName: string
+    status: 'ACTIVE' | 'REJECTED',
+    reviewer: User
   ): ExpertApplication | null {
-    const existing = this.db
-      .prepare('SELECT * FROM expert_applications WHERE application_id = ?')
-      .get(applicationId) as Record<string, unknown> | undefined;
-    if (!existing) return null;
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const existing = this.db
+        .prepare('SELECT * FROM expert_applications WHERE application_id = ?')
+        .get(applicationId) as Record<string, unknown> | undefined;
+      if (!existing || existing.status !== 'PENDING_APPROVAL') {
+        this.db.exec('ROLLBACK');
+        return null;
+      }
 
-    const now = new Date().toISOString();
-    this.db
-      .prepare(`
-        UPDATE expert_applications
-        SET status = ?, reviewed_at = ?, reviewed_by = ?
-        WHERE application_id = ?
-      `)
-      .run(status, now, reviewerName, applicationId);
+      const userId = String(existing.user_id);
+      if (userId === reviewer.id) {
+        this.db.exec('ROLLBACK');
+        return null;
+      }
 
-    this.db
-      .prepare('UPDATE users SET account_status = ?, updated_at = ? WHERE id = ?')
-      .run(status, now, String(existing.user_id));
+      const now = new Date().toISOString();
+      const appUpdate = this.db
+        .prepare(`
+          UPDATE expert_applications
+          SET status = ?, reviewed_at = ?, reviewed_by = ?, reviewed_by_id = ?
+          WHERE application_id = ? AND status = 'PENDING_APPROVAL'
+        `)
+        .run(status, now, reviewer.fullName, reviewer.id, applicationId);
+      const userUpdate = this.db
+        .prepare(`
+          UPDATE users SET account_status = ?, updated_at = ?
+          WHERE id = ? AND role = 'EXPERT' AND account_status = 'PENDING_APPROVAL'
+        `)
+        .run(status, now, userId);
+      if (Number(appUpdate.changes) !== 1 || Number(userUpdate.changes) !== 1) {
+        throw new Error('Expert application status changed during review.');
+      }
 
-    return {
-      id: String(existing.application_id),
-      userId: String(existing.user_id),
-      fullName: String(existing.full_name),
-      email: String(existing.email),
-      organisation: String(existing.organisation),
-      designation: String(existing.designation),
-      status,
-      appliedAt: String(existing.applied_at),
-      reviewedAt: now,
-      reviewedBy: reviewerName
-    };
+      this.appendAuditLog(
+        reviewer,
+        status === 'ACTIVE' ? 'EXPERT_APPROVAL' : 'EXPERT_REJECTION',
+        userId,
+        `${status === 'ACTIVE' ? 'Approved' : 'Rejected'} expert application for ${String(existing.full_name)} (${String(existing.organisation)})`
+      );
+      if (status === 'ACTIVE') {
+        this.createNotification({
+          userId,
+          title: 'Expert Account Approved',
+          message: `Your SanketSetu Expert credentials (${String(existing.organisation)}) have been approved by ${reviewer.fullName}.`,
+          severity: 'info'
+        });
+      }
+
+      this.db.exec('COMMIT');
+      return {
+        ...this.mapExpertApplicationRow(existing),
+        status,
+        reviewedAt: now,
+        reviewedBy: reviewer.fullName,
+        reviewedById: reviewer.id
+      };
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  public bootstrapApproveExpertApplication(
+    applicationId: string,
+    reviewerId: string,
+    reviewerName: string
+  ):
+    | { status: 'approved'; application: ExpertApplication }
+    | { status: 'bootstrap_closed' | 'not_found' | 'not_pending' } {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const activeCount = (this.db
+        .prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'EXPERT' AND account_status = 'ACTIVE'")
+        .get() as { count: number }).count;
+      const bootstrapState = this.db
+        .prepare('SELECT completed_at FROM expert_bootstrap_state WHERE singleton_id = 1')
+        .get() as { completed_at: string | null } | undefined;
+      if (activeCount > 0 || !bootstrapState || bootstrapState.completed_at) {
+        if (activeCount > 0 && bootstrapState && !bootstrapState.completed_at) {
+          this.db.prepare(`
+            UPDATE expert_bootstrap_state SET completed_at = ? WHERE singleton_id = 1
+          `).run(new Date().toISOString());
+        }
+        this.db.exec('COMMIT');
+        return { status: 'bootstrap_closed' };
+      }
+
+      const existing = this.db
+        .prepare('SELECT * FROM expert_applications WHERE application_id = ?')
+        .get(applicationId) as Record<string, unknown> | undefined;
+      if (!existing) {
+        this.db.exec('ROLLBACK');
+        return { status: 'not_found' };
+      }
+      if (existing.status !== 'PENDING_APPROVAL') {
+        this.db.exec('ROLLBACK');
+        return { status: 'not_pending' };
+      }
+
+      const now = new Date().toISOString();
+      const userId = String(existing.user_id);
+      const appUpdate = this.db
+        .prepare(`
+          UPDATE expert_applications
+          SET status = 'ACTIVE', reviewed_at = ?, reviewed_by = ?, reviewed_by_id = ?
+          WHERE application_id = ? AND status = 'PENDING_APPROVAL'
+        `)
+        .run(now, reviewerName, reviewerId, applicationId);
+      const userUpdate = this.db
+        .prepare(`
+          UPDATE users SET account_status = 'ACTIVE', updated_at = ?
+          WHERE id = ? AND role = 'EXPERT' AND account_status = 'PENDING_APPROVAL'
+        `)
+        .run(now, userId);
+      const bootstrapUpdate = this.db
+        .prepare(`
+          UPDATE expert_bootstrap_state
+          SET completed_at = ?, application_id = ?, reviewer_id = ?, reviewer_name = ?
+          WHERE singleton_id = 1 AND completed_at IS NULL
+        `)
+        .run(now, applicationId, reviewerId, reviewerName);
+      if (
+        Number(appUpdate.changes) !== 1 ||
+        Number(userUpdate.changes) !== 1 ||
+        Number(bootstrapUpdate.changes) !== 1
+      ) {
+        throw new Error('Initial Expert bootstrap could not be completed atomically.');
+      }
+
+      const bootstrapReviewer: User = {
+        id: reviewerId,
+        fullName: reviewerName,
+        email: '',
+        role: 'EXPERT',
+        accountStatus: 'ACTIVE',
+        createdAt: now
+      };
+      this.appendAuditLog(
+        bootstrapReviewer,
+        'EXPERT_BOOTSTRAP_APPROVAL',
+        userId,
+        `Completed one-time initial Expert approval for ${String(existing.full_name)} (${String(existing.organisation)}).`
+      );
+      this.createNotification({
+        userId,
+        title: 'Expert Account Approved',
+        message: 'Your SanketSetu Expert credentials have been approved through the one-time initial deployment setup.',
+        severity: 'info'
+      });
+
+      this.db.exec('COMMIT');
+      return {
+        status: 'approved',
+        application: {
+          ...this.mapExpertApplicationRow(existing),
+          status: 'ACTIVE',
+          reviewedAt: now,
+          reviewedBy: reviewerName,
+          reviewedById: reviewerId
+        }
+      };
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   // ----------------- ROADS & UPDATES -----------------
@@ -772,11 +1024,257 @@ export class SanketSetuDatabase {
     return this.getRoadSegments().find(r => r.id === params.roadId) || null;
   }
 
+  public getRoadNodes(): Record<string, RoadNode> {
+    const rows = this.db.prepare('SELECT * FROM road_nodes ORDER BY node_id ASC').all() as Record<string, unknown>[];
+    if (rows.length === 0) {
+      return { ...PUNE_ROAD_NODES };
+    }
+    const result: Record<string, RoadNode> = {};
+    for (const r of rows) {
+      result[String(r.node_id)] = {
+        id: String(r.node_id),
+        name: String(r.node_name),
+        lat: Number(r.latitude),
+        lng: Number(r.longitude),
+        sector: r.sector ? String(r.sector) : undefined,
+        elevationM: r.elevation_m === null ? null : Number(r.elevation_m)
+      };
+    }
+    return result;
+  }
+
+  public saveRoadNodes(nodes: Record<string, RoadNode> | RoadNode[]): void {
+    const list = Array.isArray(nodes) ? nodes : Object.values(nodes);
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO road_nodes (node_id, node_name, latitude, longitude, sector, elevation_m, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(node_id) DO UPDATE SET
+        node_name = excluded.node_name,
+        latitude = excluded.latitude,
+        longitude = excluded.longitude,
+        sector = excluded.sector,
+        elevation_m = excluded.elevation_m,
+        updated_at = excluded.updated_at
+    `);
+    for (const n of list) {
+      stmt.run(n.id, n.name, n.lat, n.lng, n.sector ?? null, n.elevationM ?? null, now);
+    }
+  }
+
+  public recordOsmSync(log: OsmSyncLog): void {
+    this.db.prepare(`
+      INSERT INTO osm_sync_log (
+        sync_id, sync_type, status, nodes_count, edges_count,
+        roads_preserved, roads_added, duration_ms, error_message, details_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      log.syncId,
+      log.syncType,
+      log.status,
+      log.nodesCount,
+      log.edgesCount,
+      log.roadsPreserved,
+      log.roadsAdded,
+      log.durationMs,
+      log.errorMessage ?? null,
+      log.detailsJson ?? null,
+      log.createdAt
+    );
+  }
+
+  public getLatestOsmSync(): OsmSyncLog | null {
+    const row = this.db.prepare('SELECT * FROM osm_sync_log ORDER BY created_at DESC LIMIT 1').get() as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      syncId: String(row.sync_id),
+      syncType: row.sync_type as OsmSyncLog['syncType'],
+      status: row.status as OsmSyncLog['status'],
+      nodesCount: Number(row.nodes_count),
+      edgesCount: Number(row.edges_count),
+      roadsPreserved: Number(row.roads_preserved),
+      roadsAdded: Number(row.roads_added),
+      durationMs: Number(row.duration_ms),
+      errorMessage: row.error_message ? String(row.error_message) : null,
+      detailsJson: row.details_json ? String(row.details_json) : null,
+      createdAt: String(row.created_at)
+    };
+  }
+
+  public getOsmSyncLogs(limit = 10): OsmSyncLog[] {
+    const rows = this.db.prepare('SELECT * FROM osm_sync_log ORDER BY created_at DESC LIMIT ?').all(limit) as Record<string, unknown>[];
+    return rows.map(row => ({
+      syncId: String(row.sync_id),
+      syncType: row.sync_type as OsmSyncLog['syncType'],
+      status: row.status as OsmSyncLog['status'],
+      nodesCount: Number(row.nodes_count),
+      edgesCount: Number(row.edges_count),
+      roadsPreserved: Number(row.roads_preserved),
+      roadsAdded: Number(row.roads_added),
+      durationMs: Number(row.duration_ms),
+      errorMessage: row.error_message ? String(row.error_message) : null,
+      detailsJson: row.details_json ? String(row.details_json) : null,
+      createdAt: String(row.created_at)
+    }));
+  }
+
+  public getOsmRoadMappings(): OsmRoadMapping[] {
+    const rows = this.db.prepare('SELECT * FROM osm_road_mappings').all() as Record<string, unknown>[];
+    return rows.map(r => ({
+      osmWayId: Number(r.osm_way_id),
+      segmentIndex: Number(r.segment_index),
+      mappedRoadId: String(r.mapped_road_id),
+      fromNode: String(r.from_node),
+      toNode: String(r.to_node),
+      confidence: Number(r.confidence),
+      createdAt: String(r.created_at)
+    }));
+  }
+
+  public saveOsmRoadMappings(mappings: OsmRoadMapping[]): void {
+    const stmt = this.db.prepare(`
+      INSERT INTO osm_road_mappings (osm_way_id, segment_index, mapped_road_id, from_node, to_node, confidence, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(osm_way_id, segment_index) DO UPDATE SET
+        mapped_road_id = excluded.mapped_road_id,
+        from_node = excluded.from_node,
+        to_node = excluded.to_node,
+        confidence = excluded.confidence
+    `);
+    for (const m of mappings) {
+      stmt.run(m.osmWayId, m.segmentIndex, m.mappedRoadId, m.fromNode, m.toNode, m.confidence, m.createdAt);
+    }
+  }
+
+  /**
+   * Transactionally upsert the road network.
+   * STRICT GUARANTEES:
+   * 1. Preserves existing road IDs and foreign keys.
+   * 2. Preserves expert closures ('CLOSED'), verified hazards ('VERIFIED_HAZARD'),
+   *    verifiedBy, statusReason, and unexpired expiresAt.
+   * 3. Inserts new road segments with appropriate defaults.
+   * 4. Updates node geometries in road_nodes.
+   */
+  public upsertRoadNetwork(
+    nodes: Record<string, RoadNode>,
+    segments: RoadSegment[]
+  ): { preserved: number; added: number; updated: number } {
+    const now = new Date().toISOString();
+    let preserved = 0;
+    let added = 0;
+    let updated = 0;
+
+    const existingRows = this.db.prepare('SELECT * FROM road_segments').all() as Record<string, unknown>[];
+    const existingMap = new Map<string, Record<string, unknown>>();
+    for (const row of existingRows) {
+      existingMap.set(String(row.road_id), row);
+    }
+
+    this.db.exec('BEGIN TRANSACTION;');
+    try {
+      // 1. Save all nodes
+      this.saveRoadNodes(nodes);
+
+      // 2. Prepare statements for existing vs new segments
+      const updateStmt = this.db.prepare(`
+        UPDATE road_segments
+        SET road_name = ?, from_node = ?, to_node = ?, road_type = ?, distance_km = ?,
+            speed_kmph = ?, base_elevation_m = ?, slope_pct = ?, drainage_condition = ?,
+            is_one_way = ?, access_restriction = ?, is_bridge = ?, is_tunnel = ?,
+            surface = ?, has_historical_flood = ?, waterway_proximity = ?,
+            coordinates_json = ?, geometry_source = ?, updated_at = ?
+        WHERE road_id = ?
+      `);
+
+      const insertStmt = this.db.prepare(`
+        INSERT INTO road_segments (
+          road_id, road_name, from_node, to_node, road_type, distance_km, speed_kmph,
+          base_elevation_m, slope_pct, drainage_condition, is_one_way, access_restriction,
+          is_bridge, is_tunnel, surface, has_historical_flood, waterway_proximity,
+          risk_score, risk_category, confidence_score, status, coordinates_json,
+          geometry_source, verified_by, status_reason, expires_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const seg of segments) {
+        const existing = existingMap.get(seg.id);
+        if (existing) {
+          const isClosedOrHazard = existing.status === 'CLOSED' || existing.status === 'VERIFIED_HAZARD';
+          if (isClosedOrHazard) {
+            preserved++;
+          } else {
+            updated++;
+          }
+
+          updateStmt.run(
+            seg.name,
+            seg.from,
+            seg.to,
+            seg.roadType,
+            seg.distanceKm,
+            seg.speedKmph,
+            seg.baseElevationM,
+            seg.slopePct,
+            seg.drainageCondition,
+            seg.isOneWay ? 1 : 0,
+            seg.accessRestriction,
+            seg.isBridge ? 1 : 0,
+            seg.isTunnel ? 1 : 0,
+            seg.surface || 'asphalt',
+            seg.hasHistoricalFlood ? 1 : 0,
+            seg.waterwayProximity ?? null,
+            JSON.stringify(seg.coordinates),
+            seg.geometrySource || 'OpenStreetMap Sync',
+            now,
+            seg.id
+          );
+        } else {
+          added++;
+          insertStmt.run(
+            seg.id,
+            seg.name,
+            seg.from,
+            seg.to,
+            seg.roadType,
+            seg.distanceKm,
+            seg.speedKmph,
+            seg.baseElevationM,
+            seg.slopePct,
+            seg.drainageCondition,
+            seg.isOneWay ? 1 : 0,
+            seg.accessRestriction,
+            seg.isBridge ? 1 : 0,
+            seg.isTunnel ? 1 : 0,
+            seg.surface || 'asphalt',
+            seg.hasHistoricalFlood ? 1 : 0,
+            seg.waterwayProximity ?? null,
+            seg.riskScore,
+            seg.riskCategory,
+            seg.confidenceScore,
+            seg.status,
+            JSON.stringify(seg.coordinates),
+            seg.geometrySource || 'OpenStreetMap Sync',
+            seg.verifiedBy ?? null,
+            seg.statusReason ?? null,
+            seg.expiresAt ?? null,
+            now
+          );
+        }
+      }
+
+      this.db.exec('COMMIT;');
+      return { preserved, added, updated };
+    } catch (err) {
+      this.db.exec('ROLLBACK;');
+      throw err;
+    }
+  }
+
   // ----------------- COMMUNITY REPORTS & VERIFIED HAZARDS -----------------
 
   public getReports(): CommunityReport[] {
     const rows = this.db
-      .prepare('SELECT * FROM community_reports ORDER BY created_at DESC')
+      .prepare('SELECT * FROM community_reports WHERE is_demo = 0 ORDER BY created_at DESC')
       .all() as Record<string, unknown>[];
     return rows.map(r => ({
       id: String(r.report_id),
@@ -800,14 +1298,22 @@ export class SanketSetuDatabase {
     }));
   }
 
-  public createReport(rep: CommunityReport): void {
+  public getReportByClientRequestId(userId: string, clientRequestId: string): CommunityReport | null {
+    const row = this.db
+      .prepare('SELECT report_id FROM community_reports WHERE user_id = ? AND client_request_id = ?')
+      .get(userId, clientRequestId) as { report_id: string } | undefined;
+    if (!row) return null;
+    return this.getReports().find(report => report.id === row.report_id) ?? null;
+  }
+
+  public createReport(rep: CommunityReport, clientRequestId?: string): void {
     this.db
       .prepare(`
         INSERT INTO community_reports (
           report_id, user_id, user_name, road_id, location_name, latitude, longitude,
           report_type, description, severity, image_url, verification_status,
-          confidence_score, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          confidence_score, client_request_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         rep.id,
@@ -823,6 +1329,7 @@ export class SanketSetuDatabase {
         rep.imageUrl ?? null,
         rep.verificationStatus,
         rep.confidenceScore,
+        clientRequestId ?? null,
         rep.timestamp
       );
   }
@@ -1072,6 +1579,34 @@ export class SanketSetuDatabase {
       relatedReportId: r.related_report_id ? String(r.related_report_id) : undefined,
       isRead: Boolean(r.is_read),
       createdAt: String(r.created_at)
+    }));
+  }
+
+  public getExpertAlerts(): ExpertAlert[] {
+    const rows = this.db
+      .prepare(`
+        SELECT n.*, a.actor_id, a.actor_name
+        FROM notifications n
+        JOIN audit_logs a
+          ON a.target_resource = n.notification_id
+         AND a.action = 'EXPERT_ALERT_CREATE'
+        ORDER BY n.created_at DESC
+        LIMIT 100
+      `)
+      .all() as Record<string, unknown>[];
+    return rows.map(row => ({
+      id: String(row.notification_id),
+      userId: row.user_id ? String(row.user_id) : undefined,
+      title: String(row.title),
+      message: String(row.message),
+      severity: String(row.severity) as AppNotification['severity'],
+      relatedRoadId: row.related_road_id ? String(row.related_road_id) : undefined,
+      relatedReportId: row.related_report_id ? String(row.related_report_id) : undefined,
+      isRead: Boolean(row.is_read),
+      createdAt: String(row.created_at),
+      createdById: String(row.actor_id),
+      createdBy: String(row.actor_name),
+      deliveryStatus: 'NOT_CONFIGURED'
     }));
   }
 
