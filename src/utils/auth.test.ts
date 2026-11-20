@@ -52,14 +52,28 @@ test('generateToken produces HMAC-signed token rejected if tampered or expired',
   assert.strictEqual(decodeToken('malformed'), null);
 });
 
-test('hasRole and canAccessExpertDesk enforce strictly two roles (CITIZEN and EXPERT)', () => {
+test('role helpers recognize Authority Admin without granting Citizen or Expert access', () => {
   assert.strictEqual(hasRole('EXPERT', ['EXPERT']), true);
   assert.strictEqual(hasRole('CITIZEN', ['EXPERT']), false);
   assert.strictEqual(hasRole('CITIZEN', ['CITIZEN']), true);
+  assert.strictEqual(hasRole('AUTHORITY_ADMIN', ['AUTHORITY_ADMIN']), true);
 
   assert.strictEqual(canAccessExpertDesk({ role: 'EXPERT', accountStatus: 'ACTIVE' }), true);
   assert.strictEqual(canAccessExpertDesk({ role: 'EXPERT', accountStatus: 'PENDING_APPROVAL' }), false);
   assert.strictEqual(canAccessExpertDesk({ role: 'EXPERT', accountStatus: 'REJECTED' }), false);
   assert.strictEqual(canAccessExpertDesk({ role: 'EXPERT', accountStatus: 'SUSPENDED' }), false);
   assert.strictEqual(canAccessExpertDesk({ role: 'CITIZEN', accountStatus: 'ACTIVE' }), false);
+});
+
+test('signed sessions support the Authority Admin global role', () => {
+  const admin: User = {
+    id: 'USR_ADMIN_01',
+    fullName: 'Authority Admin',
+    email: 'admin@authority.gov.in',
+    role: 'AUTHORITY_ADMIN',
+    accountStatus: 'ACTIVE',
+    createdAt: new Date().toISOString()
+  };
+  const token = generateToken(admin);
+  assert.equal(decodeToken(token)?.role, 'AUTHORITY_ADMIN');
 });

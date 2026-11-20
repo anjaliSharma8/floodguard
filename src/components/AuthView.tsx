@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   User as UserIcon,
   ShieldCheck,
@@ -35,12 +35,22 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const [phone, setPhone] = useState('');
   const [organisation, setOrganisation] = useState('');
   const [designation, setDesignation] = useState('');
+  const [authorityId, setAuthorityId] = useState('');
+  const [authorities, setAuthorities] = useState<{ id: string; name: string; region: string }[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [pendingApprovalAccount, setPendingApprovalAccount] = useState<User | null>(null);
   const [pendingApplicationId, setPendingApplicationId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (portalType !== 'EXPERT') return;
+    fetch('/api/authorities')
+      .then(response => response.ok ? response.json() : [])
+      .then(data => setAuthorities(Array.isArray(data) ? data : []))
+      .catch(() => setAuthorities([]));
+  }, [portalType]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +64,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
     if (password.length < 6) {
       setError('Password must be at least 6 characters long.');
+      return;
+    }
+    if (portalType === 'EXPERT' && mode === 'signup' && authorities.length > 1 && !authorityId) {
+      setError('Select the authority that should review your application.');
       return;
     }
 
@@ -126,7 +140,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
           const res = await fetch('/api/auth/expert/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fullName, email, password, organisation, designation, phone })
+            body: JSON.stringify({ fullName, email, password, organisation, designation, phone, authorityId: authorityId || undefined })
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Registration failed.');
@@ -185,7 +199,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
             <p className="text-xs text-slate-300 leading-relaxed max-w-md mx-auto">
               Your registration as a SanketSetu Expert for{' '}
               <strong className="text-white">{pendingApprovalAccount.organisation || 'your organisation'}</strong>{' '}
-              has been saved. Operational access stays locked until a different active Expert verifies your credentials.
+              has been saved. Operational access remains locked until an Authority Admin approves your application.
             </p>
           </div>
 
@@ -206,7 +220,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
             )}
             <div className="flex justify-between">
               <span className="text-slate-400">Security Requirement:</span>
-              <span className="text-amber-400 font-semibold">Active Expert Peer Approval Required</span>
+              <span className="text-amber-400 font-semibold">Authority Admin approval required</span>
             </div>
           </div>
 
@@ -406,6 +420,25 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
             {!isCitizen && mode === 'signup' && (
               <>
+                {authorities.length > 1 && (
+                  <div>
+                    <label htmlFor="auth-authority" className="block text-slate-300 font-semibold mb-1">
+                      Reviewing Authority
+                    </label>
+                    <select
+                      id="auth-authority"
+                      required
+                      value={authorityId}
+                      onChange={event => setAuthorityId(event.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                    >
+                      <option value="">Select an authority</option>
+                      {authorities.map(authority => (
+                        <option key={authority.id} value={authority.id}>{authority.name} — {authority.region}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label htmlFor="auth-org" className="block text-slate-300 font-semibold mb-1">
                     Organisation / Department

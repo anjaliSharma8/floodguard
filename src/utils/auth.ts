@@ -5,6 +5,9 @@ function getSessionSecret(): string {
   if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.length >= 16) {
     return process.env.SESSION_SECRET;
   }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SESSION_SECRET must be configured with at least 16 characters in production.');
+  }
   // Ephemeral fallback per process in development; production should always configure SESSION_SECRET
   if (!(globalThis as any).__sanketsetuSessionSecret) {
     (globalThis as any).__sanketsetuSessionSecret = crypto.randomBytes(32).toString('hex');
@@ -78,7 +81,11 @@ export function decodeToken(token: string): TokenPayload | null {
     const parsed = JSON.parse(raw) as TokenPayload;
     if (!parsed.exp || parsed.exp < Date.now()) return null;
     if (!parsed.userId || !parsed.status) return null;
-    if (parsed.role !== 'CITIZEN' && parsed.role !== 'EXPERT') return null;
+    if (
+      parsed.role !== 'CITIZEN' &&
+      parsed.role !== 'AUTHORITY_ADMIN' &&
+      parsed.role !== 'EXPERT'
+    ) return null;
 
     return parsed;
   } catch {

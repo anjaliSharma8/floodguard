@@ -30,6 +30,8 @@ import {
 import { ActiveRouteSelection, createRouteSelection, RouteMode } from './utils/rules';
 import { WelcomePortal } from './components/WelcomePortal';
 import { AuthView } from './components/AuthView';
+import { AuthorityAdminAuth, AuthorityInvitationAccept } from './components/AuthorityAdminAuth';
+import { AuthorityAdminView } from './components/AuthorityAdminView';
 import { CitizenView } from './components/CitizenView';
 import { ExpertView } from './components/ExpertView';
 import { ChatbotModal } from './components/ChatbotModal';
@@ -61,10 +63,10 @@ function createRequestId(): string {
 }
 
 export function App() {
-  // Authentication & Session State (strictly CITIZEN | EXPERT)
+  // Authentication & session state for Citizen, Expert, and Authority Admin portals.
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [authPortalType, setAuthPortalType] = useState<'CITIZEN' | 'EXPERT' | null>(null);
+  const [authPortalType, setAuthPortalType] = useState<'CITIZEN' | 'EXPERT' | 'AUTHORITY_ADMIN' | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
   const [isRoleVerified, setIsRoleVerified] = useState<boolean>(false);
@@ -88,6 +90,7 @@ export function App() {
   const isAuthorizedExpert =
     currentUser?.role === 'EXPERT' &&
     currentUser.accountStatus === 'ACTIVE' &&
+    currentUser.authorityMembership?.status === 'ACTIVE' &&
     isRoleVerified;
 
   // Core Hydrological & Spatial Data (hydrated from backend APIs + offline fallback)
@@ -200,6 +203,8 @@ export function App() {
   const [isOfflineGuideOpen, setIsOfflineGuideOpen] = useState(false);
   const [isVoiceAssistantOpen, setIsVoiceAssistantOpen] = useState(false);
   const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
+  const invitationToken = new URLSearchParams(window.location.search).get('invite');
 
   const fetchAuditLogs = useCallback(() => {
     if (!token) return;
@@ -922,6 +927,19 @@ export function App() {
     }
   };
 
+  if (invitationToken) {
+    return (
+      <AuthorityInvitationAccept
+        invitationToken={invitationToken}
+        onBack={() => window.history.replaceState({}, '', window.location.pathname)}
+        onAuthSuccess={(newToken, user) => {
+          window.history.replaceState({}, '', window.location.pathname);
+          handleAuthSuccess(newToken, user);
+        }}
+      />
+    );
+  }
+
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-300">
@@ -947,8 +965,18 @@ export function App() {
     );
   }
 
-  // GATEWAY 2: Dedicated Auth View (Citizen or Expert)
-  if (!currentUser && authPortalType) {
+  // GATEWAY 2: Dedicated Authority Admin sign in
+  if (!currentUser && authPortalType === 'AUTHORITY_ADMIN') {
+    return (
+      <AuthorityAdminAuth
+        onBack={() => setAuthPortalType(null)}
+        onAuthSuccess={handleAuthSuccess}
+      />
+    );
+  }
+
+  // GATEWAY 3: Dedicated Citizen or Expert sign in
+  if (!currentUser && (authPortalType === 'CITIZEN' || authPortalType === 'EXPERT')) {
     return (
       <div className="min-h-screen bg-slate-950">
         {authNotice && (
@@ -969,7 +997,12 @@ export function App() {
     );
   }
 
-  // GATEWAY 3: Citizen Interface (Zero Authority Controls)
+  // GATEWAY 4: Authority administration
+  if (currentUser && currentUser.role === 'AUTHORITY_ADMIN') {
+    return <AuthorityAdminView user={currentUser} token={token || ''} onLogout={handleLogout} />;
+  }
+
+  // GATEWAY 5: Citizen Interface (Zero Authority Controls)
   if (currentUser && currentUser.role === 'CITIZEN') {
     return (
       <>
@@ -1089,18 +1122,30 @@ export function App() {
     );
   }
 
-  // GATEWAY 4: Expert Interface (Strictly EXPERT role only)
+  if (currentUser?.role === 'EXPERT' && currentUser.authorityMembership?.status !== 'ACTIVE') {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+        <section className="max-w-lg rounded-2xl border border-amber-500/30 bg-slate-900 p-7 text-center">
+          <h1 className="text-xl font-bold text-white">Authority membership required</h1>
+          <p className="mt-3 text-sm text-slate-400">Your Expert account has no active authority membership. Contact an Authority Admin before accessing operational features.</p>
+          <button type="button" onClick={handleLogout} className="mt-5 rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-600">Sign out</button>
+        </section>
+      </main>
+    );
+  }
+
   if (
     currentUser &&
     currentUser.role === 'EXPERT' &&
     currentUser.accountStatus === 'ACTIVE' &&
-    isRoleVerified
+    isRoleVerified &&
+    currentUser.authorityMembership?.status === 'ACTIVE'
   ) {
     return (
       <>
         <ExpertView
           user={currentUser}
-          token={token || ''}
+          token={token}
           onLogout={handleLogout}
           roads={roads}
           nodes={nodes}

@@ -1,11 +1,11 @@
 {
-  "name": "SanketSetu – Flood Risk & Safe-Route System",
-  "short_name": "SanketSetu",
+  "name": "SankatSetu – Flood Risk & Safe-Route System",
+  "short_name": "SankatSetu",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#020617",
   "theme_color": "#0f172a",
-  "description": "Smart flood risk assessment and emergency safe-route management system for Pune & PCMC.",
+  "description": "SankatSetu provides smart flood risk assessment and emergency safe-route management for Pune & PCMC.",
   "icons": [
     {
       "src": "/favicon.ico",
