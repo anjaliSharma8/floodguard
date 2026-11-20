@@ -7,6 +7,8 @@ import fs from 'node:fs';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createSanketSetuApp } from '../../server';
+import { INITIAL_EMERGENCY_FACILITIES } from '../data/puneData';
+import { stopScheduledOsmSync } from '../services/osmSyncService';
 
 function makeTmpDbPath(name: string): string {
   const dir = fs.mkdtempSync(join(os.tmpdir(), 'sanketsetu-test-'));
@@ -27,9 +29,67 @@ async function withServer(
   } finally {
     server.closeAllConnections?.();
     await new Promise<void>(resolve => server.close(() => resolve()));
+    stopScheduledOsmSync();
     db.close();
   }
 }
+
+test('emergency directory API returns the shared contact records', async () => {
+  await withServer(makeTmpDbPath('emergency-directory'), async baseUrl => {
+    const response = await fetch(`${baseUrl}/api/emergency-facilities`);
+    assert.equal(response.status, 200);
+    const contacts = await response.json();
+    assert.deepEqual(contacts, INITIAL_EMERGENCY_FACILITIES);
+    assert.ok(contacts.some((contact: { id: string; name: string }) =>
+      contact.id === 'EM_07' && contact.name === 'Emergency Ambulance'
+    ));
+    assert.ok(contacts.some((contact: { id: string; name: string }) =>
+      contact.id === 'EM_08' && contact.name === 'PCMC Control Room'
+    ));
+  });
+});
+
+test('chatbot returns verified backend telemetry with an explicit AI-unavailable state when unconfigured', async () => {
+  const previousKey = process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
+  try {
+    await withServer(makeTmpDbPath('chatbot-fallback'), async baseUrl => {
+      const response = await fetch(`${baseUrl}/api/chatbot/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'What are the current road conditions?', lang: 'en' })
+      });
+      assert.equal(response.status, 200);
+      const result = await response.json();
+      assert.equal(result.aiStatus, 'unavailable');
+      assert.equal(result.errorCategory, 'not_configured');
+      assert.match(result.reply, /AI unavailable: not_configured/);
+      assert.match(result.source, /Verified SanketSetu backend telemetry/);
+      assert.doesNotMatch(result.source, /Gemini AI/);
+
+      const streamResponse = await fetch(`${baseUrl}/api/chatbot/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Hello', lang: 'en', stream: true })
+      });
+      assert.equal(streamResponse.headers.get('content-type')?.includes('text/event-stream'), true);
+      const streamBody = await streamResponse.text();
+      assert.match(streamBody, /event: complete/);
+      assert.match(streamBody, /"aiStatus":"unavailable"/);
+      assert.match(streamBody, /Verified SanketSetu backend telemetry/);
+    });
+  } finally {
+    if (previousKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = previousKey;
+  }
+});
+
+test('Gemini Live token endpoint requires authentication', async () => {
+  await withServer(makeTmpDbPath('live-token-auth'), async baseUrl => {
+    const response = await fetch(`${baseUrl}/api/ai/live-token`, { method: 'POST' });
+    assert.equal(response.status, 401);
+  });
+});
 
 test('API enforces strictly two roles, blocks pending experts until peer-approved, and persists across DB reopen', async () => {
   const dbPath = makeTmpDbPath('auth-persist');
@@ -46,13 +106,10 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
     const health = await healthRes.json();
     assert.deepEqual(health.rolesSupported, ['CITIZEN', 'EXPERT']);
 
+    assert.equal('database' in health, false);
+    assert.equal('geminiConfigured' in health, false);
     const networkRes = await fetch(`${baseUrl}/api/network/status`);
-    const network = await networkRes.json();
-    assert.equal(network.nodesCount, 69);
-    assert.equal(network.edgesCount, 108);
-    assert.equal(network.syncMode, 'LOCAL_CANONICAL_SNAPSHOT_REFRESH');
-    assert.equal(network.externalFetchEnabled, false);
-    assert.match(network.statusMessage, /does not fetch current data from Overpass/);
+    assert.equal(networkRes.status, 401);
 
     // 2. Register citizen
     const regCit = await fetch(`${baseUrl}/api/auth/citizen/register`, {
@@ -104,11 +161,67 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
     expertToken = devExpert.token;
     assert.equal(devExpert.user.role, 'EXPERT');
 
+    const citizenHealthResponse = await fetch(`${baseUrl}/api/health`, {
+      headers: { Authorization: `Bearer ${citizenToken}` }
+    });
+    const citizenHealth = await citizenHealthResponse.json();
+    assert.equal('database' in citizenHealth, false);
+    assert.equal('geminiConfigured' in citizenHealth, false);
+    assert.equal('imdApiStatus' in citizenHealth.weatherFeed, false);
+
+    const expertHealthResponse = await fetch(`${baseUrl}/api/health`, {
+      headers: { Authorization: `Bearer ${expertToken}` }
+    });
+    const expertHealth = await expertHealthResponse.json();
+    assert.equal(expertHealth.database, 'sqlite_persistent');
+    assert.equal(typeof expertHealth.geminiConfigured, 'boolean');
+    assert.ok('imdApiStatus' in expertHealth.weatherFeed);
+
     // Citizen cannot access expert endpoints
     const forbiddenApps = await fetch(`${baseUrl}/api/expert/applications`, {
       headers: { Authorization: `Bearer ${citizenToken}` }
     });
     assert.equal(forbiddenApps.status, 403);
+
+    const forbiddenNetwork = await fetch(`${baseUrl}/api/network/status`, {
+      headers: { Authorization: `Bearer ${citizenToken}` }
+    });
+    assert.equal(forbiddenNetwork.status, 403);
+
+    const unauthenticatedAiDiagnostics = await fetch(`${baseUrl}/api/ai/health`);
+    assert.equal(unauthenticatedAiDiagnostics.status, 401);
+    const citizenAiDiagnostics = await fetch(`${baseUrl}/api/ai/health`, {
+      headers: { Authorization: `Bearer ${citizenToken}` }
+    });
+    assert.equal(citizenAiDiagnostics.status, 403);
+
+    const expertNetworkResponse = await fetch(`${baseUrl}/api/network/status`, {
+      headers: { Authorization: `Bearer ${expertToken}` }
+    });
+    assert.equal(expertNetworkResponse.status, 200);
+    const network = await expertNetworkResponse.json();
+    assert.equal(network.nodesCount, 69);
+    assert.equal(network.edgesCount, 108);
+    assert.equal(network.syncMode, 'LOCAL_CANONICAL_SNAPSHOT_REFRESH');
+    assert.equal(network.externalFetchEnabled, false);
+    assert.match(network.statusMessage, /does not fetch current data from Overpass/);
+
+    const publicTrafficResponse = await fetch(`${baseUrl}/api/traffic/status`, {
+      headers: { Authorization: `Bearer ${citizenToken}` }
+    });
+    assert.equal(publicTrafficResponse.status, 200);
+    const publicTraffic = await publicTrafficResponse.json();
+    assert.equal('liveSegments' in publicTraffic, false);
+    assert.equal('cachedSegments' in publicTraffic, false);
+    assert.doesNotMatch(publicTraffic.message, /API key is configured|not configured/i);
+
+    const expertTrafficResponse = await fetch(`${baseUrl}/api/traffic/status`, {
+      headers: { Authorization: `Bearer ${expertToken}` }
+    });
+    assert.equal(expertTrafficResponse.status, 200);
+    const expertTraffic = await expertTrafficResponse.json();
+    assert.equal(typeof expertTraffic.liveSegments, 'number');
+    assert.equal(typeof expertTraffic.cachedSegments, 'number');
 
     const approveRes = await fetch(`${baseUrl}/api/expert/applications/${pendingAppId}/approve`, {
       method: 'PATCH',
@@ -171,6 +284,54 @@ test('Citizen report does NOT auto-close road; expert closure excludes road from
     const repData = await repRes.json();
     const r01AfterCitizen = repData.roads.find((r: any) => r.id === 'R01');
     assert.equal(r01AfterCitizen.status, 'REPORTED_WATERLOGGING', 'Citizen report must set REPORTED_WATERLOGGING, NEVER CLOSED');
+
+    const queuedReportPayload = {
+      clientRequestId: 'offline-report-test-1',
+      roadId: 'R02',
+      locationName: 'Test Road Location',
+      lat: 18.51,
+      lng: 73.84,
+      reportType: 'Waterlogging',
+      severity: 'Moderate',
+      description: 'Offline report synchronization test'
+    };
+    const firstQueuedReportResponse = await fetch(`${baseUrl}/api/reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${citToken}`
+      },
+      body: JSON.stringify(queuedReportPayload)
+    });
+    assert.equal(firstQueuedReportResponse.status, 201);
+    const firstQueuedReport = await firstQueuedReportResponse.json();
+    const retryQueuedReportResponse = await fetch(`${baseUrl}/api/reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${citToken}`
+      },
+      body: JSON.stringify(queuedReportPayload)
+    });
+    assert.equal(retryQueuedReportResponse.status, 200);
+    const retryQueuedReport = await retryQueuedReportResponse.json();
+    assert.equal(retryQueuedReport.report.id, firstQueuedReport.report.id, 'Retry must return the existing report');
+    assert.equal(
+      (await fetch(`${baseUrl}/api/reports`).then(response => response.json()))
+        .filter((report: any) => report.id === firstQueuedReport.report.id).length,
+      1,
+      'Idempotent report retry must not create duplicates'
+    );
+
+    const reusedIdResponse = await fetch(`${baseUrl}/api/reports`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${citToken}`
+      },
+      body: JSON.stringify({ ...queuedReportPayload, description: 'Different content' })
+    });
+    assert.equal(reusedIdResponse.status, 409, 'A request ID cannot be reused for a different report');
 
     // 2. Expert road status update requires reason
     const missingReason = await fetch(`${baseUrl}/api/roads/R01/status`, {
@@ -278,6 +439,10 @@ test('POST /api/routes/find returns independent metrics, distinguishes shortest/
     const wShort = warjeData.shortest.edges.map((e: any) => e.id).join(',');
     const wFast = warjeData.fastest.edges.map((e: any) => e.id).join(',');
     const wSafe = warjeData.safest.edges.map((e: any) => e.id).join(',');
+    const enrichedEdge = warjeData.safest.edges[0];
+    assert.ok(Array.isArray(enrichedEdge.riskSources));
+    assert.ok(enrichedEdge.riskExplanation);
+    assert.ok(enrichedEdge.riskUpdatedAt);
     assert.notEqual(wShort, wFast, 'Shortest and Fastest must differ for Shivajinagar -> Warje');
     assert.ok(warjeData.fastest.feasible && warjeData.safest.feasible);
     assert.ok(warjeData.alternatives.length >= 2, 'Should return multiple genuine alternative paths');
@@ -335,6 +500,8 @@ test('POST /api/routes/find returns independent metrics, distinguishes shortest/
     assert.notEqual(airportHaz.safest.edges[0].id, 'R38', 'Safest diverts around high-risk R38');
     assert.equal(airportHaz.shortest.hazardousSegmentCount, 1);
     assert.equal(airportHaz.safest.hazardousSegmentCount, 0);
+    const riskBeforeClosure = airportHaz.shortest.edges.find((e: any) => e.id === 'R38')?.riskScore;
+    assert.equal(typeof riskBeforeClosure, 'number');
 
     // 4. Expert closes R38 officially -> Shortest also diverts and counts 1 closure avoided
     const closeRes = await fetch(`${baseUrl}/api/roads/R38/status`, {
@@ -345,11 +512,15 @@ test('POST /api/routes/find returns independent metrics, distinguishes shortest/
       },
       body: JSON.stringify({
         status: 'CLOSED',
-        riskScore: 100,
         reason: 'Holkar Bridge closed due to flooding'
       })
     });
     assert.equal(closeRes.status, 200);
+    const closedRoadUpdate = await closeRes.json();
+    assert.equal(closedRoadUpdate.updatedRoad.status, 'CLOSED');
+    assert.equal(closedRoadUpdate.updatedRoad.riskScore, riskBeforeClosure, 'Closing a road must preserve its current risk score instead of setting it to 100');
+    const statusSnapshot = await (await fetch(`${baseUrl}/api/roads/status`)).json();
+    assert.equal(statusSnapshot.roads.find((road: any) => road.id === 'R38').status, 'CLOSED');
 
     const airportClosedRes = await fetch(`${baseUrl}/api/routes/find`, {
       method: 'POST',

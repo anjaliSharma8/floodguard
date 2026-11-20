@@ -16,14 +16,26 @@ import { Language } from '../types';
 interface WelcomePortalProps {
   onSelectRole: (selectedType: 'CITIZEN' | 'EXPERT') => void;
   onQuickDevLogin: (account: 'citizen' | 'expert' | 'pending_expert') => void;
+  deviceOnline: boolean;
+  backendAvailable: boolean | null;
   lang: Language;
 }
 
 export const WelcomePortal: React.FC<WelcomePortalProps> = ({
   onSelectRole,
-  onQuickDevLogin
+  onQuickDevLogin,
+  deviceOnline,
+  backendAvailable
 }) => {
   const isDev = import.meta.env.DEV;
+  const isLive = deviceOnline && backendAvailable === true;
+  const connectionLabel = !deviceOnline
+    ? 'Offline - cached data available'
+    : backendAvailable === false
+      ? 'Backend unavailable'
+      : isLive
+        ? 'Live monitoring online'
+        : 'Checking connectivity';
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-6 lg:p-8 font-sans relative overflow-hidden">
@@ -50,8 +62,16 @@ export const WelcomePortal: React.FC<WelcomePortalProps> = ({
         </div>
 
         <div className="flex items-center space-x-2 text-xs text-slate-400">
-          <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-          <span className="font-semibold text-slate-300 hidden sm:inline">Live Monitoring Online</span>
+          <span
+            className={`inline-block w-2 h-2 rounded-full ${
+              isLive
+                ? 'bg-emerald-500 animate-ping'
+                : !deviceOnline || backendAvailable === false
+                  ? 'bg-amber-500'
+                  : 'bg-slate-500'
+            }`}
+          />
+          <span className="font-semibold text-slate-300 hidden sm:inline">{connectionLabel}</span>
         </div>
       </header>
 

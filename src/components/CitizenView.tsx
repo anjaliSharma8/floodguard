@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   User,
   RoadSegment,
@@ -13,15 +13,17 @@ import {
   WaterwayFeature,
   AppNotification,
   Language,
+  TrafficFeedStatus,
   EvacuationPreferences
 } from '../types';
-import { MultiRouteResponse, RouteMode } from '../utils/rules';
+import { ActiveRouteSelection, SelectedRoute } from '../utils/rules';
+import { INITIAL_HISTORICAL_FLOODS } from '../data/puneData';
+import type { OfflineStorageSummary } from '../services/offlineStorage';
 import { TRANSLATIONS } from '../utils/i18n';
 import { MapView } from './MapView';
 import { SafeRoutePlanner } from './SafeRoutePlanner';
 import { CommunitySection } from './CommunitySection';
 import { EmergencyResources } from './EmergencyResources';
-import { DatasetExplorer } from './DatasetExplorer';
 import {
   ShieldAlert,
   MapPin,
@@ -40,7 +42,6 @@ import {
   Compass,
   Bell,
   Database,
-  Send,
   Info,
   CheckCheck
 } from 'lucide-react';
@@ -59,28 +60,55 @@ interface CitizenViewProps {
   routeFeedbacks: RouteFeedback[];
   notifications: AppNotification[];
   rainfallFeed: RainfallFeedMetadata | null;
+  rainfallDataState: 'LIVE' | 'CACHED' | 'UNAVAILABLE';
+  trafficFeedStatus: Pick<
+    TrafficFeedStatus,
+    'provider' | 'isLiveActive' | 'lastChecked' | 'lastSuccessfulUpdate' | 'message'
+  > | null;
+  offlineStorageSummary: OfflineStorageSummary | null;
   lang: Language;
   setLang: (lang: Language) => void;
   isOffline: boolean;
-  setIsOffline: (offline: boolean) => void;
+  deviceOnline: boolean;
+  backendAvailable: boolean | null;
+  lastLiveDataUpdate: string | null;
   onOpenChat: () => void;
   onOpenOfflineGuide: () => void;
   onTriggerVoice: () => void;
-  onRunCommand: (text: string) => void;
   isVoiceListening: boolean;
-  voiceFeedback: string | null;
-  onAddReport: (report: Partial<CommunityReport>) => Promise<{ ok: boolean; error?: string }>;
+  onAddReport: (report: Partial<CommunityReport>) => Promise<{ ok: boolean; error?: string; queued?: boolean }>;
   onVotePoll: (pollId: string, option: string) => Promise<{ ok: boolean; error?: string }>;
   onSubmitFeedback: (feedback: Partial<RouteFeedback>) => Promise<void> | void;
   onMarkNotificationRead: (id: string) => void;
-  activeCalculation: (MultiRouteResponse & { activeMode: RouteMode; altIndex?: number }) | null;
-  onRouteCalculated: (res: MultiRouteResponse & { activeMode: RouteMode; altIndex?: number }) => void;
+  activeCalculation: ActiveRouteSelection | null;
+  onRouteCalculated: (res: ActiveRouteSelection | null) => void;
   selectedRoad: RoadSegment | null;
   onSelectRoad: (road: RoadSegment) => void;
   externalOriginId?: string;
   externalDestId?: string;
+  voiceRouteRequest?: {
+    id: number;
+    startNodeId: string;
+    targetNodeId: string;
+    mode: 'safest' | 'fastest' | 'shortest';
+  } | null;
+  voiceRouteSelectionRequest?: {
+    id: number;
+    mode: 'safest' | 'fastest' | 'shortest';
+    alternativeIndex?: number;
+  } | null;
+  requestedMapLayer?: {
+    id: number;
+    layer: 'shelters' | 'hospitals' | 'reports';
+    center?: [number, number];
+  } | null;
+  voiceShelterFilterRequest?: {
+    id: number;
+    petFriendly: boolean;
+    wheelchairAccessible: boolean;
+  } | null;
   onGpsDetectedOrigin?: (nodeId: string) => void;
-  activeNavOverride?: 'dashboard' | 'routes' | 'community' | 'emergency' | 'my-reports' | 'alerts' | 'datasets' | 'profile';
+  activeNavOverride?: 'dashboard' | 'routes' | 'community' | 'emergency' | 'my-reports' | 'alerts' | 'profile';
   onClearNavOverride?: () => void;
 }
 
@@ -98,16 +126,19 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
   routeFeedbacks,
   notifications,
   rainfallFeed,
+  rainfallDataState,
+  trafficFeedStatus,
+  offlineStorageSummary,
   lang,
   setLang,
   isOffline,
-  setIsOffline,
+  deviceOnline,
+  backendAvailable,
+  lastLiveDataUpdate,
   onOpenChat,
   onOpenOfflineGuide,
   onTriggerVoice,
-  onRunCommand,
   isVoiceListening,
-  voiceFeedback,
   onAddReport,
   onVotePoll,
   onSubmitFeedback,
@@ -118,19 +149,38 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
   onSelectRoad,
   externalOriginId,
   externalDestId,
+  voiceRouteRequest,
+  voiceRouteSelectionRequest,
+  requestedMapLayer,
+  voiceShelterFilterRequest,
   onGpsDetectedOrigin,
   activeNavOverride,
   onClearNavOverride
 }) => {
   const t = TRANSLATIONS[lang];
+  const connectionLabel = !deviceOnline
+    ? 'Device is offline'
+    : backendAvailable === false
+    ? 'SanketSetu backend unavailable'
+    : backendAvailable === true
+    ? 'SanketSetu backend reachable'
+    : 'Checking SanketSetu backend';
   const [activeNavState, setActiveNavState] = useState<
-    'dashboard' | 'routes' | 'community' | 'emergency' | 'my-reports' | 'alerts' | 'datasets' | 'profile'
+    'dashboard' | 'routes' | 'community' | 'emergency' | 'my-reports' | 'alerts' | 'profile'
   >('dashboard');
-  const [commandInput, setCommandInput] = useState('');
+  const [isRouteSheetOpen, setIsRouteSheetOpen] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
+  );
+  useEffect(() => {
+    const desktopQuery = window.matchMedia('(min-width: 1024px)');
+    const handleViewportChange = (event: MediaQueryListEvent) => setIsRouteSheetOpen(event.matches);
+    desktopQuery.addEventListener('change', handleViewportChange);
+    return () => desktopQuery.removeEventListener('change', handleViewportChange);
+  }, []);
 
   const activeNav = activeNavOverride || activeNavState;
   const setActiveNav = (
-    next: 'dashboard' | 'routes' | 'community' | 'emergency' | 'my-reports' | 'alerts' | 'datasets' | 'profile'
+    next: 'dashboard' | 'routes' | 'community' | 'emergency' | 'my-reports' | 'alerts' | 'profile'
   ) => {
     onClearNavOverride?.();
     setActiveNavState(next);
@@ -143,6 +193,23 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
     hasMobilityRequirements: false,
     hasPets: false
   });
+  useEffect(() => {
+    if (!voiceShelterFilterRequest) return;
+    setEvacPrefs(previous => ({
+      ...previous,
+      hasPets: voiceShelterFilterRequest.petFriendly,
+      hasMobilityRequirements: voiceShelterFilterRequest.wheelchairAccessible
+    }));
+  }, [voiceShelterFilterRequest]);
+  const [liveGpsFix, setLiveGpsFix] = useState<{
+    lat: number;
+    lng: number;
+    accuracy: number;
+    heading: number | null;
+    timestamp: number;
+  } | null>(null);
+  const [followLiveGps, setFollowLiveGps] = useState(false);
+  const [isGpsTracking, setIsGpsTracking] = useState(false);
 
   const filteredShelters = shelters.filter(s => {
     if (evacPrefs.hasPets && !s.petFriendly) return false;
@@ -152,21 +219,82 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
 
   const myReports = reports.filter(r => r.userId === user.id || r.userName === user.fullName);
   const unreadAlerts = notifications.filter(n => !n.isRead).length;
+  const offlineRoadRecord = offlineStorageSummary?.datasets.find(dataset => dataset.id === 'roads');
+  const offlineRainfallRecord = offlineStorageSummary?.datasets.find(dataset => dataset.id === 'rainfall');
+  const availableRainfall = Boolean(rainfallFeed?.observations.some(observation => observation.isAvailable));
+  const rainfallState = isOffline
+    ? availableRainfall ? 'CACHED' : offlineRainfallRecord ? 'CACHED' : 'UNAVAILABLE'
+    : rainfallDataState;
+  const trafficState = isOffline
+    ? trafficFeedStatus?.lastSuccessfulUpdate ? 'CACHED' : 'UNAVAILABLE'
+    : trafficFeedStatus?.isLiveActive ? 'LIVE' : 'UNAVAILABLE';
+  const historicalSources = Array.from(new Set(INITIAL_HISTORICAL_FLOODS.map(record => record.source))).join(', ');
+  const formatTransparencyTimestamp = (value: string | null | undefined) => {
+    if (!value) return 'Unknown';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString();
+  };
+  const dataStateClass = (state: string) => {
+    if (state === 'LIVE') return 'bg-emerald-950 text-emerald-300 border-emerald-800';
+    if (state === 'CACHED') return 'bg-blue-950 text-blue-300 border-blue-800';
+    if (state === 'HISTORICAL') return 'bg-slate-800 text-slate-300 border-slate-700';
+    return 'bg-amber-950 text-amber-300 border-amber-800';
+  };
+  const transparencyRows = [
+    {
+      name: 'Rainfall estimates',
+      source: rainfallFeed?.observations.find(observation => observation.source)?.source || 'Open-Meteo Forecast API',
+      updatedLabel: 'Last source update',
+      updated: formatTransparencyTimestamp(
+        rainfallFeed?.lastSuccessfulUpdate || offlineRainfallRecord?.sourceUpdatedAt
+      ),
+      freshness: rainfallState === 'LIVE'
+        ? 'Recently received from the source.'
+        : rainfallState === 'CACHED'
+          ? 'Previously downloaded information.'
+          : 'Data source could not be reached.',
+      reliability: availableRainfall ? 'Model estimate; not gauge-verified.' : 'Not verified',
+      state: rainfallState
+    },
+    {
+      name: 'Road network',
+      source: 'OpenStreetMap ODbL-derived bundled road snapshot',
+      updatedLabel: 'Last received or saved',
+      updated: formatTransparencyTimestamp(
+        isOffline ? offlineRoadRecord?.savedAt : lastLiveDataUpdate || offlineRoadRecord?.savedAt
+      ),
+      freshness: 'Local snapshot; source update time is unknown.',
+      reliability: 'Not verified',
+      state: roads.length > 0 ? 'CACHED' : 'UNAVAILABLE'
+    },
+    {
+      name: 'Traffic information',
+      source: trafficFeedStatus?.provider || 'TomTom Traffic Flow API / Estimated Baseline',
+      updatedLabel: 'Last successful update',
+      updated: formatTransparencyTimestamp(trafficFeedStatus?.lastSuccessfulUpdate),
+      freshness: trafficState === 'LIVE'
+        ? 'Recently received from the source.'
+        : trafficState === 'CACHED'
+          ? 'Previously received information; may be stale.'
+          : 'Live traffic data is unavailable; route speed estimates may be used.',
+      reliability: 'No aggregate confidence score available.',
+      state: trafficState
+    },
+    {
+      name: 'Historical flood records',
+      source: historicalSources || 'Unknown',
+      updatedLabel: 'Dataset update',
+      updated: 'Unknown',
+      freshness: 'Past records, not current conditions.',
+      reliability: 'Not verified',
+      state: 'HISTORICAL'
+    }
+  ];
 
   // Derive active & alternative route edges for MapView
-  const selectedRoute = activeCalculation
-    ? activeCalculation.activeMode === 'safest' &&
-      activeCalculation.altIndex !== undefined &&
-      activeCalculation.alternatives[activeCalculation.altIndex]
-      ? activeCalculation.alternatives[activeCalculation.altIndex]
-      : activeCalculation[activeCalculation.activeMode]
-    : null;
+  const selectedRoute: SelectedRoute | null = activeCalculation?.selectedRoute ?? null;
 
   const selectedEdgeKey = selectedRoute ? selectedRoute.edges.map(e => e.id).join(',') : '';
-
-  const activeRouteEdges = selectedRoute
-    ? selectedRoute.edges.map(edge => roads.find(r => r.id === edge.id)).filter((r): r is RoadSegment => Boolean(r))
-    : undefined;
 
   const altRoute = activeCalculation
     ? activeCalculation.activeMode !== 'safest' &&
@@ -219,11 +347,6 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
           <span>
             Open-Meteo 24h Peak:{' '}
             <strong>{peak24hMm !== null ? `${peak24hMm.toFixed(1)} mm` : 'Unavailable'}</strong>
-          </span>
-          <span>•</span>
-          <span>
-            IMD Feed:{' '}
-            <strong>{rainfallFeed?.imdApiStatus === 'CONFIGURED' ? 'Configured (feed not queried)' : 'Unavailable (No Key)'}</strong>
           </span>
         </div>
       </div>
@@ -309,16 +432,6 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
                 <Bell className="w-4 h-4" />
                 <span>Alerts {unreadAlerts > 0 ? `(${unreadAlerts})` : ''}</span>
               </button>
-
-              <button
-                onClick={() => setActiveNav('datasets')}
-                className={`px-2.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center space-x-1.5 ${
-                  activeNav === 'datasets' ? 'bg-blue-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                <Database className="w-4 h-4" />
-                <span>Sources</span>
-              </button>
             </nav>
 
             {/* Right Controls */}
@@ -326,6 +439,7 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
               <button
                 onClick={onTriggerVoice}
                 title={t.voiceAssistant}
+                aria-label={isVoiceListening ? 'Voice assistant listening' : t.voiceAssistant}
                 className={`p-1.5 sm:p-2 rounded-lg border transition-all flex items-center space-x-1 text-xs font-semibold ${
                   isVoiceListening
                     ? 'bg-red-600 border-red-500 text-white animate-pulse'
@@ -348,16 +462,15 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
               </select>
 
               <button
-                onClick={() => {
-                  const next = !isOffline;
-                  setIsOffline(next);
-                  if (next) onOpenOfflineGuide();
-                }}
-                title={isOffline ? 'Offline Mode Active' : 'Online Connection Active'}
+                onClick={onOpenOfflineGuide}
+                title={`${connectionLabel}. SOS submission is not configured. Open connectivity details.`}
+                aria-label={`${connectionLabel}. Open connectivity and offline data details.`}
                 className={`p-1.5 sm:p-2 rounded-lg border transition-colors ${
                   isOffline
-                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                    : 'bg-slate-800 text-emerald-400 border-slate-700 hover:bg-slate-700'
+                    ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                    : backendAvailable === true
+                    ? 'bg-slate-800 text-emerald-400 border-slate-700 hover:bg-slate-700'
+                    : 'bg-slate-800 text-blue-300 border-slate-700 hover:bg-slate-700'
                 }`}
               >
                 {isOffline ? <WifiOff className="w-4 h-4" /> : <Wifi className="w-4 h-4" />}
@@ -402,48 +515,25 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
             <button onClick={() => setActiveNav('emergency')} className={`px-3 py-1 rounded-lg whitespace-nowrap font-medium ${activeNav === 'emergency' ? 'bg-red-600 text-white' : 'text-slate-300'}`}>SOS</button>
             <button onClick={() => setActiveNav('my-reports')} className={`px-3 py-1 rounded-lg whitespace-nowrap font-medium ${activeNav === 'my-reports' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}>My Reports ({myReports.length})</button>
             <button onClick={() => setActiveNav('alerts')} className={`px-3 py-1 rounded-lg whitespace-nowrap font-medium ${activeNav === 'alerts' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}>Alerts ({unreadAlerts})</button>
-            <button onClick={() => setActiveNav('datasets')} className={`px-3 py-1 rounded-lg whitespace-nowrap font-medium ${activeNav === 'datasets' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}>Sources</button>
           </div>
         </div>
       </header>
 
-      {/* Voice Feedback / Text Command Bar */}
-      {(voiceFeedback || isVoiceListening) && (
-        <div className="bg-slate-900 border-b border-cyan-900/60 px-4 py-2 text-xs">
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <span className="text-cyan-300 font-medium">
-              {isVoiceListening ? t.voiceListening : voiceFeedback}
-            </span>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!commandInput.trim()) return;
-                onRunCommand(commandInput.trim());
-                setCommandInput('');
-              }}
-              className="flex items-center space-x-2"
-            >
-              <input
-                type="text"
-                value={commandInput}
-                onChange={(e) => setCommandInput(e.target.value)}
-                placeholder="Type voice command (e.g., Safe route to Kothrud, Show shelters)"
-                className="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white w-64 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-              />
-              <button
-                type="submit"
-                className="bg-cyan-600 hover:bg-cyan-500 text-white px-2.5 py-1 rounded-lg font-semibold flex items-center space-x-1"
-              >
-                <Send className="w-3 h-3" />
-                <span>Run</span>
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* Main Citizen Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        {isOffline && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/40 bg-amber-950/50 px-4 py-3 text-xs text-amber-100" role="status">
+            <span>
+              {deviceOnline
+                ? 'SanketSetu backend is unavailable. Showing downloaded or bundled data; road risk and closures may be stale.'
+                : 'Device network is offline. Showing downloaded or bundled data; live weather, traffic, closures, and reports are unavailable.'}
+              {lastLiveDataUpdate && ` Last data refresh: ${new Date(lastLiveDataUpdate).toLocaleString()}.`}
+            </span>
+            <button type="button" onClick={onOpenOfflineGuide} className="min-h-10 rounded-lg border border-amber-300/40 px-3 py-2 font-semibold text-white hover:bg-amber-500/10">
+              Offline details
+            </button>
+          </div>
+        )}
         {/* VIEW 1: CITIZEN DASHBOARD */}
         {activeNav === 'dashboard' && (
           <div className="space-y-6">
@@ -453,7 +543,7 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
                 <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">Personal Flood Safety Desk</span>
                 <h2 className="text-xl font-black text-white mt-0.5">Welcome, {user.fullName}</h2>
                 <p className="text-xs text-slate-300 mt-1 max-w-2xl">
-                  Directed safe-route engine over 69 Pune & Pimpri-Chinchwad junctions and 108 OSM corridors, using gridded Open-Meteo precipitation estimates and expert-verified road closures.
+                  Directed safe-route engine over {Object.keys(nodes).length} Pune & Pimpri-Chinchwad junctions and {roads.length} road segments, using gridded Open-Meteo precipitation estimates and expert-verified road closures.
                 </p>
               </div>
 
@@ -476,6 +566,52 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
                 </div>
               </div>
             </div>
+
+            <section
+              aria-labelledby="citizen-data-transparency-heading"
+              className="rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5 shadow-lg space-y-3"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Database className="h-4 w-4 text-cyan-400" />
+                  <h3 id="citizen-data-transparency-heading" className="text-sm font-bold text-white">
+                    Data Transparency
+                  </h3>
+                </div>
+                <p className="text-[11px] text-slate-300" role="status">
+                  {!deviceOnline
+                    ? 'Device offline; showing available saved data.'
+                    : backendAvailable === false
+                      ? 'SankatSetu backend unavailable; live updates cannot be confirmed.'
+                      : backendAvailable === true
+                        ? 'SankatSetu backend connected.'
+                        : 'Checking data connection...'}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                {transparencyRows.map(row => (
+                  <div key={row.name} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <strong className="text-xs text-white">{row.name}</strong>
+                      <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-bold ${dataStateClass(row.state)}`}>
+                        {row.state}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-300">{row.source}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {row.updatedLabel}: {row.updated}
+                    </p>
+                    <p className="text-[10px] text-slate-400">{row.freshness}</p>
+                    <p className="text-[10px] text-slate-400">Reliability: {row.reliability}</p>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-[10px] text-slate-400">
+                LIVE: recently received from the source. CACHED: previously downloaded. HISTORICAL: past records, not current conditions. UNAVAILABLE: source could not be reached. A risk estimate does not guarantee a route is safe.
+              </p>
+            </section>
 
             {/* Personal Evacuation Assistant */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg space-y-3">
@@ -552,8 +688,8 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
             </div>
 
             {/* Map & Route Quick View */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-              <div className="lg:col-span-7 h-[560px] rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+              <div className="lg:col-span-8 h-[55svh] min-h-[420px] max-h-[640px] lg:h-[640px] rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
                 <MapView
                   roads={roads}
                   nodes={nodes}
@@ -562,25 +698,43 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
                   emergencyFacilities={facilities}
                   waterways={waterways}
                   reports={reports}
-                  activeRouteEdges={activeRouteEdges}
+                  selectedRoute={selectedRoute}
                   altRouteEdges={altRouteEdges}
                   startNode={activeCalculation?.originNode}
                   targetNode={activeCalculation?.targetNode}
                   selectedRoadId={selectedRoad?.id}
                   onSelectRoad={onSelectRoad}
                   onGpsDetected={handleMapGps}
+                  currentGps={liveGpsFix}
+                  followGps={followLiveGps}
+                  gpsTracking={isGpsTracking}
+                  requestedLayer={requestedMapLayer}
                 />
               </div>
 
-              <div className="lg:col-span-5 space-y-4">
+              <div className="lg:col-span-4 space-y-4">
                 <SafeRoutePlanner
                   nodes={nodes}
                   roads={roads}
                   lang={lang}
                   externalOriginId={externalOriginId}
                   externalDestId={externalDestId}
+                  voiceRouteRequest={voiceRouteRequest}
+                  voiceRouteSelectionRequest={voiceRouteSelectionRequest}
+                  activeRouteBundle={activeCalculation}
                   onRouteCalculated={onRouteCalculated}
+                  selectedRoute={selectedRoute}
                   onSubmitFeedback={onSubmitFeedback}
+                  reports={reports}
+                  onGpsFix={(fix) => {
+                    setLiveGpsFix(fix);
+                    setFollowLiveGps(Boolean(fix));
+                  }}
+                  onGpsTrackingChange={(tracking) => {
+                    setIsGpsTracking(tracking);
+                    if (tracking) setFollowLiveGps(true);
+                  }}
+                  onRecenterMap={() => setFollowLiveGps(true)}
                 />
               </div>
             </div>
@@ -589,8 +743,8 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
 
         {/* VIEW 2: MAP & SAFE ROUTES */}
         {activeNav === 'routes' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            <div className="lg:col-span-7 h-[650px] rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            <div className="lg:col-span-8 h-[55svh] min-h-[420px] max-h-[640px] lg:h-[calc(100vh-7rem)] lg:min-h-[620px] rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
               <MapView
                 roads={roads}
                 nodes={nodes}
@@ -599,25 +753,55 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
                 emergencyFacilities={facilities}
                 waterways={waterways}
                 reports={reports}
-                activeRouteEdges={activeRouteEdges}
+                selectedRoute={selectedRoute}
                 altRouteEdges={altRouteEdges}
                 startNode={activeCalculation?.originNode}
                 targetNode={activeCalculation?.targetNode}
                 selectedRoadId={selectedRoad?.id}
                 onSelectRoad={onSelectRoad}
                 onGpsDetected={handleMapGps}
+                currentGps={liveGpsFix}
+                followGps={followLiveGps}
+                gpsTracking={isGpsTracking}
+                requestedLayer={requestedMapLayer}
               />
             </div>
-            <div className="lg:col-span-5">
-              <SafeRoutePlanner
-                nodes={nodes}
-                roads={roads}
-                lang={lang}
-                externalOriginId={externalOriginId}
-                externalDestId={externalDestId}
-                onRouteCalculated={onRouteCalculated}
-                onSubmitFeedback={onSubmitFeedback}
-              />
+            <div className="lg:col-span-4">
+              <details
+                open={isRouteSheetOpen}
+                onToggle={(event) => setIsRouteSheetOpen(event.currentTarget.open)}
+                className="group fixed inset-x-2 bottom-2 z-30 max-h-[70vh] overflow-y-auto rounded-2xl lg:static lg:max-h-none lg:overflow-visible lg:w-full"
+              >
+                <summary className="sticky bottom-2 z-20 mb-3 flex min-h-12 cursor-pointer list-none items-center justify-between rounded-xl border border-cyan-500/40 bg-slate-900/95 px-4 py-3 text-xs font-bold text-white shadow-xl lg:hidden">
+                  <span>{activeCalculation ? 'Route details & navigation' : 'Open route planner'}</span>
+                  <span className="text-cyan-300 group-open:rotate-180 transition-transform">⌄</span>
+                </summary>
+                <div className="hidden group-open:block lg:!block">
+                  <SafeRoutePlanner
+                    nodes={nodes}
+                    roads={roads}
+                    lang={lang}
+                    externalOriginId={externalOriginId}
+                    externalDestId={externalDestId}
+                    voiceRouteRequest={voiceRouteRequest}
+                    voiceRouteSelectionRequest={voiceRouteSelectionRequest}
+                    activeRouteBundle={activeCalculation}
+                    onRouteCalculated={onRouteCalculated}
+                    selectedRoute={selectedRoute}
+                    onSubmitFeedback={onSubmitFeedback}
+                    reports={reports}
+                    onGpsFix={(fix) => {
+                      setLiveGpsFix(fix);
+                      setFollowLiveGps(Boolean(fix));
+                    }}
+                    onGpsTrackingChange={(tracking) => {
+                      setIsGpsTracking(tracking);
+                      if (tracking) setFollowLiveGps(true);
+                    }}
+                    onRecenterMap={() => setFollowLiveGps(true)}
+                  />
+                </div>
+              </details>
             </div>
           </div>
         )}
@@ -647,6 +831,7 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
                 reports={reports}
                 selectedRoadId={selectedRoad?.id}
                 onSelectRoad={onSelectRoad}
+                requestedLayer={requestedMapLayer}
               />
             </div>
           </div>
@@ -775,11 +960,6 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
               </div>
             )}
           </div>
-        )}
-
-        {/* VIEW 7: TRANSPARENT DATA SOURCES */}
-        {activeNav === 'datasets' && (
-          <DatasetExplorer rainfallFeed={rainfallFeed} user={user} />
         )}
 
         {/* VIEW 8: CITIZEN PROFILE */}

@@ -106,6 +106,40 @@ export function classifyRiskScore(score: number | null | undefined): {
   return { category: 'Low', color: '#10b981' }; // emerald-500
 }
 
+export type RoadRiskLevel = RiskCategory | 'Closed';
+
+export function getRoadRiskLevel(road: Pick<RoadSegment, 'riskScore' | 'status'>): RoadRiskLevel {
+  if (road.status === 'CLOSED') return 'Closed';
+  if (road.status === 'UNKNOWN' || road.riskScore === null || road.riskScore === undefined) {
+    return 'Unknown';
+  }
+  if (road.status === 'REPORTED_WATERLOGGING' && road.riskScore < 25) return 'Moderate';
+  return classifyRiskScore(road.riskScore).category;
+}
+
+export function getRouteRiskCounts(route: {
+  edges: readonly Pick<GraphEdge, 'riskScore' | 'status'>[];
+}): {
+  moderate: number;
+  high: number;
+  severe: number;
+  unknown: number;
+  closed: number;
+} {
+  return route.edges.reduce(
+    (counts, edge) => {
+      const level = getRoadRiskLevel(edge);
+      if (level === 'Moderate') counts.moderate++;
+      else if (level === 'High') counts.high++;
+      else if (level === 'Severe') counts.severe++;
+      else if (level === 'Unknown') counts.unknown++;
+      else if (level === 'Closed') counts.closed++;
+      return counts;
+    },
+    { moderate: 0, high: 0, severe: 0, unknown: 0, closed: 0 }
+  );
+}
+
 export function normalizeWeights(partial?: Partial<RiskFactorWeights>): RiskFactorWeights {
   const raw: RiskFactorWeights = {
     rainfall: Math.max(0, partial?.rainfall ?? DEFAULT_WEIGHTS.rainfall),
@@ -350,6 +384,18 @@ export interface GraphEdge {
   isOneWay?: boolean;
   accessRestriction?: 'all_vehicles' | 'no_heavy_vehicles' | 'emergency_only';
   coordinates?: [number, number][];
+  riskCategory?: RiskCategory;
+  riskSources?: string[];
+  riskExplanation?: string;
+  riskObservationTimestamp?: string;
+  riskUpdatedAt?: string;
+  lastUpdated?: string;
+  verifiedBy?: string;
+  statusReason?: string;
+  expiresAt?: string | null;
+  slopePct?: number | null;
+  drainageCondition?: RoadSegment['drainageCondition'];
+  confidenceScore?: number;
 }
 
 export interface RouteCalculationResult {
@@ -396,6 +442,94 @@ export interface MultiRouteResponse {
   safest: RouteCalculationResult;
   alternatives: RouteCalculationResult[];
   dataQuality?: RouteDataQuality;
+}
+
+export interface SelectedRoute extends RouteCalculationResult {
+  geometry: [number, number][];
+  geometryAvailable: boolean;
+}
+
+export interface ActiveRouteSelection extends MultiRouteResponse {
+  activeMode: RouteMode;
+  altIndex?: number;
+  selectedRoute: SelectedRoute;
+}
+
+export function getOrderedRouteSegments(
+  route: Pick<RouteCalculationResult, 'edges' | 'nodeIds' | 'nodes'>
+): { edge: GraphEdge; coordinates: [number, number][] }[] {
+  return route.edges.map((edge, index) => {
+    const fromNodeId = route.nodeIds[index];
+    const toNodeId = route.nodeIds[index + 1];
+    const storedCoordinates = edge.coordinates || [];
+    const traversedForward = edge.from === fromNodeId && edge.to === toNodeId;
+    const traversedBackward =
+      edge.to === fromNodeId && edge.from === toNodeId && !edge.isOneWay;
+    const coordinates = traversedForward
+      ? [...storedCoordinates]
+      : traversedBackward
+      ? [...storedCoordinates].reverse()
+      : [];
+    const fromNode = route.nodes[index];
+    const toNode = route.nodes[index + 1];
+
+    if (coordinates.length >= 2 && fromNode && toNode) {
+      coordinates[0] = [fromNode.lat, fromNode.lng];
+      coordinates[coordinates.length - 1] = [toNode.lat, toNode.lng];
+    }
+
+    return {
+      edge,
+      coordinates
+    };
+  });
+}
+
+export function getRouteGeometry(
+  route: Pick<RouteCalculationResult, 'edges' | 'nodeIds' | 'nodes'>
+): [number, number][] {
+  const geometry: [number, number][] = [];
+  if (route.nodeIds.length !== route.edges.length + 1 || route.nodes.length !== route.nodeIds.length) {
+    return geometry;
+  }
+  const segments = getOrderedRouteSegments(route);
+  if (segments.some(segment => segment.coordinates.length < 2)) return geometry;
+
+  for (const segment of segments) {
+    for (const coordinate of segment.coordinates) {
+      const previous = geometry[geometry.length - 1];
+      if (!previous || previous[0] !== coordinate[0] || previous[1] !== coordinate[1]) {
+        geometry.push(coordinate);
+      }
+    }
+  }
+  return geometry;
+}
+
+export function createRouteSelection(
+  bundle: MultiRouteResponse,
+  activeMode: RouteMode,
+  altIndex = 0
+): ActiveRouteSelection {
+  const route =
+    activeMode === 'safest'
+      ? bundle.alternatives[altIndex] || bundle.safest
+      : bundle[activeMode];
+  const segments = getOrderedRouteSegments(route);
+  const geometryAvailable =
+    route.edges.length === 0 ||
+    (route.nodeIds.length === route.edges.length + 1 &&
+      route.nodes.length === route.nodeIds.length &&
+      segments.length === route.edges.length &&
+      segments.every(segment => segment.coordinates.length >= 2));
+  const geometry = geometryAvailable ? getRouteGeometry(route) : [];
+
+  return {
+    ...bundle,
+    activeMode,
+    altIndex: activeMode === 'safest' ? altIndex : undefined,
+    selectedRoute: { ...route, geometry, geometryAvailable }
+  };
 }
 
 /**

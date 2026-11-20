@@ -5,9 +5,12 @@ import {
   matchDeterministicRoadId,
   validateGraphTopology,
   executeOsmSynchronization,
-  registerGraphUpdateListener
+  registerGraphUpdateListener,
+  startScheduledOsmSync,
+  stopScheduledOsmSync
 } from '../services/osmSyncService';
 import { User } from '../types';
+import { INITIAL_ROAD_SEGMENTS } from '../data/puneData';
 
 test('DETERMINISTIC ROAD ID MAPPING: Maps corridors to canonical R01-R108 and generates deterministic OSM IDs for new roads', () => {
   // Test 1: Exact endpoint match for Fergusson College Road
@@ -93,4 +96,40 @@ test('DYNAMIC IN-MEMORY ACTIVATION: Sync notifies listeners atomically without s
   assert.equal(r08After.status, 'VERIFIED_HAZARD', 'Hazard status must be preserved across sync');
 
   db.close();
+});
+
+test('STARTUP GEOMETRY REFRESH: Recent sync metadata does not preserve stale road shapes', async t => {
+  const db = new SanketSetuDatabase(':memory:');
+  t.after(() => {
+    stopScheduledOsmSync();
+    db.close();
+  });
+
+  const sourceRoad = INITIAL_ROAD_SEGMENTS.find(road => road.id === 'R01');
+  assert.ok(sourceRoad);
+  db.db.prepare("UPDATE road_segments SET coordinates_json = ?, status = 'VERIFIED_HAZARD' WHERE road_id = ?")
+    .run(JSON.stringify([sourceRoad.coordinates[0], sourceRoad.coordinates[sourceRoad.coordinates.length - 1]]), sourceRoad.id);
+  db.recordOsmSync({
+    syncId: 'RECENT_SYNC_WITH_STALE_SHAPE',
+    syncType: 'AUTOMATIC',
+    status: 'SUCCESS',
+    nodesCount: 69,
+    edgesCount: 108,
+    roadsPreserved: 108,
+    roadsAdded: 0,
+    durationMs: 1,
+    createdAt: new Date().toISOString()
+  });
+
+  startScheduledOsmSync(db);
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const currentRoad = db.getRoadSegments().find(road => road.id === sourceRoad.id);
+    if (JSON.stringify(currentRoad?.coordinates) === JSON.stringify(sourceRoad.coordinates)) break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+
+  const refreshedRoad = db.getRoadSegments().find(road => road.id === sourceRoad.id);
+  assert.ok(refreshedRoad);
+  assert.deepEqual(refreshedRoad.coordinates, sourceRoad.coordinates);
+  assert.equal(refreshedRoad.status, 'VERIFIED_HAZARD', 'Geometry refresh must preserve road hazard state');
 });

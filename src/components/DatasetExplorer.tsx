@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { calculateFloodRisk } from '../utils/rules';
+import { INITIAL_HISTORICAL_FLOODS } from '../data/puneData';
 import { RainfallFeedMetadata, TrafficFeedStatus, User, OsmSyncLog } from '../types';
 import {
   Database,
@@ -38,49 +39,65 @@ interface DatasetExplorerProps {
   rainfallFeed?: RainfallFeedMetadata | null;
   user?: User;
   token?: string;
+  deviceOnline: boolean;
+  backendAvailable: boolean | null;
+  lastLiveDataUpdate: string | null;
   onRefreshData?: () => void;
 }
+
+const HISTORICAL_FLOOD_SOURCES = Array.from(
+  new Set(INITIAL_HISTORICAL_FLOODS.map(record => record.source))
+).join(', ');
 
 export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
   rainfallFeed,
   user,
   token,
+  deviceOnline,
+  backendAvailable,
+  lastLiveDataUpdate,
   onRefreshData
 }) => {
   // Local OSM-derived graph status and manual refresh state
   const [networkStatus, setNetworkStatus] = useState<NetworkStatus | null>(null);
   const [trafficStatus, setTrafficStatus] = useState<TrafficFeedStatus | null>(null);
+  const [networkStatusError, setNetworkStatusError] = useState<string | null>(null);
+  const [trafficStatusError, setTrafficStatusError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncFeedback, setSyncFeedback] = useState<{ text: string; isError: boolean } | null>(null);
 
   const fetchNetworkStatus = async () => {
     try {
-      const res = await fetch('/api/network/status');
-      if (res.ok) {
-        const data = await res.json();
-        setNetworkStatus(data);
-      }
+      const res = await fetch('/api/network/status', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      if (!res.ok) throw new Error(`Network status request failed with HTTP ${res.status}`);
+      setNetworkStatus(await res.json() as NetworkStatus);
+      setNetworkStatusError(null);
     } catch (err) {
-      console.error('Failed to fetch local graph status:', err);
+      setNetworkStatus(null);
+      setNetworkStatusError(err instanceof Error ? err.message : String(err));
     }
   };
 
   const fetchTrafficStatus = async () => {
     try {
-      const res = await fetch('/api/traffic/status');
-      if (!res.ok) {
-        throw new Error(`Traffic status request failed with HTTP ${res.status}`);
-      }
+      const res = await fetch('/api/traffic/status', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      if (!res.ok) throw new Error(`Traffic status request failed with HTTP ${res.status}`);
       setTrafficStatus(await res.json() as TrafficFeedStatus);
+      setTrafficStatusError(null);
     } catch (err) {
-      console.error('Failed to fetch traffic status:', err);
+      setTrafficStatus(null);
+      setTrafficStatusError(err instanceof Error ? err.message : String(err));
     }
   };
 
   useEffect(() => {
     void fetchNetworkStatus();
     void fetchTrafficStatus();
-  }, []);
+  }, [token]);
 
   const handleManualSync = async () => {
     setIsSyncing(true);
@@ -141,17 +158,17 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
   });
 
   const weatherLastUpdated = rainfallFeed?.lastSuccessfulUpdate
-    ? new Date(rainfallFeed.lastSuccessfulUpdate).toLocaleTimeString()
-    : 'No successful update';
+    ? new Date(rainfallFeed.lastSuccessfulUpdate).toLocaleString()
+    : 'Unknown';
   const trafficLastUpdated = trafficStatus?.lastSuccessfulUpdate
-    ? new Date(trafficStatus.lastSuccessfulUpdate).toLocaleTimeString()
+    ? new Date(trafficStatus.lastSuccessfulUpdate).toLocaleString()
     : typeof trafficStatus?.liveSegments === 'number'
       ? trafficStatus.lastChecked
-      ? `Last attempt ${new Date(trafficStatus.lastChecked).toLocaleTimeString()}`
-        : 'No successful response'
+      ? `Last attempt ${new Date(trafficStatus.lastChecked).toLocaleString()}`
+        : 'Unknown'
       : trafficStatus
-        ? 'Backend restart required for accurate status'
-        : 'Checking status';
+        ? 'Unknown'
+        : 'Unavailable';
   const hasAccurateTrafficStatus =
     typeof trafficStatus?.liveSegments === 'number' &&
     typeof trafficStatus.cachedSegments === 'number';
@@ -160,9 +177,10 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
     networkStatus?.lastSync?.syncTimestamp || networkStatus?.lastSync?.createdAt;
   const osmLastUpdated = lastSyncTimestamp
     ? new Date(lastSyncTimestamp).toLocaleString()
-    : 'Scheduled local validation';
+    : 'Unknown';
 
-  const isExpert = user?.role === 'EXPERT';
+  const isExpert = user?.role === 'EXPERT' && user.accountStatus === 'ACTIVE';
+  const isBackendConnected = deviceOnline && backendAvailable === true;
 
   const datasets = [
     {
@@ -171,7 +189,7 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
       source: 'Open-Meteo Forecast API (~11 km hourly grid); direct IMD station data is not queried',
       lastUpdated: weatherLastUpdated,
       freshness: rainfallFeed?.openMeteoStatus === 'OK' ? 'MODEL_ESTIMATE' : 'UNAVAILABLE',
-      confidence: rainfallFeed?.openMeteoStatus === 'OK' ? 'Not gauge-verified' : 'No data',
+      confidence: rainfallFeed?.openMeteoStatus === 'OK' ? 'Not gauge-verified; no score' : 'Not verified',
       coverage: '9 Pune & PCMC grid points; past-24h model estimates, current-hour estimate and next-24h forecast (not gauges)',
       badge: rainfallFeed?.openMeteoStatus === 'OK' ? 'API responded' : 'Unavailable'
     },
@@ -182,18 +200,18 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
       lastUpdated: osmLastUpdated,
       freshness: networkStatus?.lastSync?.status === 'SUCCESS' ? 'VALIDATED_LOCAL' : 'BUNDLED_BASELINE',
       confidence: 'Topology validation only',
-      coverage: `${networkStatus?.nodesCount || 69} Nodes, ${networkStatus?.edgesCount || 108} Bundled Road Segments (One-Way & Turn Constrained)`,
+      coverage: `${networkStatus?.nodesCount ?? 'Unknown'} Nodes, ${networkStatus?.edgesCount ?? 'Unknown'} Bundled Road Segments (One-Way & Turn Constrained)`,
       badge: networkStatus?.lastSync?.status === 'SUCCESS' ? 'Local graph validated' : 'Bundled graph'
     },
     {
       name: 'Elevation & Terrain Slope',
       file: 'datasets/processed/terrain.csv & roads.json',
       source: 'Copernicus DEM GLO-90 (30m-class global elevation sampling)',
-      lastUpdated: '2026-11-19',
-      freshness: 'OBSERVED_RECENT',
-      confidence: '92%',
+      lastUpdated: 'Unknown',
+      freshness: 'UNKNOWN',
+      confidence: 'Not verified',
       coverage: 'Base elevations (545m–615m) across Mutha, Mula & Pavana river basins',
-      badge: 'Real DEM'
+      badge: 'Update status unknown'
     },
     {
       name: 'TomTom Traffic Flow & Estimated Speeds',
@@ -217,29 +235,29 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
       name: 'Waterways & Drainage Inventory',
       file: 'datasets/processed/drainage.csv',
       source: 'OSM Waterways (Mutha, Mula, Pavana, Ambil Odha, Nagzari)',
-      lastUpdated: '2026-11-19',
-      freshness: 'OBSERVED_RECENT',
-      confidence: '80%',
+      lastUpdated: 'Unknown',
+      freshness: 'UNKNOWN',
+      confidence: 'Not verified',
       coverage: 'Channel locations & inspection status; quantitative capacity marked unknown (capacityKnown=false)',
-      badge: 'Verified Partial'
+      badge: 'Partial inventory'
     },
     {
       name: 'Historical Flood Incidents',
       file: 'datasets/processed/historical_floods.csv',
-      source: 'Pune Municipal Corporation (PMC) & CWC Historical Records',
-      lastUpdated: '2024-09-15',
+      source: HISTORICAL_FLOOD_SOURCES || 'Unknown',
+      lastUpdated: 'Unknown',
       freshness: 'HISTORICAL',
-      confidence: '95%',
-      coverage: 'Verified past floods (2019 Ambil Odha, 2021 Mutha Swell, 2023–2024 Pavana catchment)',
+      confidence: 'Not verified',
+      coverage: INITIAL_HISTORICAL_FLOODS.map(record => `${record.name} (${record.date})`).join('; '),
       badge: 'Historical'
     },
     {
       name: 'Emergency Shelters, Hospitals & Rescue',
       file: 'datasets/processed/shelters.csv & hospitals.csv',
       source: 'PMC / PCMC Disaster Management & RESQ Charitable Trust Directories',
-      lastUpdated: '2026-11-19',
-      freshness: 'OBSERVED_RECENT',
-      confidence: '90%',
+      lastUpdated: 'Unknown',
+      freshness: 'UNKNOWN',
+      confidence: 'Not verified',
       coverage: 'Verified shelters (pet-friendly & step-free flags), trauma centers & 24x7 dispatch units',
       badge: 'Directory'
     },
@@ -247,11 +265,11 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
       name: 'Community Field Reports & Hazards',
       file: 'data/sanketsetu.db (SQLite)',
       source: 'Citizen-submitted observations with strict Expert verification audit trail',
-      lastUpdated: 'Real-time event stream',
-      freshness: 'LIVE',
-      confidence: '70% (Unverified) • 100% (Expert Verified)',
+      lastUpdated: lastLiveDataUpdate ? new Date(lastLiveDataUpdate).toLocaleString() : 'Unknown',
+      freshness: isBackendConnected && lastLiveDataUpdate ? 'LIVE' : 'UNAVAILABLE',
+      confidence: 'Per-report verification status; no aggregate score',
       coverage: 'Geo-tagged waterlogging, tree falls, and verified road closures with operational audit log',
-      badge: 'Dynamic DB'
+      badge: isBackendConnected && lastLiveDataUpdate ? 'Backend refreshed' : 'Unavailable'
     }
   ];
 
@@ -289,6 +307,13 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
         </div>
       </div>
 
+      {(networkStatusError || trafficStatusError) && (
+        <div role="alert" className="rounded-xl border border-amber-800 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+          {networkStatusError && <p>Road graph diagnostics unavailable: {networkStatusError}</p>}
+          {trafficStatusError && <p>Traffic diagnostics unavailable: {trafficStatusError}</p>}
+        </div>
+      )}
+
       {/* Honest Data Completeness Disclosure */}
       <div className="p-3 bg-blue-950/40 border border-blue-900/70 rounded-xl text-xs text-slate-300 flex items-start space-x-2">
         <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
@@ -317,7 +342,7 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
           <div className="flex items-center space-x-2">
             <span className="text-[11px] font-mono px-2.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-indigo-300 flex items-center space-x-1.5">
               <Clock className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Refresh interval: {networkStatus?.syncIntervalHours || 24} Hours</span>
+              <span>Refresh interval: {networkStatus?.syncIntervalHours ?? 'Unknown'} Hours</span>
             </span>
 
             {isExpert && (
@@ -355,9 +380,13 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
           <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 space-y-1">
             <span className="text-slate-400 block text-[10px] uppercase font-mono">Validation Status</span>
             <div className="flex items-center space-x-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              <strong className="text-emerald-300 font-mono text-xs">
-                {networkStatus?.lastSync?.status || 'ACTIVE_VALIDATED'}
+              <CheckCircle2 className={`w-3.5 h-3.5 ${
+                networkStatus?.lastSync?.status === 'SUCCESS' ? 'text-emerald-400' : 'text-amber-400'
+              }`} />
+              <strong className={`font-mono text-xs ${
+                networkStatus?.lastSync?.status === 'SUCCESS' ? 'text-emerald-300' : 'text-amber-300'
+              }`}>
+                {networkStatus?.lastSync?.status || 'UNKNOWN'}
               </strong>
             </div>
             <span className="text-[10px] text-slate-400 block truncate">
@@ -370,22 +399,24 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
             <strong className="text-white font-mono text-xs block truncate">
               {lastSyncTimestamp
                 ? new Date(lastSyncTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                : 'Initial Baseline'}
+                : 'Unknown'}
             </strong>
             <span className="text-[10px] text-slate-400 block truncate">
               {lastSyncTimestamp
                 ? new Date(lastSyncTimestamp).toLocaleDateString()
-                : 'Active in Memory'}
+                : 'No synchronization timestamp'}
             </span>
           </div>
 
           <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 space-y-1">
             <span className="text-slate-400 block text-[10px] uppercase font-mono">Active Topology</span>
             <strong className="text-cyan-300 font-mono text-xs block">
-              {networkStatus?.nodesCount || 69} Nodes / {networkStatus?.edgesCount || 108} Edges
+              {networkStatus?.nodesCount ?? 'Unknown'} Nodes / {networkStatus?.edgesCount ?? 'Unknown'} Edges
             </strong>
             <span className="text-[10px] text-slate-400 block">
-              8/8 Benchmark OD pairs reachable
+              {networkStatus?.lastSync
+                ? `${networkStatus.lastSync.roadsPreserved} roads preserved in last sync`
+                : 'No synchronization log available'}
             </span>
           </div>
 

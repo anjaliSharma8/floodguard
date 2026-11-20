@@ -482,6 +482,21 @@ export function recomputeRoadRisksFromTelemetry(
       referenceTimeMs: nowMs
     });
 
+    const riskSources = new Set<string>();
+    if (nearestObservation?.observedPast24hMm !== null && nearestObservation?.observedPast24hMm !== undefined) {
+      riskSources.add(nearestObservation.source);
+    }
+    if (road.baseElevationM !== null || road.slopePct !== null) {
+      riskSources.add('Road terrain attributes');
+    }
+    if (road.drainageCondition !== 'unknown') {
+      riskSources.add('Road drainage attributes');
+    }
+    riskSources.add(road.hasHistoricalFlood ? 'Historical flood record' : 'Road graph flood-history attribute');
+    if (activeRoadReports.length > 0) {
+      riskSources.add('Community reports');
+    }
+
     // Preserve explicit expert closure and verified hazard states.
     if (
       currentStatus !== 'CLOSED' &&
@@ -507,6 +522,14 @@ export function recomputeRoadRisksFromTelemetry(
       riskScore: risk.riskScore,
       riskCategory: risk.category,
       confidenceScore: risk.confidenceScore,
+      riskSources: [...riskSources],
+      riskExplanation: risk.explainability,
+      riskObservationTimestamp:
+        nearestObservation?.observedPast24hMm !== null &&
+        nearestObservation?.observedPast24hMm !== undefined
+          ? nearestObservation.timestamp
+          : undefined,
+      riskUpdatedAt: nowIso,
       status: currentStatus,
       statusReason,
       expiresAt,

@@ -22,7 +22,7 @@ interface CommunitySectionProps {
   roads?: RoadSegment[];
   routeFeedbacks: RouteFeedback[];
   lang: Language;
-  onAddReport: (report: Partial<CommunityReport>) => Promise<{ ok: boolean; error?: string }> | void;
+  onAddReport: (report: Partial<CommunityReport>) => Promise<{ ok: boolean; error?: string; queued?: boolean }> | void;
   onVotePoll: (pollId: string, option: string) => Promise<{ ok: boolean; error?: string }> | void;
 }
 
@@ -53,6 +53,7 @@ export const CommunitySection: React.FC<CommunitySectionProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [submitQueued, setSubmitQueued] = useState(false);
 
   // Poll feedback notice
   const [pollNotice, setPollNotice] = useState<{ type: 'error' | 'info'; message: string } | null>(null);
@@ -122,15 +123,24 @@ export const CommunitySection: React.FC<CommunitySectionProps> = ({
       return;
     }
 
-    setIsSubmitting(true);
     const matchedRoad = roads.find(r => r.id === selectedRoadId);
     const midpoint =
       matchedRoad && matchedRoad.coordinates.length > 0
         ? matchedRoad.coordinates[Math.floor(matchedRoad.coordinates.length / 2)]
         : null;
 
-    const lat = coords?.lat ?? midpoint?.[0] ?? 18.5204;
-    const lng = coords?.lng ?? midpoint?.[1] ?? 73.8567;
+    const reportCoordinates = coords
+      ? { lat: coords.lat, lng: coords.lng }
+      : midpoint
+      ? { lat: midpoint[0], lng: midpoint[1] }
+      : null;
+    if (!reportCoordinates) {
+      setFormError('Capture your location with GPS or select a mapped road before submitting.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const { lat, lng } = reportCoordinates;
 
     try {
       const res = await onAddReport({
@@ -152,16 +162,19 @@ export const CommunitySection: React.FC<CommunitySectionProps> = ({
 
       setIsSubmitting(false);
       setSubmitSuccess(true);
-      setTimeout(() => {
-        setSubmitSuccess(false);
-        setShowModal(false);
-        setLocationName('');
-        setSelectedRoadId('');
-        setCoords(null);
-        setDescription('');
-        setPhotoDataUrl(undefined);
-        setPhotoName('');
-      }, 1400);
+      setSubmitQueued(Boolean(res?.queued));
+      if (!res?.queued) {
+        setTimeout(() => {
+          setSubmitSuccess(false);
+          setShowModal(false);
+          setLocationName('');
+          setSelectedRoadId('');
+          setCoords(null);
+          setDescription('');
+          setPhotoDataUrl(undefined);
+          setPhotoName('');
+        }, 1400);
+      }
     } catch {
       setFormError('Network error while submitting report.');
       setIsSubmitting(false);
@@ -454,8 +467,33 @@ export const CommunitySection: React.FC<CommunitySectionProps> = ({
             </div>
 
             {submitSuccess ? (
-              <div className="p-4 bg-emerald-500/20 border border-emerald-500/40 rounded-xl text-emerald-300 text-xs font-semibold text-center">
-                Report persisted! The linked road is flagged for caution while awaiting Expert verification.
+              <div className={`p-4 rounded-xl text-xs font-semibold text-center ${
+                submitQueued
+                  ? 'bg-amber-500/15 border border-amber-500/40 text-amber-200'
+                  : 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+              }`}>
+                {submitQueued
+                  ? 'Report encrypted and saved on this device only. It has NOT been submitted or reviewed; it will be retried when you reconnect and sign in as the same user.'
+                  : 'Report persisted! The linked road is flagged for caution while awaiting Expert verification.'}
+                {submitQueued && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSubmitSuccess(false);
+                      setSubmitQueued(false);
+                      setShowModal(false);
+                      setLocationName('');
+                      setSelectedRoadId('');
+                      setCoords(null);
+                      setDescription('');
+                      setPhotoDataUrl(undefined);
+                      setPhotoName('');
+                    }}
+                    className="mt-3 block min-h-10 w-full rounded-lg border border-amber-400/40 px-3 py-2 text-white hover:bg-amber-500/15"
+                  >
+                    Close
+                  </button>
+                )}
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-3 text-xs">

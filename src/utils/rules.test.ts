@@ -7,11 +7,39 @@ import {
   calculateFloodRisk,
   calculateDijkstraRoute,
   calculateKShortestPaths,
+  createRouteSelection,
   snapCoordinateToRoadNetwork,
   calculatePollBreakdown,
-  GraphEdge
+  GraphEdge,
+  getRoadRiskLevel,
+  getRouteRiskCounts,
+  getOrderedRouteSegments,
+  getRouteGeometry
 } from './rules';
 import { RoadNode, RoadSegment } from '../types';
+
+test('road-risk classification keeps unknown risk and confirmed closures distinct', () => {
+  assert.equal(getRoadRiskLevel({ riskScore: null, status: 'OPEN' }), 'Unknown');
+  assert.equal(getRoadRiskLevel({ riskScore: 15, status: 'CLOSED' }), 'Closed');
+  assert.equal(getRoadRiskLevel({ riskScore: 10, status: 'REPORTED_WATERLOGGING' }), 'Moderate');
+  assert.equal(getRoadRiskLevel({ riskScore: 32, status: 'OPEN' }), 'Moderate');
+  assert.equal(getRoadRiskLevel({ riskScore: 60, status: 'OPEN' }), 'High');
+  assert.equal(getRoadRiskLevel({ riskScore: 85, status: 'VERIFIED_HAZARD' }), 'Severe');
+});
+
+test('route risk counts are based on each actual ordered road edge', () => {
+  const counts = getRouteRiskCounts({
+    edges: [
+      { riskScore: 10, status: 'OPEN' },
+      { riskScore: 30, status: 'OPEN' },
+      { riskScore: 60, status: 'OPEN' },
+      { riskScore: 90, status: 'VERIFIED_HAZARD' },
+      { riskScore: null, status: 'UNKNOWN' },
+      { riskScore: 100, status: 'CLOSED' }
+    ]
+  });
+  assert.deepEqual(counts, { moderate: 1, high: 1, severe: 1, unknown: 1, closed: 1 });
+});
 
 test('calculateRainfallFactor handles 0, intensity thresholds, and precautionary missing data', () => {
   assert.deepEqual(calculateRainfallFactor(0), { score: 0, available: true });
@@ -144,6 +172,71 @@ test('Directed routing compares shortest, fastest, and safest and generates Yen 
   // Yen's K-shortest generates distinct paths
   const kPaths = calculateKShortestPaths(nodes, edges, 'A', 'D', 'safest', 1.5, 3);
   assert.equal(kPaths.length, 3);
+});
+
+test('selected route geometry preserves edge order and reverses segments traversed backward', () => {
+  const route = {
+    nodeIds: ['A', 'B', 'C'],
+    nodes: [
+      { id: 'A', name: 'A', lat: 18.5, lng: 73.8, elevationM: 560 },
+      { id: 'B', name: 'B', lat: 18.51, lng: 73.81, elevationM: 560 },
+      { id: 'C', name: 'C', lat: 18.52, lng: 73.82, elevationM: 560 }
+    ],
+    edges: [
+      {
+        id: 'E1', from: 'A', to: 'B', name: 'First', distanceKm: 1, speedKmph: 30,
+        riskScore: 10, status: 'OPEN' as const, baseElevationM: 560,
+        coordinates: [[18.5, 73.8], [18.51, 73.81]] as [number, number][]
+      },
+      {
+        id: 'E2', from: 'C', to: 'B', name: 'Second', distanceKm: 1, speedKmph: 30,
+        riskScore: 10, status: 'OPEN' as const, baseElevationM: 560,
+        coordinates: [[18.52, 73.82], [18.51, 73.81]] as [number, number][]
+      }
+    ]
+  };
+
+  assert.deepEqual(getOrderedRouteSegments(route).map(segment => segment.edge.id), ['E1', 'E2']);
+  assert.deepEqual(getRouteGeometry(route), [
+    [18.5, 73.8],
+    [18.51, 73.81],
+    [18.52, 73.82]
+  ]);
+});
+
+test('selected route suppresses incomplete geometry without discarding route details', () => {
+  const nodes: Record<string, RoadNode> = {
+    A: { id: 'A', name: 'Start', lat: 18.5, lng: 73.8, elevationM: 560 },
+    B: { id: 'B', name: 'Destination', lat: 18.51, lng: 73.81, elevationM: 560 }
+  };
+  const edges: GraphEdge[] = [
+    {
+      id: 'E1',
+      from: 'A',
+      to: 'B',
+      name: 'Road with missing shape',
+      distanceKm: 1,
+      speedKmph: 30,
+      riskScore: 10,
+      status: 'OPEN',
+      baseElevationM: 560
+    }
+  ];
+  const route = calculateDijkstraRoute(nodes, edges, 'A', 'B', 'shortest');
+  const selection = createRouteSelection({
+    originNode: nodes.A,
+    targetNode: nodes.B,
+    lambdaRisk: 1.8,
+    safest: route,
+    fastest: route,
+    shortest: route,
+    alternatives: [route]
+  }, 'shortest');
+
+  assert.equal(selection.selectedRoute.feasible, true);
+  assert.equal(selection.selectedRoute.geometryAvailable, false);
+  assert.deepEqual(selection.selectedRoute.geometry, []);
+  assert.equal(selection.selectedRoute.totalDistanceKm, route.totalDistanceKm);
 });
 
 test('Routing excludes strictly CLOSED roads while keeping REPORTED_WATERLOGGING traversable with warning', () => {

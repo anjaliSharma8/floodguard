@@ -136,6 +136,10 @@ export interface RoadSegment {
   status: RoadStatus;
   coordinates: [number, number][]; // [lat, lng][] for Leaflet polyline
   geometrySource?: string;
+  riskSources?: string[];
+  riskExplanation?: string;
+  riskObservationTimestamp?: string;
+  riskUpdatedAt?: string;
   lastUpdated?: string;
   verifiedBy?: string;
   statusReason?: string;
@@ -171,9 +175,10 @@ export interface Hospital {
 export interface EmergencyFacility {
   id: string;
   name: string;
-  type: 'Disaster Control' | 'Fire & Rescue' | 'NDRF Post' | 'Animal Rescue' | 'Veterinary';
-  lat: number;
-  lng: number;
+  aliases?: string[];
+  type: string;
+  lat?: number;
+  lng?: number;
   contact: string;
   specialization: string;
   serviceHours: string;

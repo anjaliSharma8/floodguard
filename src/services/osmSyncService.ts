@@ -42,6 +42,7 @@ export interface GraphUpdateListener {
 
 // In-memory listeners for dynamic graph reloads without restarting process
 const graphListeners: GraphUpdateListener[] = [];
+const canonicalRoadsById = new Map(INITIAL_ROAD_SEGMENTS.map(road => [road.id, road]));
 let scheduledTimer: NodeJS.Timeout | null = null;
 let isSyncInProgress = false;
 
@@ -251,15 +252,12 @@ export async function executeOsmSynchronization(
       const dist = Math.round(haversineKm(fromNode.lat, fromNode.lng, toNode.lat, toNode.lng) * 1.14 * 100) / 100;
       const minElev = Math.min(fromNode.elevationM ?? 560, toNode.elevationM ?? 560);
 
-      // Generate articulated coordinates for polyline rendering
-      const coords: [number, number][] = [
-        [fromNode.lat, fromNode.lng],
-        [
-          Math.round(((fromNode.lat + toNode.lat) / 2 + 0.001) * 10000) / 10000,
-          Math.round(((fromNode.lng + toNode.lng) / 2 - 0.001) * 10000) / 10000
-        ],
-        [toNode.lat, toNode.lng]
-      ];
+      const canonicalRoad = canonicalRoadsById.get(match.matchedId);
+      const coords: [number, number][] = canonicalRoad &&
+        canonicalRoad.from === edgeDef.from &&
+        canonicalRoad.to === edgeDef.to
+        ? canonicalRoad.coordinates
+        : [];
 
       const segment: RoadSegment = {
         id: match.matchedId,
@@ -284,7 +282,9 @@ export async function executeOsmSynchronization(
         confidenceScore: 0.95,
         status: 'OPEN',
         coordinates: coords,
-        geometrySource: 'Bundled OSM-derived canonical alignment'
+        geometrySource: coords.length > 1
+          ? 'Bundled OSM road geometry'
+          : 'Geometry unavailable in bundled graph'
       };
 
       candidateSegments.push(segment);
@@ -460,10 +460,30 @@ export function startScheduledOsmSync(
   const latestSync = db.getLatestOsmSync();
   const now = Date.now();
   const lastSyncAgeMs = latestSync ? now - Date.parse(latestSync.createdAt) : Infinity;
+  const hasOutdatedCanonicalGeometry = db.getRoadSegments().some(road => {
+    const canonicalRoad = canonicalRoadsById.get(road.id);
+    if (!canonicalRoad) return false;
 
-  // Refresh locally if the last validation is missing or older than the interval.
-  if (lastSyncAgeMs >= intervalMs) {
-    console.log('[OsmSyncService] No recent graph validation found or validation expired. Refreshing the bundled graph...');
+    const expectedCoordinates =
+      road.from === canonicalRoad.from && road.to === canonicalRoad.to
+        ? canonicalRoad.coordinates
+        : road.from === canonicalRoad.to && road.to === canonicalRoad.from
+        ? [...canonicalRoad.coordinates].reverse()
+        : null;
+    return !expectedCoordinates ||
+      road.coordinates.length !== expectedCoordinates.length ||
+      road.coordinates.some(([lat, lng], index) =>
+        lat !== expectedCoordinates[index][0] || lng !== expectedCoordinates[index][1]
+      );
+  });
+
+  // Refresh for age or stale geometry so existing databases converge to canonical OSM shapes.
+  if (lastSyncAgeMs >= intervalMs || hasOutdatedCanonicalGeometry) {
+    console.log(
+      hasOutdatedCanonicalGeometry
+        ? '[OsmSyncService] Stored road geometry differs from the bundled OSM graph. Refreshing canonical geometry...'
+        : '[OsmSyncService] No recent graph validation found or validation expired. Refreshing the bundled graph...'
+    );
     executeOsmSynchronization(db, 'AUTOMATIC').catch(err => {
       console.warn('[OsmSyncService] Initial scheduled graph refresh failed:', err);
     });

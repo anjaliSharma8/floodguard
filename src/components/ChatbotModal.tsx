@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Language } from '../types';
+import { getAssistantErrorCategory, readAssistantResponse } from '../services/assistantStream';
 import { speakText, startSpeechRecognition, isSpeechRecognitionSupported } from '../utils/speech';
 import {
   Bot,
@@ -16,12 +17,15 @@ interface ChatMessage {
   text: string;
   timestamp: string;
   source?: string;
+  errorCategory?: string;
+  aiStatus?: 'available' | 'unavailable';
 }
 
 interface ChatbotModalProps {
   isOpen: boolean;
   onClose: () => void;
   lang: Language;
+  token?: string | null;
 }
 
 const SAMPLE_QUESTIONS = [
@@ -42,7 +46,7 @@ function getWelcomeText(lang: Language): string {
   return 'Hello! I am SanketSetu Emergency Assistant. Ask me about live Pune/PCMC road status, Open-Meteo rainfall telemetry, verified hazards, safe routes, or nearby shelters.';
 }
 
-export const ChatbotModal: React.FC<ChatbotModalProps> = ({ isOpen, onClose, lang }) => {
+export const ChatbotModal: React.FC<ChatbotModalProps> = ({ isOpen, onClose, lang, token }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
@@ -57,7 +61,9 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({ isOpen, onClose, lan
   const [loading, setLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
+  const [retryPrompt, setRetryPrompt] = useState<string | null>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const requestInFlightRef = useRef(false);
 
   useEffect(() => {
     setMessages(prev =>
@@ -71,50 +77,120 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({ isOpen, onClose, lan
 
   if (!isOpen) return null;
 
-  const sendMessage = async (textToSend: string) => {
+  const sendMessage = async (textToSend: string, retry = false) => {
     const text = textToSend.trim();
-    if (!text || loading) return;
+    if (!text || loading || requestInFlightRef.current) return;
+    requestInFlightRef.current = true;
 
+    const streamId = `bot_stream_${Date.now()}`;
     const userMsg: ChatMessage = {
       id: `usr_${Date.now()}`,
       sender: 'user',
       text,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
-
-    setMessages(prev => [...prev, userMsg]);
+    const pendingMsg: ChatMessage = {
+      id: streamId,
+      sender: 'bot',
+      text: '',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      source: 'Waiting for Gemini'
+    };
+    setMessages(prev => [...prev, ...(retry ? [] : [userMsg]), pendingMsg]);
+    if (!retry) setRetryPrompt(null);
     setInput('');
     setLoading(true);
+    let streamedText = '';
+    const endpoint = '/api/chatbot/message';
+    const startedAt = Date.now();
+    let response: Response | undefined;
+    let requestId: string | undefined;
 
     try {
-      const res = await fetch('/api/chatbot/message', {
+      const historyMessages = messages.filter(message => message.id !== 'welcome');
+      if (retry) {
+        let lastUserIndex = -1;
+        historyMessages.forEach((message, index) => {
+          if (message.sender === 'user') lastUserIndex = index;
+        });
+        if (lastUserIndex >= 0) historyMessages.splice(lastUserIndex);
+      }
+      const history = historyMessages
+        .slice(-20)
+        .map(message => ({
+          role: message.sender === 'user' ? 'user' : 'model',
+          text: message.text
+        }));
+      response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, lang })
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ message: text, lang, history, stream: true })
       });
-
-      if (!res.ok) throw new Error('API request failed');
-      const data = await res.json();
-
-      const botMsg: ChatMessage = {
-        id: `bot_${Date.now()}`,
-        sender: 'bot',
-        text: data.reply,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        source: data.source || 'SanketSetu Live Backend'
-      };
-
-      setMessages(prev => [...prev, botMsg]);
-    } catch {
-      const fallbackMsg: ChatMessage = {
-        id: `bot_err_${Date.now()}`,
-        sender: 'bot',
-        text: 'SanketSetu Offline Emergency Advisory: For immediate rescue in Pune call PMC Disaster Management (+91-20-25501269), PCMC Control (+91-20-67333333), Fire Brigade (101), Ambulance (108), or RESQ Animal Rescue (+91-9890999111).',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        source: 'Offline Emergency Cache'
-      };
-      setMessages(prev => [...prev, fallbackMsg]);
+      requestId = response.headers.get('x-request-id') || undefined;
+      const payload = await readAssistantResponse(
+        response,
+        delta => {
+          streamedText += delta;
+          setMessages(previous => previous.map(message =>
+            message.id === streamId ? { ...message, text: streamedText } : message
+          ));
+        },
+        () => {
+          streamedText = '';
+          setMessages(previous => previous.map(message =>
+            message.id === streamId ? { ...message, text: '' } : message
+          ));
+        }
+      );
+      requestId = payload.requestId || requestId;
+      setMessages(previous => previous.map(message =>
+        message.id === streamId
+          ? {
+              ...message,
+              text: payload.reply,
+              timestamp: payload.timestamp
+                ? new Date(payload.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : message.timestamp,
+              source: payload.source,
+              errorCategory: payload.errorCategory,
+              aiStatus: payload.aiStatus
+            }
+          : message
+      ));
+      setRetryPrompt(payload.aiStatus === 'unavailable' ? text : null);
+    } catch (error) {
+      const category = getAssistantErrorCategory(error);
+      const errorRequestId = error && typeof error === 'object' && 'requestId' in error &&
+        typeof error.requestId === 'string' ? error.requestId : requestId;
+      const errorName = error instanceof Error
+        ? error.name.replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 40)
+        : 'UnknownError';
+      console.warn('[SanketSetu] Assistant request failed.', {
+        requestId: errorRequestId,
+        endpoint,
+        status: response?.status ?? null,
+        durationMs: Date.now() - startedAt,
+        category,
+        errorName
+      });
+      setMessages(previous => previous.map(message =>
+        message.id === streamId
+          ? {
+              ...message,
+              text: 'The assistant could not complete its response. No partial answer is being treated as verified; retry when connected.',
+              source: 'No complete backend response',
+              errorCategory: category,
+              aiStatus: 'unavailable'
+            }
+          : message
+      ));
+      setRetryPrompt(text);
     } finally {
+      requestInFlightRef.current = false;
       setLoading(false);
     }
   };
@@ -155,7 +231,7 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({ isOpen, onClose, lan
               <h3 className="font-bold text-white text-sm flex items-center space-x-1.5">
                 <span>SanketSetu Emergency Assistant</span>
                 <span className="text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.5 rounded font-mono">
-                  Live Tool Grounded
+                  Backend-grounded
                 </span>
               </h3>
               <p className="text-[11px] text-slate-300">Queries live Pune/PCMC roads, weather, shelters & reports</p>
@@ -188,18 +264,33 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({ isOpen, onClose, lan
                 {msg.sender === 'bot' && (
                   <div className="mt-2 pt-1 border-t border-slate-700/60 flex items-center justify-between text-[10px] text-slate-400">
                     <span className="italic truncate pr-2">{msg.source}</span>
-                    <button
-                      onClick={() => speakText(msg.text, lang)}
-                      className="text-cyan-400 hover:text-cyan-300 flex items-center space-x-1 shrink-0 font-medium"
-                      title="Read aloud"
-                    >
-                      <Volume2 className="w-3.5 h-3.5" />
-                      <span>Listen</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {msg.errorCategory && <span className="text-amber-300">{msg.errorCategory}</span>}
+                      {msg.aiStatus !== 'unavailable' && (
+                        <button
+                          onClick={() => speakText(msg.text, lang)}
+                          className="text-cyan-400 hover:text-cyan-300 flex items-center space-x-1 shrink-0 font-medium"
+                          title="Read aloud"
+                        >
+                          <Volume2 className="w-3.5 h-3.5" />
+                          <span>Listen</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
               <span className="text-[10px] text-slate-500 mt-1 px-1">{msg.timestamp}</span>
+              {msg.errorCategory && retryPrompt && msg.id === messages[messages.length - 1]?.id && (
+                <button
+                  type="button"
+                  onClick={() => { void sendMessage(retryPrompt, true); }}
+                  className="mt-1 px-1 text-[10px] font-semibold text-cyan-300 underline"
+                  disabled={loading}
+                >
+                  Retry
+                </button>
+              )}
             </div>
           ))}
 

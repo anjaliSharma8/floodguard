@@ -5,11 +5,33 @@ import {
   calculateKShortestPaths,
   computeEdgeTravelTimeMinutes,
   computeEdgeRiskTimeMinutes,
+  createRouteSelection,
   edgeWeight,
-  GraphEdge
+  getOrderedRouteSegments,
+  getRouteGeometry,
+  GraphEdge,
+  RouteCalculationResult,
+  RouteMode
 } from '../utils/rules';
 import { RoadNode } from '../types';
 import { PUNE_ROAD_NODES, INITIAL_ROAD_SEGMENTS } from '../data/puneData';
+import { SanketSetuDatabase } from '../db/database';
+import { executeOsmSynchronization } from '../services/osmSyncService';
+
+const PUNE_GRAPH_EDGES: GraphEdge[] = INITIAL_ROAD_SEGMENTS.map(road => ({
+  id: road.id,
+  from: road.from,
+  to: road.to,
+  name: road.name,
+  distanceKm: road.distanceKm,
+  speedKmph: road.speedKmph,
+  riskScore: road.riskScore,
+  status: road.status,
+  baseElevationM: road.baseElevationM,
+  isOneWay: road.isOneWay,
+  accessRestriction: road.accessRestriction,
+  coordinates: road.coordinates
+}));
 
 test('SYNTHETIC GRAPH: Demonstrates Shortest -> Path A, Fastest -> Path B, Safest -> Path C', () => {
   const nodes: Record<string, RoadNode> = {
@@ -152,20 +174,7 @@ test('ROUTING CONSTRAINTS: Closed roads, one-way restrictions, disconnected node
 });
 
 test('REAL PUNE NETWORK: Verifies multiple OD pairs (Swargate-Shivajinagar, Kothrud-Aundh, Chandani Chowk)', () => {
-  const graphEdges: GraphEdge[] = INITIAL_ROAD_SEGMENTS.map(r => ({
-    id: r.id,
-    from: r.from,
-    to: r.to,
-    name: r.name,
-    distanceKm: r.distanceKm,
-    speedKmph: r.speedKmph,
-    riskScore: r.riskScore,
-    status: r.status,
-    baseElevationM: r.baseElevationM,
-    isOneWay: r.isOneWay,
-    accessRestriction: r.accessRestriction,
-    coordinates: r.coordinates
-  }));
+  const graphEdges = PUNE_GRAPH_EDGES;
 
   // Test 1: Shivajinagar -> Chandani Chowk
   const sSC = calculateDijkstraRoute(PUNE_ROAD_NODES, graphEdges, 'N_SHIVAJINAGAR', 'N_CHANDANI', 'shortest');
@@ -199,4 +208,169 @@ test('REAL PUNE NETWORK: Verifies multiple OD pairs (Swargate-Shivajinagar, Koth
   // Re-confirms that in this 46-segment topology, R01->R03 dominates the 12.3km detour R01->R08->R13 on all 3 metrics
   assert.equal(sSN.totalDistanceKm, 6.67);
   assert.equal(fSN.travelTimeMins, 11.4);
+});
+
+test('EXHAUSTIVE PUNE NETWORK: route geometry follows every feasible ordered OD pair and vehicle type', async t => {
+  const db = new SanketSetuDatabase(':memory:');
+  t.after(() => db.close());
+  const sync = await executeOsmSynchronization(db);
+  assert.equal(sync.success, true, sync.message);
+  const roadNodes = db.getRoadNodes();
+  const roadSegments = db.getRoadSegments();
+  const graphEdges: GraphEdge[] = roadSegments.map(road => ({
+    id: road.id,
+    from: road.from,
+    to: road.to,
+    name: road.name,
+    distanceKm: road.distanceKm,
+    speedKmph: road.speedKmph,
+    riskScore: road.riskScore,
+    status: road.status,
+    baseElevationM: road.baseElevationM,
+    isOneWay: road.isOneWay,
+    accessRestriction: road.accessRestriction,
+    coordinates: road.coordinates
+  }));
+
+  assert.equal(Object.keys(roadNodes).length, Object.keys(PUNE_ROAD_NODES).length);
+  assert.equal(roadSegments.length, INITIAL_ROAD_SEGMENTS.length);
+  for (const road of roadSegments) {
+    const sourceRoad = INITIAL_ROAD_SEGMENTS.find(candidate => candidate.id === road.id);
+    assert.ok(sourceRoad, `Synchronized road ${road.id} has no bundled source`);
+    assert.deepEqual(road.coordinates, sourceRoad.coordinates, `Synchronized geometry differs for ${road.id}`);
+  }
+
+  const nodeIds = Object.keys(roadNodes).sort();
+  const nodePairs = nodeIds.flatMap(originId =>
+    nodeIds.map(targetId => [originId, targetId] as const)
+  );
+  const modes: RouteMode[] = ['safest', 'fastest', 'shortest'];
+  const vehicleTypes = ['car', 'two_wheeler', 'heavy', 'emergency'] as const;
+  const feasiblePairsByVehicle: Record<(typeof vehicleTypes)[number], number> = {
+    car: 0,
+    two_wheeler: 0,
+    heavy: 0,
+    emergency: 0
+  };
+  let routeCalculations = 0;
+  let feasibleRouteCalculations = 0;
+
+  const independentlyBuildGeometry = (route: RouteCalculationResult): [number, number][] => {
+    const expected: [number, number][] = [];
+    for (let index = 0; index < route.edges.length; index += 1) {
+      const edge = route.edges[index];
+      const fromNodeId = route.nodeIds[index];
+      const toNodeId = route.nodeIds[index + 1];
+      const forward = edge.from === fromNodeId && edge.to === toNodeId;
+      const reverse = edge.to === fromNodeId && edge.from === toNodeId;
+      assert.ok(forward || (reverse && !edge.isOneWay), `Edge ${edge.id} does not match route node order`);
+      assert.ok(edge.coordinates && edge.coordinates.length >= 2, `Edge ${edge.id} is missing usable geometry`);
+
+      const segment = forward
+        ? [...edge.coordinates]
+        : [...edge.coordinates].reverse();
+      const fromNode = route.nodes[index];
+      const toNode = route.nodes[index + 1];
+      assert.ok(fromNode && toNode, `Route node geometry is missing for edge ${edge.id}`);
+      segment[0] = [fromNode.lat, fromNode.lng];
+      segment[segment.length - 1] = [toNode.lat, toNode.lng];
+
+      for (const coordinate of segment) {
+        const previous = expected[expected.length - 1];
+        if (!previous || previous[0] !== coordinate[0] || previous[1] !== coordinate[1]) {
+          expected.push(coordinate);
+        }
+      }
+    }
+    return expected;
+  };
+
+  for (const vehicleType of vehicleTypes) {
+    for (const [originId, targetId] of nodePairs) {
+      const results: Record<RouteMode, RouteCalculationResult> = {
+        safest: calculateDijkstraRoute(
+          roadNodes, graphEdges, originId, targetId, 'safest', 1.8, new Set(), new Set(), vehicleType
+        ),
+        fastest: calculateDijkstraRoute(
+          roadNodes, graphEdges, originId, targetId, 'fastest', 1.8, new Set(), new Set(), vehicleType
+        ),
+        shortest: calculateDijkstraRoute(
+          roadNodes, graphEdges, originId, targetId, 'shortest', 1.8, new Set(), new Set(), vehicleType
+        )
+      };
+      routeCalculations += modes.length;
+
+      assert.equal(
+        new Set(modes.map(mode => results[mode].feasible)).size,
+        1,
+        `Reachability differs by objective for ${originId} -> ${targetId} (${vehicleType})`
+      );
+
+      const bundle = {
+        originNode: roadNodes[originId],
+        targetNode: roadNodes[targetId],
+        lambdaRisk: 1.8,
+        safest: results.safest,
+        fastest: results.fastest,
+        shortest: results.shortest,
+        alternatives: [results.safest]
+      };
+
+      if (results.safest.feasible) {
+        feasiblePairsByVehicle[vehicleType] += 1;
+      }
+
+      for (const mode of modes) {
+        const route = results[mode];
+        const selected = createRouteSelection(bundle, mode).selectedRoute;
+        feasibleRouteCalculations += Number(route.feasible);
+        assert.deepEqual(selected.edges.map(edge => edge.id), route.edges.map(edge => edge.id));
+        assert.equal(selected.totalDistanceKm, route.totalDistanceKm);
+        assert.equal(selected.travelTimeMins, route.travelTimeMins);
+
+        if (!route.feasible) {
+          assert.deepEqual(selected.geometry, [], `Blocked route drew geometry for ${originId} -> ${targetId}`);
+          continue;
+        }
+
+        if (originId === targetId) {
+          assert.deepEqual(route.nodeIds, [originId]);
+          assert.deepEqual(route.edges, []);
+          assert.deepEqual(selected.geometry, []);
+          assert.equal(selected.geometryAvailable, true);
+          continue;
+        }
+
+        assert.equal(route.nodeIds[0], originId);
+        assert.equal(route.nodeIds[route.nodeIds.length - 1], targetId);
+        assert.equal(route.edges.length, route.nodeIds.length - 1);
+        assert.equal(route.nodes.length, route.nodeIds.length);
+
+        const expectedGeometry = independentlyBuildGeometry(route);
+        const geometry = getRouteGeometry(route);
+        assert.deepEqual(geometry, expectedGeometry, `${mode} geometry edge order mismatch for ${originId} -> ${targetId} (${vehicleType})`);
+        assert.equal(selected.geometryAvailable, true);
+        assert.ok(geometry.length >= 2, `Feasible route has no geometry for ${originId} -> ${targetId}`);
+        assert.deepEqual(geometry[0], [roadNodes[originId].lat, roadNodes[originId].lng]);
+        assert.deepEqual(
+          geometry[geometry.length - 1],
+          [roadNodes[targetId].lat, roadNodes[targetId].lng]
+        );
+        for (const [lat, lng] of geometry) {
+          assert.ok(lat >= 18 && lat <= 19 && lng >= 73 && lng <= 74, `Invalid [lat, lng] order at ${lat}, ${lng}`);
+        }
+      }
+    }
+  }
+
+  console.log('[route-geometry-audit]', JSON.stringify({
+    nodes: nodeIds.length,
+    orderedOriginDestinationPairsIncludingSameNode: nodePairs.length,
+    vehicleTypes: vehicleTypes.length,
+    pairVehicleCombinations: nodePairs.length * vehicleTypes.length,
+    feasiblePairsByVehicle,
+    routeCalculations,
+    feasibleRouteCalculations,
+    geometryFailures: 0
+  }));
 });

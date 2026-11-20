@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS community_reports (
     review_notes TEXT,
     reviewed_at TEXT,
     resolved_at TEXT,
+    client_request_id TEXT,
     created_at TEXT NOT NULL
 );
 

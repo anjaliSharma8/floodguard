@@ -438,7 +438,17 @@ export const INITIAL_HOSPITALS: Hospital[] = [
 export const INITIAL_EMERGENCY_FACILITIES: EmergencyFacility[] = [
   {
     id: 'EM_01',
-    name: 'PMC Disaster Management Control Room',
+    name: 'PMC Disaster Control',
+    aliases: [
+      'PMC Disaster Management Control Room',
+      'Pune Municipal Corporation Disaster Control',
+      'PMC',
+      'Disaster control',
+      'Control room',
+      'पीएमसी आपत्ती नियंत्रण',
+      'पुणे आपत्ती नियंत्रण कक्ष',
+      'पीएमसी आपदा नियंत्रण'
+    ],
     type: 'Disaster Control',
     lat: 18.5308,
     lng: 73.8553,
@@ -448,7 +458,17 @@ export const INITIAL_EMERGENCY_FACILITIES: EmergencyFacility[] = [
   },
   {
     id: 'EM_02',
-    name: 'Central Fire Brigade HQ (Bhavani Peth)',
+    name: 'Central Fire & Water Rescue',
+    aliases: [
+      'Central Fire Brigade HQ',
+      'Fire brigade',
+      'Fire and rescue',
+      'Fire and water rescue',
+      'Fire rescue',
+      'अग्निशमन दल',
+      'अग्निशमन',
+      'आग आणि बचाव'
+    ],
     type: 'Fire & Rescue',
     lat: 18.5110,
     lng: 73.8640,
@@ -459,6 +479,12 @@ export const INITIAL_EMERGENCY_FACILITIES: EmergencyFacility[] = [
   {
     id: 'EM_03',
     name: 'NDRF 5th Battalion (Talegaon Post)',
+    aliases: [
+      'NDRF',
+      'NDRF 5th Battalion',
+      'एनडीआरएफ',
+      'एनडीआरएफ पाचवी बटालियन'
+    ],
     type: 'NDRF Post',
     lat: 18.7200,
     lng: 73.6800,
@@ -468,7 +494,16 @@ export const INITIAL_EMERGENCY_FACILITIES: EmergencyFacility[] = [
   },
   {
     id: 'EM_04',
-    name: 'RESQ Charitable Trust Animal Rescue Center',
+    name: 'RESQ Animal Flood Rescue',
+    aliases: [
+      'RESQ Charitable Trust Animal Rescue Center',
+      'RESQ',
+      'Animal rescue',
+      'Animal rescue centre',
+      'पशु बचाव',
+      'प्राणी बचाव',
+      'जनावरांची मदत'
+    ],
     type: 'Animal Rescue',
     lat: 18.5280,
     lng: 73.7480,
@@ -477,8 +512,45 @@ export const INITIAL_EMERGENCY_FACILITIES: EmergencyFacility[] = [
     serviceHours: '24x7'
   },
   {
+    id: 'EM_07',
+    name: 'Emergency Ambulance',
+    aliases: [
+      'Ambulance',
+      '108',
+      'एम्बुलेंस',
+      'रुग्णवाहिका',
+      'अॅम्ब्युलन्स'
+    ],
+    type: 'Ambulance',
+    contact: '108 (Toll Free)',
+    specialization: 'Emergency ambulance helpline',
+    serviceHours: '24x7'
+  },
+  {
+    id: 'EM_08',
+    name: 'PCMC Control Room',
+    aliases: [
+      'PCMC Disaster Control',
+      'PCMC',
+      'Pimpri Chinchwad Municipal Corporation Control Room',
+      'Control room',
+      'पीसीएमसी नियंत्रण कक्ष',
+      'पिंपरी चिंचवड नियंत्रण कक्ष'
+    ],
+    type: 'Disaster Control',
+    contact: '+91-20-67333333',
+    specialization: 'Pimpri, Chinchwad, Bhosari',
+    serviceHours: '24x7'
+  },
+  {
     id: 'EM_05',
     name: 'SPCA Pune & Veterinary Clinic',
+    aliases: [
+      'SPCA',
+      'Veterinary clinic',
+      'पशु चिकित्सालय',
+      'पशुवैद्यकीय दवाखाना'
+    ],
     type: 'Veterinary',
     lat: 18.5080,
     lng: 73.8520,
@@ -489,6 +561,12 @@ export const INITIAL_EMERGENCY_FACILITIES: EmergencyFacility[] = [
   {
     id: 'EM_06',
     name: 'Bodhisattva Animal Rescue Clinic (Kothrud)',
+    aliases: [
+      'Bodhisattva Animal Rescue',
+      'Animal rescue',
+      'बोधिसत्व पशु बचाव',
+      'बोधिसत्त्व प्राणी बचाव'
+    ],
     type: 'Animal Rescue',
     lat: 18.5040,
     lng: 73.7990,

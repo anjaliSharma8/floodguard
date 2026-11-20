@@ -1,1 +1,40 @@
 @import "tailwindcss";
+
+.gps-location-marker {
+  position: relative;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 3px solid #fff;
+  border-radius: 9999px;
+  background: #2563eb;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 45%);
+}
+
+.gps-location-marker > span {
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+  background: #fff;
+}
+
+.gps-marker-pulse::after {
+  position: absolute;
+  inset: -7px;
+  border: 2px solid rgb(37 99 235 / 65%);
+  border-radius: 9999px;
+  content: "";
+  animation: gps-location-pulse 1.8s ease-out infinite;
+}
+
+@keyframes gps-location-pulse {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+}

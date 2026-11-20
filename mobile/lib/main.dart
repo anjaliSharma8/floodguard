@@ -14,6 +14,7 @@ import 'screens/safe_route_planner.dart';
 import 'screens/saved_information_screen.dart';
 import 'services/api_service.dart';
 import 'services/app_storage.dart';
+import 'package:material_ui/material_ui.dart';
 
 void main() {
   runApp(const SankatSetuApp());

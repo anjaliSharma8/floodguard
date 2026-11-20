@@ -221,6 +221,10 @@ test('ROAD ENRICHMENT: Recomputes road segment risk scores and assigns nearest t
     `Deluge risk (${delugeR01.riskScore}) on R01 must exceed dry risk (${dryR01.riskScore})`
   );
   assert.equal(delugeR01.confidenceScore, 1.0, 'Full telemetry gives 1.0 confidence');
+  assert.ok(dryR01.riskSources?.includes('Open-Meteo Test Mock'));
+  assert.ok(dryR01.riskExplanation?.includes('Rule-based score'));
+  assert.equal(dryR01.riskObservationTimestamp, dryStation[0].timestamp);
+  assert.ok(dryR01.riskUpdatedAt);
 });
 
 test('HONEST FAILURE MODES: Unavailable feed marks stations as unavailable and never fabricates values', () => {

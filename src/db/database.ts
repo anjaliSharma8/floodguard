@@ -74,6 +74,27 @@ export class SanketSetuDatabase {
         .prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
         .run(2, 'v2_osm_road_nodes_and_sync_log', new Date().toISOString());
     }
+
+    const reportColumns = this.db
+      .prepare('PRAGMA table_info(community_reports)')
+      .all() as Array<{ name: string }>;
+    if (!reportColumns.some(column => column.name === 'client_request_id')) {
+      this.db.exec('ALTER TABLE community_reports ADD COLUMN client_request_id TEXT');
+    }
+    this.db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_community_reports_client_request
+      ON community_reports(user_id, client_request_id)
+      WHERE client_request_id IS NOT NULL
+    `);
+
+    const existingV3 = this.db
+      .prepare('SELECT version FROM schema_migrations WHERE version = 3')
+      .get();
+    if (!existingV3) {
+      this.db
+        .prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
+        .run(3, 'v3_offline_report_idempotency', new Date().toISOString());
+    }
   }
 
   private seedInitialData(): void {
@@ -860,14 +881,22 @@ export class SanketSetuDatabase {
     }));
   }
 
-  public createReport(rep: CommunityReport): void {
+  public getReportByClientRequestId(userId: string, clientRequestId: string): CommunityReport | null {
+    const row = this.db
+      .prepare('SELECT report_id FROM community_reports WHERE user_id = ? AND client_request_id = ?')
+      .get(userId, clientRequestId) as { report_id: string } | undefined;
+    if (!row) return null;
+    return this.getReports().find(report => report.id === row.report_id) ?? null;
+  }
+
+  public createReport(rep: CommunityReport, clientRequestId?: string): void {
     this.db
       .prepare(`
         INSERT INTO community_reports (
           report_id, user_id, user_name, road_id, location_name, latitude, longitude,
           report_type, description, severity, image_url, verification_status,
-          confidence_score, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          confidence_score, client_request_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         rep.id,
@@ -883,6 +912,7 @@ export class SanketSetuDatabase {
         rep.imageUrl ?? null,
         rep.verificationStatus,
         rep.confidenceScore,
+        clientRequestId ?? null,
         rep.timestamp
       );
   }

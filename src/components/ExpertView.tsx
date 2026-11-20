@@ -32,7 +32,9 @@ import {
   Lock,
   Unlock,
   UserCheck,
-  Search
+  Search,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 
 interface ExpertViewProps {
@@ -65,6 +67,10 @@ interface ExpertViewProps {
   selectedRoad: RoadSegment | null;
   onSelectRoad: (road: RoadSegment) => void;
   onRefreshAuditLogs?: () => void;
+  deviceOnline: boolean;
+  backendAvailable: boolean | null;
+  lastLiveDataUpdate: string | null;
+  onOpenOfflineGuide: () => void;
 }
 
 const ROAD_STATUS_BADGE: Record<RoadStatus, string> = {
@@ -92,7 +98,11 @@ export const ExpertView: React.FC<ExpertViewProps> = ({
   onVerifyReport,
   selectedRoad,
   onSelectRoad,
-  onRefreshAuditLogs
+  onRefreshAuditLogs,
+  deviceOnline,
+  backendAvailable,
+  lastLiveDataUpdate,
+  onOpenOfflineGuide
 }) => {
   const [activeTab, setActiveTab] = useState<
     'overview' | 'map' | 'incidents' | 'simulator' | 'analytics' | 'datasets' | 'audit' | 'approvals'
@@ -320,6 +330,23 @@ export const ExpertView: React.FC<ExpertViewProps> = ({
 
             {/* Right User Bar */}
             <div className="flex items-center space-x-2 shrink-0">
+              <button
+                type="button"
+                onClick={onOpenOfflineGuide}
+                aria-label="Open connectivity and offline data details"
+                title={!deviceOnline ? 'Device is offline' : backendAvailable === false ? 'Backend unavailable' : 'Connectivity details'}
+                className={`min-h-10 rounded-lg border p-2 ${
+                  !deviceOnline || backendAvailable === false
+                    ? 'border-red-500/40 bg-red-500/10 text-red-300'
+                    : backendAvailable === true
+                    ? 'border-slate-700 bg-slate-800 text-emerald-300'
+                    : 'border-slate-700 bg-slate-800 text-blue-300'
+                }`}
+              >
+                {!deviceOnline || backendAvailable === false
+                  ? <WifiOff className="h-4 w-4" />
+                  : <Wifi className="h-4 w-4" />}
+              </button>
               <div className="text-right hidden md:block">
                 <span className="text-xs font-bold text-white block whitespace-nowrap">{user.fullName}</span>
                 <span className="text-[10px] text-indigo-300 font-mono whitespace-nowrap">EXPERT Clearance</span>
@@ -352,6 +379,16 @@ export const ExpertView: React.FC<ExpertViewProps> = ({
 
       {/* Main Expert Body */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        {(!deviceOnline || backendAvailable === false) && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-950/50 px-4 py-3 text-xs text-amber-100" role="status">
+            {deviceOnline
+              ? 'SanketSetu backend is unavailable. Expert actions cannot be persisted until connectivity is restored.'
+              : 'Device network is offline. Displayed operational data may be stale; expert changes will not be sent.'}
+            <button type="button" onClick={onOpenOfflineGuide} className="ml-3 min-h-9 rounded-lg border border-amber-300/40 px-3 py-1.5 font-semibold text-white">
+              Offline details
+            </button>
+          </div>
+        )}
         {/* VIEW 1: OPERATIONS OVERVIEW */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
@@ -847,6 +884,9 @@ export const ExpertView: React.FC<ExpertViewProps> = ({
             rainfallFeed={rainfallFeed}
             user={user}
             token={token}
+            deviceOnline={deviceOnline}
+            backendAvailable={backendAvailable}
+            lastLiveDataUpdate={lastLiveDataUpdate}
             onRefreshData={onRefreshAuditLogs}
           />
         )}

@@ -11,6 +11,7 @@ import {
   Flame,
   LifeBuoy
 } from 'lucide-react';
+import { getEmergencyDialNumbers } from '../utils/emergencyContacts';
 
 interface EmergencyResourcesProps {
   shelters: Shelter[];
@@ -45,103 +46,58 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
           </div>
           <div>
             <h2 className="text-base font-bold text-white tracking-wide">{t.emergencySOS}</h2>
-            <p className="text-xs text-slate-400">Pune & PCMC Verified Helplines, Animal Rescue & Accessible Evacuation Support</p>
+            <p className="text-xs text-slate-400">Pune & PCMC emergency contacts, animal rescue & accessible evacuation support</p>
           </div>
         </div>
         <span className="text-xs bg-red-600 text-white font-bold px-3 py-1 rounded-full self-start">
-          24x7 Dispatch Directory
+          Emergency Directory
         </span>
       </div>
 
-      {/* FAST DIAL SOS CARDS */}
+      {/* EMERGENCY DIRECTORY */}
       <div>
         <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2.5">
           Official Emergency Direct Helplines (Pune & PCMC)
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-          <a
-            href="tel:+912025501269"
-            className="p-3 bg-red-950/40 hover:bg-red-900/50 border border-red-800/80 rounded-xl flex items-center space-x-3 transition-all group"
-          >
-            <div className="p-2.5 bg-red-600 rounded-lg text-white group-hover:scale-105 transition-transform">
-              <PhoneCall className="w-5 h-5" />
-            </div>
-            <div className="truncate">
-              <span className="text-xs font-bold text-white block">PMC Disaster Control</span>
-              <span className="text-xs text-red-300 font-mono font-bold">+91-20-25501269</span>
-              <span className="text-[10px] text-slate-400 block">Floods & Evacuations</span>
-            </div>
-          </a>
-
-          <a
-            href="tel:101"
-            className="p-3 bg-amber-950/40 hover:bg-amber-900/50 border border-amber-800/80 rounded-xl flex items-center space-x-3 transition-all group"
-          >
-            <div className="p-2.5 bg-amber-600 rounded-lg text-white group-hover:scale-105 transition-transform">
-              <Flame className="w-5 h-5" />
-            </div>
-            <div className="truncate">
-              <span className="text-xs font-bold text-white block">Central Fire & Water Rescue</span>
-              <span className="text-xs text-amber-300 font-mono font-bold">101 / 020-26451707</span>
-              <span className="text-[10px] text-slate-400 block">Boat Dispatch & Tree Fall</span>
-            </div>
-          </a>
-
-          <a
-            href="tel:108"
-            className="p-3 bg-blue-950/40 hover:bg-blue-900/50 border border-blue-800/80 rounded-xl flex items-center space-x-3 transition-all group"
-          >
-            <div className="p-2.5 bg-blue-600 rounded-lg text-white group-hover:scale-105 transition-transform">
-              <Cross className="w-5 h-5" />
-            </div>
-            <div className="truncate">
-              <span className="text-xs font-bold text-white block">Emergency Ambulance</span>
-              <span className="text-xs text-cyan-300 font-mono font-bold">108 (Toll Free)</span>
-              <span className="text-[10px] text-slate-400 block">Trauma & Cardiac Care</span>
-            </div>
-          </a>
-
-          <a
-            href="tel:+919890999111"
-            className="p-3 bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-800/80 rounded-xl flex items-center space-x-3 transition-all group"
-          >
-            <div className="p-2.5 bg-emerald-600 rounded-lg text-white group-hover:scale-105 transition-transform">
-              <PawPrint className="w-5 h-5" />
-            </div>
-            <div className="truncate">
-              <span className="text-xs font-bold text-white block">RESQ Animal Flood Rescue</span>
-              <span className="text-xs text-emerald-300 font-mono font-bold">+91-9890999111</span>
-              <span className="text-[10px] text-slate-400 block">Wildlife, Pets & Cattle 24x7</span>
-            </div>
-          </a>
-
-          <a
-            href="tel:1070"
-            className="p-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl flex items-center space-x-3 transition-all group"
-          >
-            <div className="p-2.5 bg-slate-700 rounded-lg text-cyan-400 group-hover:scale-105 transition-transform">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div className="truncate">
-              <span className="text-xs font-bold text-white block">NDRF 5th Battalion</span>
-              <span className="text-xs text-cyan-300 font-mono font-bold">1070 / 020-24328888</span>
-              <span className="text-[10px] text-slate-400 block">Deep Submerged Evacuations</span>
-            </div>
-          </a>
-
-          <a
-            href="tel:+912067333333"
-            className="p-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl flex items-center space-x-3 transition-all group"
-          >
-            <div className="p-2.5 bg-slate-700 rounded-lg text-cyan-400 group-hover:scale-105 transition-transform">
-              <PhoneCall className="w-5 h-5" />
-            </div>
-            <div className="truncate">
-              <span className="text-xs font-bold text-white block">PCMC Control Room</span>
-              <span className="text-xs text-cyan-300 font-mono font-bold">+91-20-67333333</span>
-              <span className="text-[10px] text-slate-400 block">Pimpri, Chinchwad, Bhosari</span>
-            </div>
-          </a>
+          {emergencyFacilities.map(facility => {
+            const dialNumbers = getEmergencyDialNumbers(facility.contact);
+            const isAnimal = facility.type === 'Animal Rescue' || facility.type === 'Veterinary';
+            const icon = isAnimal
+              ? <PawPrint className="w-5 h-5" />
+              : facility.type === 'Fire & Rescue'
+              ? <Flame className="w-5 h-5" />
+              : facility.type === 'Ambulance'
+              ? <Cross className="w-5 h-5" />
+              : facility.type === 'NDRF Post'
+              ? <ShieldCheck className="w-5 h-5" />
+              : <PhoneCall className="w-5 h-5" />;
+            return (
+              <div key={facility.id} className="p-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl flex items-start space-x-3 transition-all">
+                <div className="p-2.5 bg-red-700 rounded-lg text-white shrink-0">{icon}</div>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-white block">{facility.name}</span>
+                  <span className="text-[10px] text-slate-400 block">{facility.specialization}</span>
+                  <span className="text-[10px] text-slate-400 block">{facility.serviceHours}</span>
+                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                    {dialNumbers.map(number => (
+                      <a
+                        key={number}
+                        href={`tel:${number}`}
+                        aria-label={`Call ${facility.name} at ${number}`}
+                        className="text-xs text-cyan-300 font-mono font-bold underline underline-offset-2"
+                      >
+                        {number}
+                      </a>
+                    ))}
+                    {dialNumbers.length === 0 && (
+                      <span className="text-xs text-slate-400">{facility.contact}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -257,28 +213,6 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
           })}
         </div>
       </div>
-
-      {/* SPECIALIZED RESCUE FACILITIES */}
-      {emergencyFacilities.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Command Posts & Specialized Rescue Units</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {emergencyFacilities.map(fac => (
-              <div key={fac.id} className="bg-slate-800/60 border border-slate-700 rounded-xl p-3 text-xs space-y-1">
-                <h4 className="font-bold text-white truncate">{fac.name}</h4>
-                <p className="text-[11px] text-cyan-300">{fac.type}</p>
-                <p className="text-[11px] text-slate-400">{fac.specialization}</p>
-                <div className="pt-1 border-t border-slate-700/60 flex justify-between items-center text-[11px]">
-                  <span className="text-slate-400">{fac.serviceHours}</span>
-                  <a href={`tel:${fac.contact}`} className="text-cyan-400 font-mono font-bold">
-                    {fac.contact}
-                  </a>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* EMERGENCY HOSPITALS */}
       <div className="space-y-3">
