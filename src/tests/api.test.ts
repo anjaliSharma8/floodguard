@@ -7,6 +7,9 @@ import fs from 'node:fs';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createSanketSetuApp } from '../../server';
+import { hashPassword } from '../utils/auth';
+import { SanketSetuDatabase } from '../db/database';
+import type { CommunityReport } from '../types';
 
 function makeTmpDbPath(name: string): string {
   const dir = fs.mkdtempSync(join(os.tmpdir(), 'sanketsetu-test-'));
@@ -15,7 +18,7 @@ function makeTmpDbPath(name: string): string {
 
 async function withServer(
   dbPath: string,
-  fn: (baseUrl: string) => Promise<void>
+  fn: (baseUrl: string, db: SanketSetuDatabase) => Promise<void>
 ): Promise<void> {
   const { app, db } = createSanketSetuApp(dbPath);
   const server = app.listen(0, '127.0.0.1');
@@ -23,7 +26,7 @@ async function withServer(
   const port = (server.address() as AddressInfo).port;
   const baseUrl = `http://127.0.0.1:${port}`;
   try {
-    await fn(baseUrl);
+    await fn(baseUrl, db);
   } finally {
     server.closeAllConnections?.();
     await new Promise<void>(resolve => server.close(() => resolve()));
@@ -31,7 +34,89 @@ async function withServer(
   }
 }
 
-test('API enforces strictly two roles, blocks pending experts until peer-approved, and persists across DB reopen', async () => {
+function createTestAuthority(db: SanketSetuDatabase, authorityId = 'AUTH_TEST_A'): void {
+  const now = new Date().toISOString();
+  db.db.prepare(`
+    INSERT INTO authorities (id, name, authority_type, region, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?)
+  `).run(authorityId, 'Test Flood Authority', 'GOVERNMENT', 'Pune', now, now);
+  db.createUser({
+    id: `ADMIN_${authorityId}`,
+    fullName: 'Test Authority Admin',
+    email: `admin.${authorityId.toLowerCase()}@gov.in`,
+    passwordHash: hashPassword('Authority@12345'),
+    role: 'AUTHORITY_ADMIN',
+    accountStatus: 'ACTIVE',
+    createdAt: now
+  });
+  db.db.prepare(`
+    INSERT INTO authority_memberships
+      (id, authority_id, user_id, membership_role, status, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, 'AUTHORITY_ADMIN', 'ACTIVE', ?, ?, ?)
+  `).run(`MEM_ADMIN_${authorityId}`, authorityId, `ADMIN_${authorityId}`, `ADMIN_${authorityId}`, now, now);
+  db.db.prepare('UPDATE road_segments SET authority_id = ? WHERE authority_id IS NULL').run(authorityId);
+  db.db.prepare('UPDATE shelters SET authority_id = ? WHERE authority_id IS NULL').run(authorityId);
+}
+
+function attachDemoExpert(db: SanketSetuDatabase, authorityId = 'AUTH_TEST_OPS'): void {
+  if (!db.db.prepare('SELECT id FROM authorities WHERE id = ?').get(authorityId)) {
+    const now = new Date().toISOString();
+    db.db.prepare(`
+      INSERT INTO authorities (id, name, authority_type, region, status, created_at, updated_at)
+      VALUES (?, 'Operations Test Authority', 'GOVERNMENT', 'Pune', 'ACTIVE', ?, ?)
+    `).run(authorityId, now, now);
+  }
+  const now = new Date().toISOString();
+  const memberId = `MEM_EXPERT_${authorityId}`;
+  db.db.prepare(`
+    INSERT INTO authority_memberships
+      (id, authority_id, user_id, membership_role, status, created_by, created_at, updated_at)
+    VALUES (?, ?, 'USR_EXPERT_01', 'EXPERT', 'ACTIVE', 'USR_EXPERT_01', ?, ?)
+  `).run(memberId, authorityId, now, now);
+  for (const permission of ['ROAD_STATUS_UPDATE', 'REPORTS_VERIFY', 'HAZARD_VERIFY', 'SHELTER_MANAGE']) {
+    db.db.prepare(`
+      INSERT INTO authority_permissions (id, membership_id, permission, assigned_by, created_at)
+      VALUES (?, ?, ?, 'USR_EXPERT_01', ?)
+    `).run(`PERM_${authorityId}_${permission}`, memberId, permission, now);
+  }
+  db.db.prepare('UPDATE road_segments SET authority_id = ? WHERE authority_id IS NULL').run(authorityId);
+  db.db.prepare('UPDATE shelters SET authority_id = ? WHERE authority_id IS NULL').run(authorityId);
+}
+
+function insertTestReport(
+  db: SanketSetuDatabase,
+  id: string,
+  roadId: string | null,
+  verificationStatus: CommunityReport['verificationStatus'] = 'Reported'
+): void {
+  db.createReport({
+    id,
+    userId: 'USR_CITIZEN_01',
+    userName: 'Test Citizen',
+    roadId: roadId ?? undefined,
+    locationName: `Test location ${id}`,
+    lat: 18.52,
+    lng: 73.85,
+    reportType: 'Waterlogging',
+    description: 'Test report for lifecycle coverage',
+    severity: 'High',
+    timestamp: new Date().toISOString(),
+    verificationStatus,
+    confidenceScore: 0.65
+  });
+}
+
+async function getExpertToken(baseUrl: string): Promise<string> {
+  const response = await fetch(`${baseUrl}/api/auth/dev-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account: 'expert' })
+  });
+  assert.equal(response.status, 200);
+  return (await response.json()).token as string;
+}
+
+test('Citizen and Expert auth persist; only Authority Admins can approve scoped Expert applications', async () => {
   const dbPath = makeTmpDbPath('auth-persist');
   let pendingAppId = '';
   let citizenToken = '';
@@ -39,12 +124,13 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
   const pendingEmail = `ndrf.tester.${Date.now()}@ndrf.gov.in`;
   const citizenEmail = `cit.tester.${Date.now()}@pune.in`;
 
-  await withServer(dbPath, async baseUrl => {
-    // 1. Health endpoint reports strict 2 roles
+  await withServer(dbPath, async (baseUrl, db) => {
+    createTestAuthority(db);
+    // 1. Health endpoint reports the supported global roles
     const healthRes = await fetch(`${baseUrl}/api/health`);
     assert.equal(healthRes.status, 200);
     const health = await healthRes.json();
-    assert.deepEqual(health.rolesSupported, ['CITIZEN', 'EXPERT']);
+    assert.deepEqual(health.rolesSupported, ['CITIZEN', 'AUTHORITY_ADMIN', 'EXPERT']);
 
     // 2. Register citizen
     const regCit = await fetch(`${baseUrl}/api/auth/citizen/register`, {
@@ -53,13 +139,20 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
       body: JSON.stringify({
         fullName: 'Asha Patil',
         email: citizenEmail,
-        password: 'Password@123'
+        password: 'Password@123',
+        role: 'AUTHORITY_ADMIN'
       })
     });
     assert.equal(regCit.status, 201);
     const citData = await regCit.json();
     citizenToken = citData.token;
-    assert.equal(citData.user.role, 'CITIZEN');
+    assert.equal(citData.user.role, 'CITIZEN', 'Public registration must not accept role escalation');
+    const citizenLogin = await fetch(`${baseUrl}/api/auth/citizen/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: citizenEmail, password: 'Password@123' })
+    });
+    assert.equal(citizenLogin.status, 200);
 
     // 3. Register new Expert -> stays PENDING_APPROVAL and login returns 403
     const regExp = await fetch(`${baseUrl}/api/auth/expert/register`, {
@@ -85,7 +178,7 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
     });
     assert.equal(pendingLogin.status, 403);
 
-    // 4. Dev-login active expert approves pending expert (no ADMIN role needed or present)
+    // 4. An active Expert cannot access the retired peer-approval API.
     const devExpertRes = await fetch(`${baseUrl}/api/auth/dev-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -100,11 +193,24 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
     const forbiddenApps = await fetch(`${baseUrl}/api/expert/applications`, {
       headers: { Authorization: `Bearer ${citizenToken}` }
     });
-    assert.equal(forbiddenApps.status, 403);
+    assert.equal(forbiddenApps.status, 404);
 
-    const approveRes = await fetch(`${baseUrl}/api/expert/applications/${pendingAppId}/approve`, {
+    const peerApprove = await fetch(`${baseUrl}/api/expert/applications/${pendingAppId}/approve`, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${expertToken}` }
+    });
+    assert.equal(peerApprove.status, 404);
+
+    const adminLogin = await fetch(`${baseUrl}/api/auth/authority-admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'admin.auth_test_a@gov.in', password: 'Authority@12345' })
+    });
+    assert.equal(adminLogin.status, 200);
+    const admin = await adminLogin.json();
+    const approveRes = await fetch(`${baseUrl}/api/authority/applications/${pendingAppId}/approve`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${admin.token}` }
     });
     assert.equal(approveRes.status, 200);
   });
@@ -125,7 +231,8 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
 test('Citizen report does NOT auto-close road; expert closure excludes road from routing and enforces poll 1-vote rule', async () => {
   const dbPath = makeTmpDbPath('ops-flow');
 
-  await withServer(dbPath, async baseUrl => {
+  await withServer(dbPath, async (baseUrl, db) => {
+    attachDemoExpert(db);
     const citLogin = await (
       await fetch(`${baseUrl}/api/auth/dev-login`, {
         method: 'POST',
@@ -241,10 +348,336 @@ test('Citizen report does NOT auto-close road; expert closure excludes road from
   });
 });
 
+test('resolving a report preserves remaining reports, verified hazards, and Expert closures', async () => {
+  await withServer(makeTmpDbPath('report-lifecycle'), async (baseUrl, db) => {
+    attachDemoExpert(db);
+    const expertToken = await getExpertToken(baseUrl);
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${expertToken}` };
+
+    insertTestReport(db, 'REP_RESOLVE_WITH_ACTIVE_REPORT', 'R01');
+    insertTestReport(db, 'REP_REMAINING_ACTIVE', 'R01', 'Under Review');
+    const activeReportResolution = await fetch(`${baseUrl}/api/reports/REP_RESOLVE_WITH_ACTIVE_REPORT/verify`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ verificationStatus: 'Resolved' })
+    });
+    assert.equal(activeReportResolution.status, 200);
+    const activeReportBody = await activeReportResolution.json();
+    assert.equal(
+      activeReportBody.roads.find((road: { id: string }) => road.id === 'R01').status,
+      'REPORTED_WATERLOGGING'
+    );
+
+    insertTestReport(db, 'REP_RESOLVE_WITH_HAZARD', 'R02');
+    const expert = db.getUserById('USR_EXPERT_01');
+    assert.ok(expert);
+    db.createVerifiedHazard({
+      reportId: 'REP_OTHER_VERIFIED_HAZARD',
+      roadId: 'R02',
+      hazardType: 'Waterlogging',
+      severity: 'High',
+      description: 'Independent verified hazard',
+      actor: expert,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+    });
+    const hazardResolution = await fetch(`${baseUrl}/api/reports/REP_RESOLVE_WITH_HAZARD/verify`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ verificationStatus: 'Resolved' })
+    });
+    assert.equal(hazardResolution.status, 200);
+    const hazardBody = await hazardResolution.json();
+    assert.equal(hazardBody.roads.find((road: { id: string }) => road.id === 'R02').status, 'VERIFIED_HAZARD');
+    assert.equal(
+      (db.db.prepare("SELECT COUNT(*) AS count FROM verified_hazards WHERE road_id = 'R02' AND is_active = 1")
+        .get() as { count: number }).count,
+      1
+    );
+
+    insertTestReport(db, 'REP_RESOLVE_WITH_CLOSURE', 'R03');
+    const closeRoad = await fetch(`${baseUrl}/api/roads/R03/status`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ status: 'CLOSED', reason: 'Independent Expert closure' })
+    });
+    assert.equal(closeRoad.status, 200);
+    const closureResolution = await fetch(`${baseUrl}/api/reports/REP_RESOLVE_WITH_CLOSURE/verify`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ verificationStatus: 'Resolved' })
+    });
+    assert.equal(closureResolution.status, 200);
+    const closureBody = await closureResolution.json();
+    const closedRoad = closureBody.roads.find((road: { id: string }) => road.id === 'R03');
+    assert.equal(closedRoad.status, 'CLOSED');
+    assert.equal(closedRoad.expiresAt, null);
+  });
+});
+
+test('resolving a verified report deactivates only its linked hazard', async () => {
+  await withServer(makeTmpDbPath('same-report-hazard'), async (baseUrl, db) => {
+    attachDemoExpert(db);
+    const expertToken = await getExpertToken(baseUrl);
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${expertToken}` };
+    insertTestReport(db, 'REP_VERIFY_THEN_RESOLVE', 'R04');
+    insertTestReport(db, 'REP_OTHER_ACTIVE_REPORT', 'R04', 'Under Review');
+    const expert = db.getUserById('USR_EXPERT_01');
+    assert.ok(expert);
+
+    const verification = await fetch(`${baseUrl}/api/reports/REP_VERIFY_THEN_RESOLVE/verify`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ verificationStatus: 'Verified', expiresInHours: 6 })
+    });
+    assert.equal(verification.status, 200);
+    assert.equal(
+      (db.db.prepare("SELECT is_active FROM verified_hazards WHERE report_id = 'REP_VERIFY_THEN_RESOLVE'")
+        .get() as { is_active: number }).is_active,
+      1
+    );
+
+    db.createVerifiedHazard({
+      reportId: 'REP_OTHER_HAZARD_R04',
+      roadId: 'R04',
+      hazardType: 'Road blocked',
+      severity: 'High',
+      description: 'Hazard from another report',
+      actor: expert,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+    });
+
+    const resolution = await fetch(`${baseUrl}/api/reports/REP_VERIFY_THEN_RESOLVE/verify`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ verificationStatus: 'Resolved' })
+    });
+    assert.equal(resolution.status, 200);
+
+    assert.equal(
+      (db.db.prepare("SELECT is_active FROM verified_hazards WHERE report_id = 'REP_VERIFY_THEN_RESOLVE'")
+        .get() as { is_active: number }).is_active,
+      0
+    );
+    assert.equal(
+      (db.db.prepare("SELECT is_active FROM verified_hazards WHERE report_id = 'REP_OTHER_HAZARD_R04'")
+        .get() as { is_active: number }).is_active,
+      1
+    );
+    assert.equal(
+      (db.db.prepare("SELECT verification_status FROM community_reports WHERE report_id = 'REP_OTHER_ACTIVE_REPORT'")
+        .get() as { verification_status: string }).verification_status,
+      'Under Review'
+    );
+    const resolutionBody = await resolution.json();
+    assert.equal(resolutionBody.roads.find((road: { id: string }) => road.id === 'R04').status, 'VERIFIED_HAZARD');
+
+    insertTestReport(db, 'REP_REPORT_GENERATED_CLOSURE', 'R05');
+    const reportClosure = await fetch(`${baseUrl}/api/reports/REP_REPORT_GENERATED_CLOSURE/verify`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({
+        verificationStatus: 'Verified',
+        officialAction: 'close_road',
+        expiresInHours: 6
+      })
+    });
+    assert.equal(reportClosure.status, 200);
+    const reportResolution = await fetch(`${baseUrl}/api/reports/REP_REPORT_GENERATED_CLOSURE/verify`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ verificationStatus: 'Resolved' })
+    });
+    assert.equal(reportResolution.status, 200);
+    const reportResolutionBody = await reportResolution.json();
+    assert.equal(reportResolutionBody.roads.find((road: { id: string }) => road.id === 'R05').status, 'CLOSED');
+    assert.equal(
+      (db.db.prepare("SELECT is_active FROM verified_hazards WHERE report_id = 'REP_REPORT_GENERATED_CLOSURE'")
+        .get() as { is_active: number }).is_active,
+      0
+    );
+  });
+});
+
+test('report verification rolls back report, hazard, road, audit, and notification writes on failure', async () => {
+  await withServer(makeTmpDbPath('report-transaction'), async (baseUrl, db) => {
+    attachDemoExpert(db);
+    const expertToken = await getExpertToken(baseUrl);
+    insertTestReport(db, 'REP_ATOMIC_FAILURE', 'R01');
+    const roadBefore = db.db.prepare("SELECT status, expires_at FROM road_segments WHERE road_id = 'R01'")
+      .get() as { status: string; expires_at: string | null };
+    const roadUpdateCountBefore = (db.db.prepare("SELECT COUNT(*) AS count FROM road_updates WHERE road_id = 'R01'")
+      .get() as { count: number }).count;
+    const auditCountBefore = (db.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'INCIDENT_VERIFICATION'")
+      .get() as { count: number }).count;
+
+    db.db.exec(`
+      CREATE TRIGGER fail_report_notification
+      BEFORE INSERT ON notifications
+      WHEN NEW.related_report_id = 'REP_ATOMIC_FAILURE'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced notification failure');
+      END;
+    `);
+
+    const response = await fetch(`${baseUrl}/api/reports/REP_ATOMIC_FAILURE/verify`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${expertToken}` },
+      body: JSON.stringify({
+        verificationStatus: 'Verified',
+        officialAction: 'close_road',
+        expiresInHours: 6
+      })
+    });
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: 'Unable to update report verification.' });
+
+    assert.equal(
+      (db.db.prepare("SELECT verification_status FROM community_reports WHERE report_id = 'REP_ATOMIC_FAILURE'")
+        .get() as { verification_status: string }).verification_status,
+      'Reported'
+    );
+    assert.equal(
+      (db.db.prepare("SELECT COUNT(*) AS count FROM verified_hazards WHERE report_id = 'REP_ATOMIC_FAILURE'")
+        .get() as { count: number }).count,
+      0
+    );
+    const roadAfter = db.db.prepare("SELECT status, expires_at FROM road_segments WHERE road_id = 'R01'")
+      .get() as { status: string; expires_at: string | null };
+    assert.deepEqual(roadAfter, roadBefore);
+    assert.equal(
+      (db.db.prepare("SELECT COUNT(*) AS count FROM road_updates WHERE road_id = 'R01'")
+        .get() as { count: number }).count,
+      roadUpdateCountBefore
+    );
+    assert.equal(
+      (db.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'INCIDENT_VERIFICATION'")
+        .get() as { count: number }).count,
+      auditCountBefore
+    );
+    assert.equal(
+      (db.db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE related_report_id = 'REP_ATOMIC_FAILURE'")
+        .get() as { count: number }).count,
+      0
+    );
+  });
+});
+
+test('repeating the same report status does not create duplicate notifications', async () => {
+  await withServer(makeTmpDbPath('report-notification-dedupe'), async (baseUrl, db) => {
+    attachDemoExpert(db);
+    const expertToken = await getExpertToken(baseUrl);
+    insertTestReport(db, 'REP_NOTIFICATION_DEDUPE', 'R04');
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${expertToken}` };
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await fetch(`${baseUrl}/api/reports/REP_NOTIFICATION_DEDUPE/verify`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ verificationStatus: 'Under Review' })
+      });
+      assert.equal(response.status, 200);
+    }
+
+    assert.equal(
+      (db.db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE related_report_id = 'REP_NOTIFICATION_DEDUPE'")
+        .get() as { count: number }).count,
+      1
+    );
+  });
+});
+
+test('road and report expiry inputs are validated and weather refresh respects closure expiry', async () => {
+  await withServer(makeTmpDbPath('expiry-validation'), async (baseUrl, db) => {
+    attachDemoExpert(db);
+    const expertToken = await getExpertToken(baseUrl);
+    insertTestReport(db, 'REP_EXPIRY_VALIDATION', 'R02');
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${expertToken}` };
+    const invalidExpiryValues = ['"4"', 'true', '-1', '0', '721', '1e309'];
+
+    for (const value of invalidExpiryValues) {
+      const roadResponse = await fetch(`${baseUrl}/api/roads/R01/status`, {
+        method: 'PATCH',
+        headers,
+        body: `{"status":"CLOSED","reason":"Expiry validation","expiresInHours":${value}}`
+      });
+      assert.equal(roadResponse.status, 400, `Road endpoint should reject expiresInHours=${value}`);
+
+      const reportResponse = await fetch(`${baseUrl}/api/reports/REP_EXPIRY_VALIDATION/verify`, {
+        method: 'PATCH',
+        headers,
+        body: `{"verificationStatus":"Under Review","expiresInHours":${value}}`
+      });
+      assert.equal(reportResponse.status, 400, `Report endpoint should reject expiresInHours=${value}`);
+    }
+
+    const nonExpiringClosure = await fetch(`${baseUrl}/api/roads/R01/status`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ status: 'CLOSED', reason: 'Non-expiring Expert closure' })
+    });
+    assert.equal(nonExpiringClosure.status, 200);
+    const nonExpiringRefresh = await fetch(`${baseUrl}/api/roads`);
+    assert.equal(nonExpiringRefresh.status, 200);
+    const nonExpiringRoads = await nonExpiringRefresh.json();
+    assert.equal(nonExpiringRoads.segments.find((road: { id: string }) => road.id === 'R01').status, 'CLOSED');
+
+    const explicitNonExpiringClosure = await fetch(`${baseUrl}/api/roads/R01/status`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ status: 'CLOSED', reason: 'Timed Expert closure', expiresInHours: null })
+    });
+    assert.equal(explicitNonExpiringClosure.status, 200);
+    db.db.prepare("UPDATE road_segments SET expires_at = ? WHERE road_id = 'R01'")
+      .run(new Date(Date.now() - 60 * 1000).toISOString());
+    const expiredRefresh = await fetch(`${baseUrl}/api/roads`);
+    assert.equal(expiredRefresh.status, 200);
+    const expiredRoads = await expiredRefresh.json();
+    assert.notEqual(expiredRoads.segments.find((road: { id: string }) => road.id === 'R01').status, 'CLOSED');
+
+    const nonExpiringReport = await fetch(`${baseUrl}/api/reports/REP_EXPIRY_VALIDATION/verify`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ verificationStatus: 'Verified', expiresInHours: null })
+    });
+    assert.equal(nonExpiringReport.status, 200);
+    assert.equal(
+      (db.db.prepare("SELECT expires_at FROM verified_hazards WHERE report_id = 'REP_EXPIRY_VALIDATION'")
+        .get() as { expires_at: string | null }).expires_at,
+      null
+    );
+  });
+});
+
+test('unlinked reports remain inaccessible to authority Experts', async () => {
+  await withServer(makeTmpDbPath('unlinked-report'), async (baseUrl, db) => {
+    attachDemoExpert(db);
+    const expertToken = await getExpertToken(baseUrl);
+    insertTestReport(db, 'REP_UNLINKED', null);
+
+    const response = await fetch(`${baseUrl}/api/reports/REP_UNLINKED/verify`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${expertToken}` },
+      body: JSON.stringify({ verificationStatus: 'Verified' })
+    });
+    assert.equal(response.status, 404);
+    assert.equal(
+      (db.db.prepare("SELECT verification_status FROM community_reports WHERE report_id = 'REP_UNLINKED'")
+        .get() as { verification_status: string }).verification_status,
+      'Reported'
+    );
+    assert.equal(
+      (db.db.prepare("SELECT COUNT(*) AS count FROM verified_hazards WHERE report_id = 'REP_UNLINKED'")
+        .get() as { count: number }).count,
+      0
+    );
+  });
+});
+
 test('POST /api/routes/find returns independent metrics, distinguishes shortest/fastest/safest, and updates on closure/hazard', async () => {
   const dbPath = makeTmpDbPath('routing-scenarios');
 
-  await withServer(dbPath, async baseUrl => {
+  await withServer(dbPath, async (baseUrl, db) => {
+    attachDemoExpert(db);
     const expLogin = await (
       await fetch(`${baseUrl}/api/auth/dev-login`, {
         method: 'POST',

@@ -1,5 +1,5 @@
--- SanketSetu Authoritative Relational Database Schema (SQLite / PostgreSQL compatible)
--- Strictly TWO application roles: CITIZEN and EXPERT (Zero ADMIN role)
+-- Immutable version-1 bootstrap schema (SQLite).
+-- Later changes are applied transactionally by SanketSetuDatabase migrations.
 
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version INTEGER PRIMARY KEY,

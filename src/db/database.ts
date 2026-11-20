@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
@@ -10,6 +11,8 @@ import {
 import {
   AccountStatus,
   AppNotification,
+  AuthorityMembership,
+  AuthorityPermission,
   AuditLog,
   CommunityReport,
   ExpertApplication,
@@ -37,6 +40,7 @@ export class SanketSetuDatabase {
       process.env.DATABASE_URL ||
       path.resolve(process.cwd(), 'data', 'sanketsetu.db');
 
+    const databaseAlreadyExisted = resolvedPath !== ':memory:' && fs.existsSync(resolvedPath);
     if (resolvedPath !== ':memory:') {
       fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
     }
@@ -44,6 +48,18 @@ export class SanketSetuDatabase {
     this.db = new DatabaseSync(resolvedPath);
     this.db.exec('PRAGMA journal_mode = WAL;');
     this.db.exec('PRAGMA foreign_keys = ON;');
+    if (databaseAlreadyExisted && fs.statSync(resolvedPath).size > 0) {
+      const hasMigrationsTable = this.db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+      ).get();
+      const migration = hasMigrationsTable
+        ? this.db.prepare('SELECT version FROM schema_migrations WHERE version = 3').get()
+        : undefined;
+      if (!migration) {
+        const backupPath = `${resolvedPath}.pre-authority-v3-${Date.now()}.bak`;
+        this.db.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
+      }
+    }
     this.migrate();
     this.seedInitialData();
   }
@@ -61,6 +77,183 @@ export class SanketSetuDatabase {
         .prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
         .run(1, 'initial_sanketsetu_2role_schema', new Date().toISOString());
     }
+
+    const authorityMigration = this.db
+      .prepare('SELECT version FROM schema_migrations WHERE version = 2')
+      .get();
+    if (!authorityMigration) {
+      this.db.exec('PRAGMA foreign_keys = OFF;');
+      let transactionStarted = false;
+      try {
+        this.db.exec('BEGIN IMMEDIATE;');
+        transactionStarted = true;
+        this.db.exec(`
+          CREATE TABLE users_v2 (
+            id TEXT PRIMARY KEY,
+            full_name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            phone TEXT,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'CITIZEN' CHECK (role IN ('CITIZEN', 'AUTHORITY_ADMIN', 'EXPERT')),
+            account_status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (account_status IN ('ACTIVE', 'PENDING_APPROVAL', 'REJECTED', 'SUSPENDED')),
+            organisation TEXT,
+            designation TEXT,
+            preferred_language TEXT DEFAULT 'en',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+          INSERT INTO users_v2
+            (id, full_name, email, phone, password_hash, role, account_status,
+             organisation, designation, preferred_language, created_at, updated_at)
+          SELECT id, full_name, email, phone, password_hash, role, account_status,
+                 organisation, designation, preferred_language, created_at, updated_at
+          FROM users;
+          DROP TABLE users;
+          ALTER TABLE users_v2 RENAME TO users;
+
+          CREATE TABLE authorities (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            authority_type TEXT NOT NULL,
+            region TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'SUSPENDED')),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+          CREATE TABLE authority_memberships (
+            id TEXT PRIMARY KEY,
+            authority_id TEXT NOT NULL REFERENCES authorities(id),
+            user_id TEXT NOT NULL REFERENCES users(id),
+            membership_role TEXT NOT NULL CHECK (membership_role IN ('AUTHORITY_ADMIN', 'EXPERT')),
+            status TEXT NOT NULL CHECK (status IN ('INVITED', 'PENDING', 'ACTIVE', 'SUSPENDED')),
+            created_by TEXT REFERENCES users(id),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (authority_id, user_id)
+          );
+          CREATE UNIQUE INDEX idx_active_authority_membership_user
+            ON authority_memberships(user_id) WHERE status = 'ACTIVE';
+          CREATE INDEX idx_authority_memberships_authority
+            ON authority_memberships(authority_id, status);
+          CREATE INDEX idx_authority_memberships_user
+            ON authority_memberships(user_id, status);
+
+          CREATE TABLE authority_invitations (
+            id TEXT PRIMARY KEY,
+            authority_id TEXT NOT NULL REFERENCES authorities(id),
+            email TEXT NOT NULL,
+            intended_role TEXT NOT NULL CHECK (intended_role IN ('AUTHORITY_ADMIN', 'EXPERT')),
+            token_hash TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            accepted_at TEXT,
+            status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'ACCEPTED', 'REVOKED', 'EXPIRED')),
+            invited_by TEXT NOT NULL REFERENCES users(id),
+            created_at TEXT NOT NULL
+          );
+          CREATE INDEX idx_authority_invitations_authority
+            ON authority_invitations(authority_id, status, expires_at);
+          CREATE UNIQUE INDEX idx_pending_invitation_email
+            ON authority_invitations(authority_id, email) WHERE status = 'PENDING';
+
+          CREATE TABLE authority_permissions (
+            id TEXT PRIMARY KEY,
+            membership_id TEXT NOT NULL REFERENCES authority_memberships(id) ON DELETE CASCADE,
+            permission TEXT NOT NULL CHECK (permission IN (
+              'REPORTS_VIEW', 'REPORTS_VERIFY', 'ROAD_STATUS_UPDATE', 'HAZARD_VERIFY',
+              'SHELTER_MANAGE', 'ALERT_CREATE', 'EXPERT_MANAGE', 'AUDIT_VIEW'
+            )),
+            assigned_by TEXT NOT NULL REFERENCES users(id),
+            created_at TEXT NOT NULL,
+            UNIQUE (membership_id, permission)
+          );
+          CREATE INDEX idx_authority_permissions_membership
+            ON authority_permissions(membership_id);
+
+          ALTER TABLE expert_applications ADD COLUMN authority_id TEXT REFERENCES authorities(id);
+          CREATE INDEX idx_expert_applications_authority_status
+            ON expert_applications(authority_id, status, applied_at);
+
+          CREATE TABLE audit_logs_v2 (
+            log_id TEXT PRIMARY KEY,
+            actor_id TEXT NOT NULL,
+            actor_name TEXT NOT NULL,
+            actor_role TEXT NOT NULL CHECK (actor_role IN ('CITIZEN', 'AUTHORITY_ADMIN', 'EXPERT')),
+            authority_id TEXT REFERENCES authorities(id),
+            action TEXT NOT NULL,
+            target_resource TEXT NOT NULL,
+            details TEXT NOT NULL,
+            timestamp TEXT NOT NULL
+          );
+          INSERT INTO audit_logs_v2
+            (log_id, actor_id, actor_name, actor_role, action, target_resource, details, timestamp)
+          SELECT log_id, actor_id, actor_name, actor_role, action, target_resource, details, timestamp
+          FROM audit_logs;
+          DROP TABLE audit_logs;
+          ALTER TABLE audit_logs_v2 RENAME TO audit_logs;
+          CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp);
+          CREATE INDEX idx_audit_authority_timestamp ON audit_logs(authority_id, timestamp);
+
+          INSERT INTO schema_migrations (version, name, applied_at)
+          VALUES (2, 'authority_memberships_and_admin_access', '${new Date().toISOString()}');
+        `);
+        this.db.exec('COMMIT;');
+        transactionStarted = false;
+      } catch (error) {
+        if (transactionStarted) this.db.exec('ROLLBACK;');
+        throw error;
+      } finally {
+        this.db.exec('PRAGMA foreign_keys = ON;');
+      }
+    }
+
+    const resourceScopeMigration = this.db
+      .prepare('SELECT version FROM schema_migrations WHERE version = 3')
+      .get();
+    if (!resourceScopeMigration) {
+      this.db.exec('BEGIN IMMEDIATE;');
+      try {
+        this.db.exec(`
+          ALTER TABLE road_segments ADD COLUMN authority_id TEXT REFERENCES authorities(id);
+          ALTER TABLE shelters ADD COLUMN authority_id TEXT REFERENCES authorities(id);
+          ALTER TABLE road_updates ADD COLUMN authority_id TEXT REFERENCES authorities(id);
+          CREATE INDEX idx_road_segments_authority ON road_segments(authority_id);
+          CREATE INDEX idx_shelters_authority ON shelters(authority_id);
+          CREATE INDEX idx_road_updates_authority ON road_updates(authority_id, created_at);
+
+          UPDATE road_updates
+          SET authority_id = (
+            SELECT authority_id FROM road_segments WHERE road_segments.road_id = road_updates.road_id
+          )
+          WHERE authority_id IS NULL;
+        `);
+
+        const authorities = this.db.prepare('SELECT id FROM authorities').all() as { id: string }[];
+        if (authorities.length === 1) {
+          const authorityId = authorities[0].id;
+          this.db.prepare('UPDATE road_segments SET authority_id = ? WHERE authority_id IS NULL')
+            .run(authorityId);
+          this.db.prepare('UPDATE shelters SET authority_id = ? WHERE authority_id IS NULL')
+            .run(authorityId);
+          this.db.prepare(`
+            UPDATE road_updates
+            SET authority_id = (
+              SELECT authority_id FROM road_segments WHERE road_segments.road_id = road_updates.road_id
+            )
+            WHERE authority_id IS NULL
+          `).run();
+        }
+
+        this.db.prepare(`
+          INSERT INTO schema_migrations (version, name, applied_at)
+          VALUES (3, 'authority_scoped_operational_resources', ?)
+        `).run(new Date().toISOString());
+        this.db.exec('COMMIT;');
+      } catch (error) {
+        this.db.exec('ROLLBACK;');
+        throw error;
+      }
+    }
+
   }
 
   private seedInitialData(): void {
@@ -194,7 +387,7 @@ export class SanketSetuDatabase {
       }
     }
 
-    // Development-only demo user seeding (STRICTLY two roles: CITIZEN and EXPERT; ZERO ADMIN)
+    // Development-only citizen and Expert demo accounts.
     const shouldSeedDemo =
       process.env.NODE_ENV !== 'production' &&
       process.env.SEED_DEMO_ACCOUNTS !== 'false';
@@ -256,8 +449,8 @@ export class SanketSetuDatabase {
       this.db
         .prepare(`
           INSERT INTO expert_applications (
-            application_id, user_id, full_name, email, organisation, designation, status, applied_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            application_id, user_id, full_name, email, organisation, designation, status, applied_at, authority_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           'APP_01',
@@ -322,6 +515,31 @@ export class SanketSetuDatabase {
     return row ? this.mapUserRow(row) : null;
   }
 
+  public getActiveAuthorityMembership(userId: string): AuthorityMembership | null {
+    const row = this.db.prepare(`
+      SELECT m.id, m.authority_id, m.membership_role, m.status,
+             a.name AS authority_name, a.region AS authority_region
+      FROM authority_memberships m
+      JOIN authorities a ON a.id = m.authority_id
+      WHERE m.user_id = ? AND m.status = 'ACTIVE' AND a.status = 'ACTIVE'
+    `).get(userId) as Record<string, unknown> | undefined;
+    if (!row) return null;
+
+    const permissions = this.db.prepare(
+      'SELECT permission FROM authority_permissions WHERE membership_id = ? ORDER BY permission'
+    ).all(String(row.id)) as { permission: string }[];
+
+    return {
+      id: String(row.id),
+      authorityId: String(row.authority_id),
+      authorityName: String(row.authority_name),
+      authorityRegion: String(row.authority_region),
+      role: String(row.membership_role) as AuthorityMembership['role'],
+      status: String(row.status) as AuthorityMembership['status'],
+      permissions: permissions.map(item => item.permission as AuthorityPermission)
+    };
+  }
+
   private mapUserRow(row: Record<string, unknown>): StoredUser {
     return {
       id: String(row.id),
@@ -367,8 +585,8 @@ export class SanketSetuDatabase {
     this.db
       .prepare(`
         INSERT INTO expert_applications (
-          application_id, user_id, full_name, email, organisation, designation, status, applied_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          application_id, user_id, full_name, email, organisation, designation, status, applied_at, authority_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         appItem.id,
@@ -378,7 +596,8 @@ export class SanketSetuDatabase {
         appItem.organisation,
         appItem.designation,
         appItem.status,
-        appItem.appliedAt
+        appItem.appliedAt,
+        appItem.authorityId ?? null
       );
   }
 
@@ -396,7 +615,8 @@ export class SanketSetuDatabase {
       status: String(r.status) as AccountStatus,
       appliedAt: String(r.applied_at),
       reviewedAt: r.reviewed_at ? String(r.reviewed_at) : undefined,
-      reviewedBy: r.reviewed_by ? String(r.reviewed_by) : undefined
+      reviewedBy: r.reviewed_by ? String(r.reviewed_by) : undefined,
+      authorityId: r.authority_id ? String(r.authority_id) : undefined
     }));
   }
 
@@ -445,6 +665,7 @@ export class SanketSetuDatabase {
       .all() as Record<string, unknown>[];
     return rows.map(r => ({
       id: String(r.road_id),
+      authorityId: r.authority_id ? String(r.authority_id) : undefined,
       name: String(r.road_name),
       from: String(r.from_node),
       to: String(r.to_node),
@@ -529,13 +750,14 @@ export class SanketSetuDatabase {
     this.db
       .prepare(`
         INSERT INTO road_updates (
-          update_id, road_id, previous_status, new_status, previous_risk, new_risk,
+          update_id, road_id, authority_id, previous_status, new_status, previous_risk, new_risk,
           reason, expires_at, updated_by_id, updated_by_name, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         `UPD_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
         params.roadId,
+        current.authorityId ?? null,
         current.status,
         params.status,
         current.riskScore,
@@ -673,6 +895,7 @@ export class SanketSetuDatabase {
     const rows = this.db.prepare('SELECT * FROM shelters ORDER BY shelter_id ASC').all() as Record<string, unknown>[];
     return rows.map(r => ({
       id: String(r.shelter_id),
+      authorityId: r.authority_id ? String(r.authority_id) : undefined,
       name: String(r.name),
       lat: Number(r.latitude),
       lng: Number(r.longitude),
@@ -856,28 +1079,46 @@ export class SanketSetuDatabase {
     this.db.prepare('UPDATE notifications SET is_read = 1 WHERE notification_id = ?').run(id);
   }
 
-  public appendAuditLog(actor: User, action: string, targetResource: string, details: string): AuditLog {
+  public appendAuditLog(
+    actor: User,
+    action: string,
+    targetResource: string,
+    details: string,
+    authorityId?: string
+  ): AuditLog {
+    return this.appendAuthorityAuditLog(actor, authorityId, action, targetResource, details);
+  }
+
+  public appendAuthorityAuditLog(
+    actor: User,
+    authorityId: string | undefined,
+    action: string,
+    targetResource: string,
+    details: string
+  ): AuditLog {
     const log: AuditLog = {
-      id: `LOG_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      id: `LOG_${crypto.randomUUID()}`,
       actorId: actor.id,
       actorName: actor.fullName,
       actorRole: actor.role,
       action,
       targetResource,
       details,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      authorityId
     };
     this.db
       .prepare(`
         INSERT INTO audit_logs (
-          log_id, actor_id, actor_name, actor_role, action, target_resource, details, timestamp
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          log_id, actor_id, actor_name, actor_role, authority_id, action, target_resource, details, timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         log.id,
         log.actorId,
         log.actorName,
         log.actorRole,
+        authorityId ?? null,
         log.action,
         log.targetResource,
         log.details,
@@ -895,6 +1136,7 @@ export class SanketSetuDatabase {
       actorId: String(r.actor_id),
       actorName: String(r.actor_name),
       actorRole: String(r.actor_role) as UserRole,
+      authorityId: r.authority_id ? String(r.authority_id) : undefined,
       action: String(r.action),
       targetResource: String(r.target_resource),
       details: String(r.details),

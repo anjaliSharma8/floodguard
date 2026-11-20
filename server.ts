@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express';
+import crypto from 'node:crypto';
 import { FunctionDeclaration, GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import { resolve } from 'node:path';
@@ -32,15 +33,28 @@ import {
   RoadSegment,
   RoadStatus,
   RouteFeedback,
-  User,
-  UserRole
+  AuthorityMembership,
+  AuthorityPermission,
+  User
 } from './src/types';
 
 dotenv.config();
 
 export interface AuthenticatedRequest extends Request {
   user?: User;
+  authorityMembership?: AuthorityMembership;
 }
+
+const AUTHORITY_PERMISSIONS: AuthorityPermission[] = [
+  'REPORTS_VIEW',
+  'REPORTS_VERIFY',
+  'ROAD_STATUS_UPDATE',
+  'HAZARD_VERIFY',
+  'SHELTER_MANAGE',
+  'ALERT_CREATE',
+  'EXPERT_MANAGE',
+  'AUDIT_VIEW'
+];
 
 const PUNE_BOUNDS = {
   minLat: 18.30,
@@ -94,6 +108,9 @@ function createRateLimiter(windowMs: number, maxRequests: number) {
 }
 
 export function createSanketSetuApp(dbPath?: string) {
+  if (process.env.NODE_ENV === 'production' && (process.env.SESSION_SECRET || '').length < 16) {
+    throw new Error('SESSION_SECRET must be configured with at least 16 characters in production.');
+  }
   const app = express();
   const db = new SanketSetuDatabase(dbPath);
 
@@ -133,6 +150,7 @@ export function createSanketSetuApp(dbPath?: string) {
 
   const authLimiter = createRateLimiter(60_000, 40);
   const writeLimiter = createRateLimiter(60_000, 60);
+  const invitationLimiter = createRateLimiter(60_000, 10);
 
   // ----------------- Auth Middleware -----------------
 
@@ -174,18 +192,128 @@ export function createSanketSetuApp(dbPath?: string) {
     next();
   }
 
-  function requireRoles(roles: UserRole[]) {
+  function requireAuthorityRole(role: 'AUTHORITY_ADMIN' | 'EXPERT') {
     return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-      if (!req.user) {
-        return res.status(401).json({ error: 'Authentication required.' });
-      }
-      if (!roles.includes(req.user.role)) {
-        return res.status(403).json({ error: `Access denied. Requires role: ${roles.join(', ')}` });
-      }
+      if (!req.user) return res.status(401).json({ error: 'Authentication required.' });
+      if (req.user.role !== role) return res.status(403).json({ error: `Access denied. Requires role: ${role}.` });
       if (req.user.accountStatus !== 'ACTIVE') {
-        return res.status(403).json({ error: `Account is ${req.user.accountStatus}. Active clearance required.` });
+        return res.status(403).json({ error: 'Active account status is required.' });
       }
+      const membership = db.getActiveAuthorityMembership(req.user.id);
+      if (!membership || membership.role !== role) {
+        return res.status(403).json({ error: 'An active membership in this authority is required.' });
+      }
+      req.authorityMembership = membership;
       next();
+    };
+  }
+
+  function requireAuthorityPermission(permission: AuthorityPermission) {
+    return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+      if (!req.user) return res.status(401).json({ error: 'Authentication required.' });
+      if (req.user.role !== 'EXPERT') return res.status(403).json({ error: 'Expert role is required.' });
+      if (req.user.accountStatus !== 'ACTIVE') {
+        return res.status(403).json({ error: 'Active account status is required.' });
+      }
+      const membership = db.getActiveAuthorityMembership(req.user.id);
+      if (!membership || membership.role !== 'EXPERT') {
+        return res.status(403).json({ error: 'An active Expert membership is required.' });
+      }
+      if (!membership.permissions.includes(permission)) {
+        return res.status(403).json({ error: `Missing authority permission: ${permission}.` });
+      }
+      req.authorityMembership = membership;
+      next();
+    };
+  }
+
+  function withTransaction<T>(callback: () => T): T {
+    db.db.exec('BEGIN IMMEDIATE;');
+    try {
+      const result = callback();
+      db.db.exec('COMMIT;');
+      return result;
+    } catch (error) {
+      db.db.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+
+  const MAX_EXPIRY_IN_HOURS = 720;
+  function parseExpiry(expiresInHours: unknown): { valid: true; expiresAt: string | null } | { valid: false } {
+    if (expiresInHours === undefined || expiresInHours === null) {
+      return { valid: true, expiresAt: null };
+    }
+    if (
+      typeof expiresInHours !== 'number' ||
+      !Number.isFinite(expiresInHours) ||
+      expiresInHours <= 0 ||
+      expiresInHours > MAX_EXPIRY_IN_HOURS
+    ) {
+      return { valid: false };
+    }
+
+    const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
+    if (!Number.isFinite(expiresAt.getTime())) return { valid: false };
+    return { valid: true, expiresAt: expiresAt.toISOString() };
+  }
+
+  function deriveRoadLifecycleState(params: {
+    status: RoadStatus;
+    expiresAt: string | null;
+    activeReports: { verificationStatus: CommunityReport['verificationStatus'] }[];
+    activeHazards: { expiresAt: string | null }[];
+    fallbackStatus: RoadStatus;
+    now: string;
+  }): { status: RoadStatus; expiresAt: string | null } {
+    const nowMs = Date.parse(params.now);
+    const isActiveExpiry = (expiresAt: string | null): boolean =>
+      expiresAt === null || (Number.isFinite(Date.parse(expiresAt)) && Date.parse(expiresAt) > nowMs);
+    const currentStatusIsActive = isActiveExpiry(params.expiresAt);
+
+    if (params.status === 'CLOSED' && currentStatusIsActive) {
+      return { status: 'CLOSED', expiresAt: params.expiresAt };
+    }
+
+    if (params.status === 'VERIFIED_HAZARD' && currentStatusIsActive) {
+      if (params.expiresAt === null || params.activeHazards.some(hazard => hazard.expiresAt === null)) {
+        return { status: 'VERIFIED_HAZARD', expiresAt: null };
+      }
+      const activeExpiries = [
+        params.expiresAt,
+        ...params.activeHazards.map(hazard => hazard.expiresAt)
+      ].filter((expiresAt): expiresAt is string => expiresAt !== null);
+      const latestExpiry = activeExpiries.reduce((latest, expiresAt) =>
+        Date.parse(expiresAt) > Date.parse(latest) ? expiresAt : latest
+      );
+      return { status: 'VERIFIED_HAZARD', expiresAt: latestExpiry };
+    }
+
+    const hasVerifiedReport = params.activeReports.some(report => report.verificationStatus === 'Verified');
+    if (hasVerifiedReport || params.activeHazards.length > 0) {
+      if (hasVerifiedReport || params.activeHazards.some(hazard => hazard.expiresAt === null)) {
+        return { status: 'VERIFIED_HAZARD', expiresAt: null };
+      }
+      const latestExpiry = params.activeHazards
+        .map(hazard => hazard.expiresAt!)
+        .reduce((latest, expiresAt) => Date.parse(expiresAt) > Date.parse(latest) ? expiresAt : latest);
+      return { status: 'VERIFIED_HAZARD', expiresAt: latestExpiry };
+    }
+
+    if (params.activeReports.length > 0) {
+      return { status: 'REPORTED_WATERLOGGING', expiresAt: null };
+    }
+
+    const fallbackStatus =
+      (params.status === 'CLOSED' || params.status === 'VERIFIED_HAZARD') &&
+      !currentStatusIsActive
+        ? params.fallbackStatus === 'CLOSED' || params.fallbackStatus === 'VERIFIED_HAZARD'
+          ? 'OPEN'
+          : params.fallbackStatus
+        : params.fallbackStatus;
+    return {
+      status: fallbackStatus,
+      expiresAt: fallbackStatus === params.status ? params.expiresAt : null
     };
   }
 
@@ -203,23 +331,68 @@ export function createSanketSetuApp(dbPath?: string) {
       rainfall.observations,
       reports
     );
-    db.saveRoadSegments(computed);
-    return { roads: computed, rainfall };
+    const now = new Date().toISOString();
+    const activeHazards = db.db.prepare(`
+      SELECT road_id, expires_at
+      FROM verified_hazards
+      WHERE is_active = 1 AND (expires_at IS NULL OR expires_at > ?)
+    `).all(now) as { road_id: string; expires_at: string | null }[];
+    const hazardsByRoad = new Map<string, { expiresAt: string | null }[]>();
+    for (const hazard of activeHazards) {
+      const hazards = hazardsByRoad.get(hazard.road_id) || [];
+      hazards.push({ expiresAt: hazard.expires_at });
+      hazardsByRoad.set(hazard.road_id, hazards);
+    }
+
+    const lifecycleRoads = computed.map(road => {
+      const activeReports = reports
+        .filter(report =>
+          report.roadId === road.id &&
+          report.verificationStatus !== 'Rejected' &&
+          report.verificationStatus !== 'Resolved'
+        )
+        .map(report => ({ verificationStatus: report.verificationStatus }));
+      const activeRoadHazards = hazardsByRoad.get(road.id) || [];
+      const state = deriveRoadLifecycleState({
+        status: road.status,
+        expiresAt: road.expiresAt ?? null,
+        activeReports,
+        activeHazards: activeRoadHazards,
+        fallbackStatus: road.status,
+        now
+      });
+      if (state.status === road.status && state.expiresAt === (road.expiresAt ?? null)) return road;
+      return {
+        ...road,
+        status: state.status,
+        expiresAt: state.expiresAt,
+        statusReason: state.status === 'VERIFIED_HAZARD'
+          ? 'An active verified hazard remains on this road'
+          : state.status === 'REPORTED_WATERLOGGING'
+            ? 'An active community report remains on this road'
+            : road.statusReason
+      };
+    });
+    db.saveRoadSegments(lifecycleRoads);
+    return { roads: lifecycleRoads, rainfall };
   }
 
-  // ----------------- AUTHENTICATION ENDPOINTS (Strictly 2 Roles: CITIZEN, EXPERT) -----------------
+  // ----------------- AUTHENTICATION ENDPOINTS -----------------
 
   app.post('/api/auth/citizen/register', authLimiter, (req: Request, res: Response) => {
     const { fullName, email, password, phone, preferredLanguage } = req.body || {};
     if (!fullName || !email || !password) {
       return res.status(400).json({ error: 'Full name, email, and password are required.' });
     }
+    if (String(fullName).trim().length < 2 || String(fullName).trim().length > 120) {
+      return res.status(400).json({ error: 'Full name must be between 2 and 120 characters.' });
+    }
     const normalizedEmail = String(email).toLowerCase().trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       return res.status(400).json({ error: 'Please provide a valid email address.' });
     }
-    if (String(password).length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+    if (String(password).length < 6 || String(password).length > 256) {
+      return res.status(400).json({ error: 'Password must be between 6 and 256 characters long.' });
     }
     if (db.getUserByEmail(normalizedEmail)) {
       return res.status(400).json({ error: 'An account with this email address already exists.' });
@@ -254,9 +427,15 @@ export function createSanketSetuApp(dbPath?: string) {
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
+    if (String(password).length > 256) {
+      return res.status(400).json({ error: 'Password exceeds the maximum length.' });
+    }
     const found = db.getUserByEmail(String(email));
     if (!found || !verifyPassword(String(password), found.passwordHash)) {
       return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+    if (found.role !== 'CITIZEN') {
+      return res.status(403).json({ error: 'This account does not have Citizen access.' });
     }
     if (found.accountStatus === 'SUSPENDED') {
       return res.status(403).json({ error: 'Your account has been suspended.' });
@@ -273,21 +452,42 @@ export function createSanketSetuApp(dbPath?: string) {
   });
 
   app.post('/api/auth/expert/register', authLimiter, (req: Request, res: Response) => {
-    const { fullName, email, password, organisation, designation, phone } = req.body || {};
+    const { fullName, email, password, organisation, designation, phone, authorityId } = req.body || {};
     if (!fullName || !email || !password || !organisation || !designation) {
       return res.status(400).json({
         error: 'Full name, official email, organisation, designation, and password are required.'
       });
     }
+    if (String(fullName).trim().length < 2 || String(fullName).trim().length > 120) {
+      return res.status(400).json({ error: 'Full name must be between 2 and 120 characters.' });
+    }
     const normalizedEmail = String(email).toLowerCase().trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       return res.status(400).json({ error: 'Please provide a valid official email address.' });
     }
-    if (String(password).length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+    if (String(password).length < 6 || String(password).length > 256) {
+      return res.status(400).json({ error: 'Password must be between 6 and 256 characters long.' });
     }
     if (db.getUserByEmail(normalizedEmail)) {
       return res.status(400).json({ error: 'An account with this email address already exists.' });
+    }
+
+    let applicationAuthorityId: string | null = null;
+    if (authorityId) {
+      const authority = db.db.prepare(
+        "SELECT id FROM authorities WHERE id = ? AND status = 'ACTIVE'"
+      ).get(String(authorityId)) as { id: string } | undefined;
+      if (!authority) return res.status(400).json({ error: 'Select an active authority.' });
+      applicationAuthorityId = authority.id;
+    } else {
+      const activeAuthorities = db.db.prepare(
+        "SELECT id FROM authorities WHERE status = 'ACTIVE'"
+      ).all() as { id: string }[];
+      if (activeAuthorities.length === 1) {
+        applicationAuthorityId = activeAuthorities[0].id;
+      } else if (activeAuthorities.length > 1) {
+        return res.status(400).json({ error: 'Select the authority reviewing your application.' });
+      }
     }
 
     const now = new Date().toISOString();
@@ -303,8 +503,6 @@ export function createSanketSetuApp(dbPath?: string) {
       designation: String(designation).trim(),
       createdAt: now
     };
-    db.createUser(newExpert);
-
     const application: ExpertApplication = {
       id: `APP_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       userId: newExpert.id,
@@ -313,16 +511,20 @@ export function createSanketSetuApp(dbPath?: string) {
       organisation: newExpert.organisation!,
       designation: newExpert.designation!,
       status: 'PENDING_APPROVAL',
-      appliedAt: now
+      appliedAt: now,
+      authorityId: applicationAuthorityId || undefined
     };
-    db.createExpertApplication(application);
+    withTransaction(() => {
+      db.createUser(newExpert);
+      db.createExpertApplication(application);
+    });
 
     const { passwordHash, ...safeUser } = newExpert;
     res.status(201).json({
       success: true,
       user: safeUser,
       application,
-      message: 'Expert registration submitted. Account remains PENDING_APPROVAL until verified by an active authorized Expert.'
+      message: 'Expert registration submitted. An Authority Admin must approve it before operational access is enabled.'
     });
   });
 
@@ -330,6 +532,9 @@ export function createSanketSetuApp(dbPath?: string) {
     const { email, password } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
+    }
+    if (String(password).length > 256) {
+      return res.status(400).json({ error: 'Password exceeds the maximum length.' });
     }
     const found = db.getUserByEmail(String(email));
     if (!found || !verifyPassword(String(password), found.passwordHash)) {
@@ -361,12 +566,52 @@ export function createSanketSetuApp(dbPath?: string) {
 
     const { passwordHash, ...safeUser } = found;
     const token = generateToken(safeUser);
+    const authorityMembership = db.getActiveAuthorityMembership(found.id) || undefined;
     res.json({
       success: true,
       token,
-      user: safeUser,
+      user: { ...safeUser, authorityMembership },
       message: 'Expert authority login verified.'
     });
+  });
+
+  app.post('/api/auth/authority-admin/login', authLimiter, (req: Request, res: Response) => {
+    const { email, password } = req.body || {};
+    if (
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
+      email.trim().length > 254 ||
+      !password ||
+      password.length > 256
+    ) {
+      return res.status(400).json({ error: 'Official email and password are required.' });
+    }
+    const found = db.getUserByEmail(email);
+    if (!found || found.role !== 'AUTHORITY_ADMIN' || !verifyPassword(password, found.passwordHash)) {
+      return res.status(401).json({ error: 'Invalid official email or password.' });
+    }
+    if (found.accountStatus !== 'ACTIVE') {
+      return res.status(403).json({ error: 'This Authority Admin account is not active.' });
+    }
+    const authorityMembership = db.getActiveAuthorityMembership(found.id);
+    if (!authorityMembership || authorityMembership.role !== 'AUTHORITY_ADMIN') {
+      return res.status(403).json({ error: 'No active Authority Admin membership is assigned to this account.' });
+    }
+    const { passwordHash, ...safeUser } = found;
+    res.json({
+      success: true,
+      token: generateToken(safeUser),
+      user: { ...safeUser, authorityMembership },
+      message: 'Authority Admin sign-in successful.'
+    });
+  });
+
+  app.get('/api/authorities', (_req: Request, res: Response) => {
+    const authorities = db.db.prepare(
+      "SELECT id, name, authority_type AS authorityType, region FROM authorities WHERE status = 'ACTIVE' ORDER BY name"
+    ).all();
+    res.json(authorities);
   });
 
   // Development-only demo login endpoint (no client-side hardcoded passwords; disabled in production)
@@ -395,12 +640,21 @@ export function createSanketSetuApp(dbPath?: string) {
       });
     }
     const { passwordHash, ...safeUser } = found;
+    const authorityMembership = found.role === 'EXPERT'
+      ? db.getActiveAuthorityMembership(found.id) || undefined
+      : undefined;
     const token = generateToken(safeUser);
-    res.json({ success: true, token, user: safeUser });
+    res.json({ success: true, token, user: { ...safeUser, authorityMembership } });
   });
 
   app.get('/api/auth/me', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
-    res.json({ success: true, user: req.user });
+    const authorityMembership = req.user?.role === 'CITIZEN'
+      ? undefined
+      : db.getActiveAuthorityMembership(req.user!.id) || undefined;
+    res.json({
+      success: true,
+      user: { ...req.user, authorityMembership }
+    });
   });
 
   app.post('/api/auth/logout', (_req: Request, res: Response) => {
@@ -418,64 +672,425 @@ export function createSanketSetuApp(dbPath?: string) {
     });
   });
 
-  // ----------------- EXPERT PEER APPROVAL & SECRET BOOTSTRAP (NO ADMIN ROLE) -----------------
+  // ----------------- AUTHORITY ADMINISTRATION -----------------
 
-  app.get('/api/expert/applications', authenticateToken, requireRoles(['EXPERT']), (_req: AuthenticatedRequest, res: Response) => {
-    res.json(db.getExpertApplications());
+  const requireAuthorityAdmin = requireAuthorityRole('AUTHORITY_ADMIN');
+
+  app.get('/api/authority/dashboard', authenticateToken, requireAuthorityAdmin, (req: AuthenticatedRequest, res: Response) => {
+    const authorityId = req.authorityMembership!.authorityId;
+    const authority = db.db.prepare(`
+      SELECT id, name, authority_type AS authorityType, region, status
+      FROM authorities WHERE id = ?
+    `).get(authorityId);
+    const totals = db.db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM authority_memberships WHERE authority_id = ? AND membership_role = 'EXPERT') AS totalExperts,
+        (SELECT COUNT(*) FROM authority_memberships WHERE authority_id = ? AND membership_role = 'EXPERT' AND status = 'ACTIVE') AS activeExperts,
+        (SELECT COUNT(*) FROM authority_memberships WHERE authority_id = ? AND status = 'SUSPENDED') AS suspendedMembers,
+        (SELECT COUNT(*) FROM expert_applications WHERE authority_id = ? AND status = 'PENDING_APPROVAL') AS pendingApplications,
+        (SELECT COUNT(*) FROM authority_invitations WHERE authority_id = ? AND status = 'PENDING' AND expires_at > ?) AS pendingInvitations
+    `).get(authorityId, authorityId, authorityId, authorityId, authorityId, new Date().toISOString());
+    res.json({ authority, ...totals });
   });
 
-  app.patch('/api/expert/applications/:id/approve', authenticateToken, requireRoles(['EXPERT']), (req: AuthenticatedRequest, res: Response) => {
-    const updated = db.updateExpertApplicationStatus(req.params.id, 'ACTIVE', req.user!.fullName);
-    if (!updated) return res.status(404).json({ error: 'Application not found.' });
+  app.get('/api/authority/profile', authenticateToken, requireAuthorityAdmin, (req: AuthenticatedRequest, res: Response) => {
+    const authority = db.db.prepare(`
+      SELECT id, name, authority_type AS authorityType, region, status, created_at AS createdAt
+      FROM authorities WHERE id = ?
+    `).get(req.authorityMembership!.authorityId);
+    if (!authority) return res.status(404).json({ error: 'Authority not found.' });
+    res.json({ authority });
+  });
 
-    db.appendAuditLog(
-      req.user!,
-      'EXPERT_APPROVAL',
-      updated.userId,
-      `Approved expert privileges for ${updated.fullName} (${updated.organisation})`
-    );
-    db.createNotification({
-      userId: updated.userId,
-      title: 'Expert Account Approved',
-      message: `Your SanketSetu Expert credentials (${updated.organisation}) have been approved by ${req.user!.fullName}.`,
-      severity: 'info'
+  app.get('/api/authority/members', authenticateToken, requireAuthorityAdmin, (req: AuthenticatedRequest, res: Response) => {
+    const authorityId = req.authorityMembership!.authorityId;
+    const members = db.db.prepare(`
+      SELECT m.id AS membershipId, m.authority_id AS authorityId, m.user_id AS userId,
+             m.membership_role AS role, m.status, m.created_at AS createdAt,
+             u.full_name AS fullName, u.email, u.organisation, u.designation, u.account_status AS accountStatus
+      FROM authority_memberships m
+      JOIN users u ON u.id = m.user_id
+      WHERE m.authority_id = ?
+      ORDER BY m.membership_role, u.full_name
+    `).all(authorityId) as Record<string, unknown>[];
+    res.json(members.map(member => ({
+      ...member,
+      permissions: (db.db.prepare(
+        'SELECT permission FROM authority_permissions WHERE membership_id = ? ORDER BY permission'
+      ).all(String(member.membershipId)) as { permission: string }[]).map(item => item.permission)
+    })));
+  });
+
+  app.post('/api/authority/invitations', invitationLimiter, authenticateToken, requireAuthorityAdmin, (req: AuthenticatedRequest, res: Response) => {
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const intendedRole = req.body?.intendedRole;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+      return res.status(400).json({ error: 'A valid official email address is required.' });
+    }
+    if (intendedRole !== 'EXPERT' && intendedRole !== 'AUTHORITY_ADMIN') {
+      return res.status(400).json({ error: 'Invitation role must be EXPERT or AUTHORITY_ADMIN.' });
+    }
+    const authorityId = req.authorityMembership!.authorityId;
+    if (db.getUserByEmail(email)) {
+      return res.status(409).json({ error: 'An account already uses this email address.' });
+    }
+
+    const now = new Date().toISOString();
+    const invitationId = `INV_${crypto.randomUUID()}`;
+    const rawToken = crypto.randomBytes(32).toString('base64url');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    try {
+      withTransaction(() => {
+        db.db.prepare(`
+          UPDATE authority_invitations SET status = 'EXPIRED'
+          WHERE authority_id = ? AND status = 'PENDING' AND expires_at <= ?
+        `).run(authorityId, now);
+        db.db.prepare(`
+          INSERT INTO authority_invitations
+            (id, authority_id, email, intended_role, token_hash, expires_at, status, invited_by, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+        `).run(invitationId, authorityId, email, intendedRole, tokenHash, expiresAt, req.user!.id, now);
+        db.appendAuthorityAuditLog(req.user!, authorityId, 'INVITATION_CREATED', invitationId,
+          `Invited ${email} as ${intendedRole}.`);
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+        return res.status(409).json({ error: 'A pending invitation already exists for this email.' });
+      }
+      throw error;
+    }
+    res.status(201).json({
+      success: true,
+      invitation: { id: invitationId, email, intendedRole, expiresAt },
+      invitationToken: rawToken
     });
-
-    res.json({ success: true, application: updated, message: `Approved expert ${updated.fullName}` });
   });
 
-  app.patch('/api/expert/applications/:id/reject', authenticateToken, requireRoles(['EXPERT']), (req: AuthenticatedRequest, res: Response) => {
-    const updated = db.updateExpertApplicationStatus(req.params.id, 'REJECTED', req.user!.fullName);
-    if (!updated) return res.status(404).json({ error: 'Application not found.' });
-
-    db.appendAuditLog(
-      req.user!,
-      'EXPERT_REJECTION',
-      updated.userId,
-      `Rejected expert application for ${updated.fullName} (${updated.organisation})`
-    );
-    res.json({ success: true, application: updated, message: `Rejected application for ${updated.fullName}` });
+  app.get('/api/authority/invitations', authenticateToken, requireAuthorityAdmin, (req: AuthenticatedRequest, res: Response) => {
+    const authorityId = req.authorityMembership!.authorityId;
+    const now = new Date().toISOString();
+    db.db.prepare(`
+      UPDATE authority_invitations SET status = 'EXPIRED'
+      WHERE authority_id = ? AND status = 'PENDING' AND expires_at <= ?
+    `).run(authorityId, now);
+    const invitations = db.db.prepare(`
+      SELECT id, email, intended_role AS intendedRole, expires_at AS expiresAt,
+             status, invited_by AS invitedBy, created_at AS createdAt
+      FROM authority_invitations WHERE authority_id = ? AND status = 'PENDING'
+      ORDER BY created_at DESC
+    `).all(authorityId);
+    res.json(invitations);
   });
 
-  // Non-admin server-secret bootstrap approval for initial deployment / CLI review
-  app.post('/api/expert/applications/:id/bootstrap-approve', authLimiter, (req: Request, res: Response) => {
-    const configuredSecret = process.env.EXPERT_APPROVAL_SECRET?.trim();
-    if (!configuredSecret) {
-      return res.status(503).json({
-        error: 'EXPERT_APPROVAL_SECRET is not configured on the server.'
+  app.delete('/api/authority/invitations/:id', invitationLimiter, authenticateToken, requireAuthorityAdmin, (req: AuthenticatedRequest, res: Response) => {
+    const authorityId = req.authorityMembership!.authorityId;
+    const revoked = withTransaction(() => {
+      const result = db.db.prepare(`
+        UPDATE authority_invitations SET status = 'REVOKED'
+        WHERE id = ? AND authority_id = ? AND status = 'PENDING'
+      `).run(req.params.id, authorityId);
+      if (!result.changes) return false;
+      db.appendAuthorityAuditLog(req.user!, authorityId, 'INVITATION_REVOKED', req.params.id, 'Revoked pending invitation.');
+      return true;
+    });
+    if (!revoked) return res.status(404).json({ error: 'Pending invitation not found.' });
+    res.json({ success: true });
+  });
+
+  app.post('/api/authority/invitations/accept', invitationLimiter, (req: Request, res: Response) => {
+    const token = typeof req.body?.token === 'string' ? req.body.token : '';
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    const fullName = typeof req.body?.fullName === 'string' ? req.body.fullName.trim() : '';
+    if (!token || token.length > 256 || password.length < 10 || password.length > 256) {
+      return res.status(400).json({ error: 'A valid invitation token and password of at least 10 characters are required.' });
+    }
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const now = new Date().toISOString();
+    const invitation = db.db.prepare(`
+      SELECT i.*, a.status AS authority_status
+      FROM authority_invitations i JOIN authorities a ON a.id = i.authority_id
+      WHERE i.token_hash = ?
+    `).get(tokenHash) as Record<string, unknown> | undefined;
+    if (!invitation || invitation.status !== 'PENDING') {
+      return res.status(410).json({ error: 'Invitation is invalid, revoked, or already used.' });
+    }
+    if (String(invitation.expires_at) <= now) {
+      db.db.prepare("UPDATE authority_invitations SET status = 'EXPIRED' WHERE id = ? AND status = 'PENDING'")
+        .run(String(invitation.id));
+      return res.status(410).json({ error: 'Invitation has expired.' });
+    }
+    if (invitation.authority_status !== 'ACTIVE') {
+      return res.status(403).json({ error: 'This authority is not accepting invitations.' });
+    }
+
+    const existing = db.getUserByEmail(String(invitation.email));
+    const invitedRole = String(invitation.intended_role) as 'AUTHORITY_ADMIN' | 'EXPERT';
+    if (existing && (existing.role !== invitedRole || !verifyPassword(password, existing.passwordHash))) {
+      return res.status(409).json({ error: 'This email is already registered. Use its matching account password to accept.' });
+    }
+    if (!existing && (fullName.length < 2 || fullName.length > 120)) {
+      return res.status(400).json({ error: 'Full name is required and must be at most 120 characters.' });
+    }
+    if (existing && existing.accountStatus === 'SUSPENDED') {
+      return res.status(403).json({ error: 'Suspended accounts cannot accept invitations.' });
+    }
+
+    const userId = existing?.id || `USR_${crypto.randomUUID()}`;
+    const membershipId = `MEM_${crypto.randomUUID()}`;
+    let safeUser: User;
+    try {
+      safeUser = withTransaction(() => {
+        const fresh = db.db.prepare(`
+          SELECT i.*, a.status AS authority_status
+          FROM authority_invitations i JOIN authorities a ON a.id = i.authority_id
+          WHERE i.id = ? AND i.token_hash = ? AND i.status = 'PENDING' AND i.expires_at > ?
+        `).get(String(invitation.id), tokenHash, now) as Record<string, unknown> | undefined;
+        if (!fresh || fresh.authority_status !== 'ACTIVE') {
+          throw new Error('INVITATION_NO_LONGER_VALID');
+        }
+        if (existing) {
+          const membership = db.db.prepare(
+            'SELECT id FROM authority_memberships WHERE user_id = ?'
+          ).get(existing.id);
+          if (membership) throw new Error('MEMBERSHIP_ALREADY_EXISTS');
+          db.db.prepare('UPDATE users SET account_status = ?, updated_at = ? WHERE id = ?')
+            .run('ACTIVE', now, existing.id);
+        } else {
+          db.createUser({
+            id: userId,
+            fullName,
+            email: String(fresh.email),
+            passwordHash: hashPassword(password),
+            role: invitedRole,
+            accountStatus: 'ACTIVE',
+            createdAt: now
+          });
+        }
+        db.db.prepare(`
+          INSERT INTO authority_memberships
+            (id, authority_id, user_id, membership_role, status, created_by, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
+        `).run(membershipId, String(fresh.authority_id), userId, invitedRole, String(fresh.invited_by), now, now);
+        db.db.prepare(`
+          UPDATE authority_invitations SET status = 'ACCEPTED', accepted_at = ?
+          WHERE id = ? AND status = 'PENDING'
+        `).run(now, String(fresh.id));
+        const acceptedUser = db.getUserById(userId);
+        if (!acceptedUser) throw new Error('ACCEPTED_USER_NOT_FOUND');
+        db.appendAuthorityAuditLog(acceptedUser, String(fresh.authority_id), 'INVITATION_ACCEPTED',
+          String(fresh.id), `Invitation accepted for ${acceptedUser.email}.`);
+        const { passwordHash: _passwordHash, ...withoutHash } = acceptedUser;
+        return withoutHash;
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'INVITATION_NO_LONGER_VALID') {
+        return res.status(410).json({ error: 'Invitation is expired or has already been accepted.' });
+      }
+      if (error instanceof Error && error.message === 'MEMBERSHIP_ALREADY_EXISTS') {
+        return res.status(409).json({ error: 'This account already has an authority membership.' });
+      }
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+        return res.status(409).json({ error: 'This account already has an active authority membership.' });
+      }
+      throw error;
+    }
+    const authorityMembership = db.getActiveAuthorityMembership(userId) || undefined;
+    res.status(201).json({
+      success: true,
+      token: generateToken(safeUser),
+      user: { ...safeUser, authorityMembership }
+    });
+  });
+
+  app.get('/api/authority/applications', authenticateToken, requireAuthorityAdmin, (req: AuthenticatedRequest, res: Response) => {
+    const rows = db.db.prepare(`
+      SELECT application_id AS id, user_id AS userId, full_name AS fullName, email,
+             organisation, designation, status, applied_at AS appliedAt,
+             reviewed_at AS reviewedAt, reviewed_by AS reviewedBy, authority_id AS authorityId
+      FROM expert_applications WHERE authority_id = ? ORDER BY applied_at DESC
+    `).all(req.authorityMembership!.authorityId);
+    res.json(rows);
+  });
+
+  function reviewApplication(req: AuthenticatedRequest, res: Response, status: 'ACTIVE' | 'REJECTED') {
+    const authorityId = req.authorityMembership!.authorityId;
+    const now = new Date().toISOString();
+    let application: Record<string, unknown>;
+    try {
+      application = withTransaction(() => {
+        const pending = db.db.prepare(`
+          SELECT * FROM expert_applications
+          WHERE application_id = ? AND authority_id = ? AND status = 'PENDING_APPROVAL'
+        `).get(req.params.id, authorityId) as Record<string, unknown> | undefined;
+        if (!pending) throw new Error('APPLICATION_NO_LONGER_PENDING');
+        const userId = String(pending.user_id);
+        if (status === 'ACTIVE') {
+          const existingMembership = db.db.prepare(
+            'SELECT id FROM authority_memberships WHERE user_id = ?'
+          ).get(userId);
+          if (existingMembership) throw new Error('MEMBERSHIP_ALREADY_EXISTS');
+          db.db.prepare(`
+            INSERT INTO authority_memberships
+              (id, authority_id, user_id, membership_role, status, created_by, created_at, updated_at)
+            VALUES (?, ?, ?, 'EXPERT', 'ACTIVE', ?, ?, ?)
+          `).run(`MEM_${crypto.randomUUID()}`, authorityId, userId, req.user!.id, now, now);
+        }
+        db.db.prepare(`
+          UPDATE expert_applications SET status = ?, reviewed_at = ?, reviewed_by = ?
+          WHERE application_id = ? AND authority_id = ? AND status = 'PENDING_APPROVAL'
+        `).run(status, now, req.user!.fullName, req.params.id, authorityId);
+        db.db.prepare('UPDATE users SET account_status = ?, updated_at = ? WHERE id = ?')
+          .run(status, now, userId);
+        db.appendAuthorityAuditLog(req.user!, authorityId,
+          status === 'ACTIVE' ? 'EXPERT_APPLICATION_APPROVED' : 'EXPERT_APPLICATION_REJECTED',
+          userId, `${status === 'ACTIVE' ? 'Approved' : 'Rejected'} application for ${String(pending.full_name)}.`);
+        return pending;
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'APPLICATION_NO_LONGER_PENDING') {
+        return res.status(404).json({ error: 'Pending application not found in this authority.' });
+      }
+      if (error instanceof Error && error.message === 'MEMBERSHIP_ALREADY_EXISTS') {
+        return res.status(409).json({ error: 'Applicant already has an authority membership.' });
+      }
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+        return res.status(409).json({ error: 'Applicant already belongs to an active authority.' });
+      }
+      throw error;
+    }
+    const userId = String(application.user_id);
+    if (status === 'ACTIVE') {
+      db.createNotification({
+        userId,
+        title: 'Expert Account Approved',
+        message: `Your expert application was approved by ${req.user!.fullName}.`,
+        severity: 'info'
       });
     }
-    const supplied = req.headers['x-expert-approval-secret'] || req.body?.secret;
-    if (!supplied || String(supplied) !== configuredSecret) {
-      return res.status(403).json({ error: 'Invalid approval secret.' });
+    return res.json({
+      success: true,
+      application: { ...application, status, reviewedAt: now, reviewedBy: req.user!.fullName }
+    });
+  }
+
+  app.patch('/api/authority/applications/:id/approve', authenticateToken, requireAuthorityAdmin, (req: AuthenticatedRequest, res: Response) =>
+    reviewApplication(req, res, 'ACTIVE'));
+
+  app.patch('/api/authority/applications/:id/reject', authenticateToken, requireAuthorityAdmin, (req: AuthenticatedRequest, res: Response) =>
+    reviewApplication(req, res, 'REJECTED'));
+
+  app.patch('/api/authority/members/:membershipId/status', authenticateToken, requireAuthorityAdmin, (req: AuthenticatedRequest, res: Response) => {
+    const authorityId = req.authorityMembership!.authorityId;
+    const nextStatus = req.body?.status;
+    if (nextStatus !== 'ACTIVE' && nextStatus !== 'SUSPENDED') {
+      return res.status(400).json({ error: 'Membership status must be ACTIVE or SUSPENDED.' });
     }
-    const updated = db.updateExpertApplicationStatus(req.params.id, 'ACTIVE', 'System Provisioning Secret');
-    if (!updated) return res.status(404).json({ error: 'Application not found.' });
-    res.json({ success: true, application: updated });
+    const target = db.db.prepare(`
+      SELECT m.id, m.user_id, m.membership_role, m.status, u.email
+      FROM authority_memberships m JOIN users u ON u.id = m.user_id
+      WHERE m.id = ? AND m.authority_id = ?
+    `).get(req.params.membershipId, authorityId) as Record<string, unknown> | undefined;
+    if (!target) return res.status(404).json({ error: 'Authority member not found.' });
+    const now = new Date().toISOString();
+    try {
+      withTransaction(() => {
+        if (
+          nextStatus === 'SUSPENDED' &&
+          target.membership_role === 'AUTHORITY_ADMIN' &&
+          target.status === 'ACTIVE'
+        ) {
+          const activeAdmins = db.db.prepare(`
+            SELECT COUNT(*) AS count FROM authority_memberships
+            WHERE authority_id = ? AND membership_role = 'AUTHORITY_ADMIN' AND status = 'ACTIVE'
+          `).get(authorityId) as { count: number };
+          if (Number(activeAdmins.count) <= 1) {
+            throw new Error('LAST_ACTIVE_AUTHORITY_ADMIN');
+          }
+        }
+        db.db.prepare('UPDATE authority_memberships SET status = ?, updated_at = ? WHERE id = ?')
+          .run(nextStatus, now, req.params.membershipId);
+        db.db.prepare('UPDATE users SET account_status = ?, updated_at = ? WHERE id = ?')
+          .run(nextStatus === 'ACTIVE' ? 'ACTIVE' : 'SUSPENDED', now, String(target.user_id));
+        db.appendAuthorityAuditLog(req.user!, authorityId,
+          nextStatus === 'ACTIVE' ? 'MEMBERSHIP_REACTIVATED' : 'MEMBERSHIP_SUSPENDED',
+          String(target.user_id), `${nextStatus === 'ACTIVE' ? 'Reactivated' : 'Suspended'} ${String(target.email)}.`);
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'LAST_ACTIVE_AUTHORITY_ADMIN') {
+        return res.status(409).json({ error: 'The last active Authority Admin cannot be suspended.' });
+      }
+      throw error;
+    }
+    res.json({ success: true, membershipId: req.params.membershipId, status: nextStatus });
   });
 
-  app.get('/api/expert/audit-logs', authenticateToken, requireRoles(['EXPERT']), (_req: AuthenticatedRequest, res: Response) => {
-    res.json({ auditLogs: db.getAuditLogs() });
+  app.post('/api/authority/members/:membershipId/permissions', authenticateToken, requireAuthorityAdmin, (req: AuthenticatedRequest, res: Response) => {
+    const permission = req.body?.permission;
+    if (!AUTHORITY_PERMISSIONS.includes(permission)) {
+      return res.status(400).json({ error: 'Unknown authority permission.' });
+    }
+    const authorityId = req.authorityMembership!.authorityId;
+    const target = db.db.prepare(`
+      SELECT m.id, m.user_id, m.membership_role, u.email FROM authority_memberships m
+      JOIN users u ON u.id = m.user_id
+      WHERE m.id = ? AND m.authority_id = ? AND m.membership_role = 'EXPERT'
+    `).get(req.params.membershipId, authorityId) as Record<string, unknown> | undefined;
+    if (!target) return res.status(404).json({ error: 'Expert membership not found in this authority.' });
+    const now = new Date().toISOString();
+    withTransaction(() => {
+      db.db.prepare(`
+        INSERT INTO authority_permissions (id, membership_id, permission, assigned_by, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (membership_id, permission) DO NOTHING
+      `).run(`PERM_${crypto.randomUUID()}`, String(target.id), permission, req.user!.id, now);
+      db.appendAuthorityAuditLog(req.user!, authorityId, 'EXPERT_PERMISSION_ASSIGNED',
+        String(target.user_id), `Assigned ${String(permission)} to ${String(target.email)}.`);
+    });
+    res.json({ success: true, permission });
+  });
+
+  app.delete('/api/authority/members/:membershipId/permissions/:permission', authenticateToken, requireAuthorityAdmin, (req: AuthenticatedRequest, res: Response) => {
+    const permission = req.params.permission as AuthorityPermission;
+    if (!AUTHORITY_PERMISSIONS.includes(permission)) return res.status(400).json({ error: 'Unknown authority permission.' });
+    const authorityId = req.authorityMembership!.authorityId;
+    const target = db.db.prepare(`
+      SELECT m.id, m.user_id, u.email FROM authority_memberships m
+      JOIN users u ON u.id = m.user_id
+      WHERE m.id = ? AND m.authority_id = ? AND m.membership_role = 'EXPERT'
+    `).get(req.params.membershipId, authorityId) as Record<string, unknown> | undefined;
+    if (!target) return res.status(404).json({ error: 'Expert membership not found in this authority.' });
+    withTransaction(() => {
+      const result = db.db.prepare(
+        'DELETE FROM authority_permissions WHERE membership_id = ? AND permission = ?'
+      ).run(String(target.id), permission);
+      if (result.changes) {
+        db.appendAuthorityAuditLog(req.user!, authorityId, 'EXPERT_PERMISSION_REVOKED',
+          String(target.user_id), `Revoked ${permission} from ${String(target.email)}.`);
+      }
+    });
+    res.json({ success: true, permission });
+  });
+
+  app.get('/api/authority/audit-logs', authenticateToken, requireAuthorityAdmin, (req: AuthenticatedRequest, res: Response) => {
+    const rows = db.db.prepare(`
+      SELECT log_id AS id, actor_id AS actorId, actor_name AS actorName,
+             actor_role AS actorRole, authority_id AS authorityId, action,
+             target_resource AS targetResource, details, timestamp
+      FROM audit_logs WHERE authority_id = ? ORDER BY timestamp DESC LIMIT 200
+    `).all(req.authorityMembership!.authorityId);
+    res.json({ auditLogs: rows });
+  });
+
+  app.get('/api/expert/audit-logs', authenticateToken, requireAuthorityPermission('AUDIT_VIEW'), (req: AuthenticatedRequest, res: Response) => {
+    const rows = db.db.prepare(`
+      SELECT log_id AS id, actor_id AS actorId, actor_name AS actorName,
+             actor_role AS actorRole, authority_id AS authorityId, action,
+             target_resource AS targetResource, details, timestamp
+      FROM audit_logs WHERE authority_id = ? ORDER BY timestamp DESC LIMIT 150
+    `).all(req.authorityMembership!.authorityId);
+    res.json({ auditLogs: rows });
   });
 
   // ----------------- OPERATIONAL & GEOSPATIAL ENDPOINTS -----------------
@@ -487,7 +1102,7 @@ export function createSanketSetuApp(dbPath?: string) {
       service: 'SanketSetu Intelligence Platform',
       region: 'Pune & Pimpri-Chinchwad, Maharashtra, India',
       database: 'sqlite_persistent',
-      rolesSupported: ['CITIZEN', 'EXPERT'],
+      rolesSupported: ['CITIZEN', 'AUTHORITY_ADMIN', 'EXPERT'],
       weatherFeed: {
         openMeteoStatus: rainfall.openMeteoStatus,
         imdApiStatus: rainfall.imdApiStatus,
@@ -515,8 +1130,14 @@ export function createSanketSetuApp(dbPath?: string) {
     });
   });
 
-  app.patch('/api/roads/:id/status', writeLimiter, authenticateToken, requireRoles(['EXPERT']), (req: AuthenticatedRequest, res: Response) => {
+  app.patch('/api/roads/:id/status', writeLimiter, authenticateToken, requireAuthorityPermission('ROAD_STATUS_UPDATE'), (req: AuthenticatedRequest, res: Response) => {
     const { id } = req.params;
+    const roadScope = db.db.prepare(
+      'SELECT authority_id FROM road_segments WHERE road_id = ?'
+    ).get(id) as { authority_id: string | null } | undefined;
+    if (!roadScope || roadScope.authority_id !== req.authorityMembership!.authorityId) {
+      return res.status(404).json({ error: 'Road segment not found in this authority.' });
+    }
     const { status, riskScore, reason, expiresInHours } = req.body || {};
     const validStatuses: RoadStatus[] = ['OPEN', 'REPORTED_WATERLOGGING', 'VERIFIED_HAZARD', 'CLOSED', 'UNKNOWN'];
     if (!status || !validStatuses.includes(status)) {
@@ -526,6 +1147,12 @@ export function createSanketSetuApp(dbPath?: string) {
     if (!cleanReason) {
       return res.status(400).json({ error: 'A concise operational reason is required when updating road status.' });
     }
+    const expiry = parseExpiry(expiresInHours);
+    if (!expiry.valid) {
+      return res.status(400).json({
+        error: `expiresInHours must be a finite number greater than 0 and no more than ${MAX_EXPIRY_IN_HOURS}, or null/omitted for a non-expiring status.`
+      });
+    }
 
     let nextRisk: number | null = typeof riskScore === 'number' ? Math.max(0, Math.min(100, riskScore)) : null;
     if (nextRisk === null) {
@@ -534,10 +1161,7 @@ export function createSanketSetuApp(dbPath?: string) {
       else if (status === 'OPEN') nextRisk = 20;
     }
 
-    const expiresAt =
-      typeof expiresInHours === 'number' && expiresInHours > 0
-        ? new Date(Date.now() + expiresInHours * 3600 * 1000).toISOString()
-        : null;
+    const expiresAt = expiry.expiresAt;
 
     const riskCat = classifyRiskScore(nextRisk).category;
     const updatedRoad = db.updateRoadStatus({
@@ -558,7 +1182,8 @@ export function createSanketSetuApp(dbPath?: string) {
       req.user!,
       'ROAD_STATUS_CHANGE',
       `${updatedRoad.id} (${updatedRoad.name})`,
-      `Status set to ${status} (Risk: ${nextRisk ?? 'Unknown'}). Reason: ${cleanReason}${expiresAt ? ` | Expires: ${expiresAt}` : ''}`
+      `Status set to ${status} (Risk: ${nextRisk ?? 'Unknown'}). Reason: ${cleanReason}${expiresAt ? ` | Expires: ${expiresAt}` : ''}`,
+      req.authorityMembership!.authorityId
     );
 
     if (status === 'CLOSED' || status === 'VERIFIED_HAZARD' || status === 'OPEN') {
@@ -817,7 +1442,13 @@ export function createSanketSetuApp(dbPath?: string) {
     res.json(db.getShelters());
   });
 
-  app.patch('/api/shelters/:id', writeLimiter, authenticateToken, requireRoles(['EXPERT']), (req: AuthenticatedRequest, res: Response) => {
+  app.patch('/api/shelters/:id', writeLimiter, authenticateToken, requireAuthorityPermission('SHELTER_MANAGE'), (req: AuthenticatedRequest, res: Response) => {
+    const shelterScope = db.db.prepare(
+      'SELECT authority_id FROM shelters WHERE shelter_id = ?'
+    ).get(req.params.id) as { authority_id: string | null } | undefined;
+    if (!shelterScope || shelterScope.authority_id !== req.authorityMembership!.authorityId) {
+      return res.status(404).json({ error: 'Shelter not found in this authority.' });
+    }
     const { currentOccupancy, capacity } = req.body || {};
     const updatedShelter = db.updateShelter(
       req.params.id,
@@ -829,7 +1460,8 @@ export function createSanketSetuApp(dbPath?: string) {
       req.user!,
       'SHELTER_UPDATE',
       `${updatedShelter.id} (${updatedShelter.name})`,
-      `Occupancy updated to ${updatedShelter.currentOccupancy}/${updatedShelter.capacity}`
+      `Occupancy updated to ${updatedShelter.currentOccupancy}/${updatedShelter.capacity}`,
+      req.authorityMembership!.authorityId
     );
     res.json({ success: true, updatedShelter });
   });
@@ -916,11 +1548,29 @@ export function createSanketSetuApp(dbPath?: string) {
     res.status(201).json({ success: true, report: newReport, roads });
   });
 
-  app.patch('/api/reports/:id/verify', writeLimiter, authenticateToken, requireRoles(['EXPERT']), async (req: AuthenticatedRequest, res: Response) => {
+  app.patch('/api/reports/:id/verify', writeLimiter, authenticateToken, requireAuthorityPermission('REPORTS_VERIFY'), async (req: AuthenticatedRequest, res: Response) => {
+    const reportScope = db.db.prepare(`
+      SELECT r.road_id, road.authority_id
+      FROM community_reports r
+      LEFT JOIN road_segments road ON road.road_id = r.road_id
+      WHERE r.report_id = ?
+    `).get(req.params.id) as { road_id: string | null; authority_id: string | null } | undefined;
+    if (!reportScope || reportScope.authority_id !== req.authorityMembership!.authorityId) {
+      return res.status(404).json({ error: 'Report not found in this authority.' });
+    }
     const { verificationStatus, officialAction, reviewNotes, expiresInHours } = req.body || {};
     const validStates: CommunityReport['verificationStatus'][] = ['Reported', 'Under Review', 'Verified', 'Rejected', 'Resolved'];
     if (!validStates.includes(verificationStatus)) {
       return res.status(400).json({ error: 'Invalid verification status.' });
+    }
+    if (officialAction && !req.authorityMembership!.permissions.includes('HAZARD_VERIFY')) {
+      return res.status(403).json({ error: 'Missing authority permission: HAZARD_VERIFY.' });
+    }
+    const expiry = parseExpiry(expiresInHours);
+    if (!expiry.valid) {
+      return res.status(400).json({
+        error: `expiresInHours must be a finite number greater than 0 and no more than ${MAX_EXPIRY_IN_HOURS}, or null/omitted for a non-expiring status.`
+      });
     }
 
     const confidence =
@@ -928,71 +1578,142 @@ export function createSanketSetuApp(dbPath?: string) {
       verificationStatus === 'Rejected' ? 0.20 :
       verificationStatus === 'Resolved' ? 0.90 : 0.72;
 
-    const updated = db.updateReportVerification({
-      reportId: req.params.id,
-      verificationStatus,
-      confidenceScore: confidence,
-      reviewedBy: req.user!.fullName,
-      reviewNotes: reviewNotes ? String(reviewNotes) : undefined,
-      resolvedAt: verificationStatus === 'Resolved' ? new Date().toISOString() : undefined
-    });
+    let updated: CommunityReport | null;
+    try {
+      updated = withTransaction(() => {
+        const currentReport = db.db.prepare(`
+          SELECT r.verification_status, r.road_id, road.authority_id
+          FROM community_reports r
+          LEFT JOIN road_segments road ON road.road_id = r.road_id
+          WHERE r.report_id = ?
+        `).get(req.params.id) as {
+          verification_status: CommunityReport['verificationStatus'];
+          road_id: string | null;
+          authority_id: string | null;
+        } | undefined;
+        if (!currentReport || currentReport.authority_id !== req.authorityMembership!.authorityId) {
+          return null;
+        }
 
-    if (!updated) return res.status(404).json({ error: 'Report not found.' });
+        const previousStatus = currentReport.verification_status;
+        const verifiedReport = db.updateReportVerification({
+          reportId: req.params.id,
+          verificationStatus,
+          confidenceScore: confidence,
+          reviewedBy: req.user!.fullName,
+          reviewNotes: reviewNotes ? String(reviewNotes) : undefined,
+          resolvedAt: verificationStatus === 'Resolved' ? new Date().toISOString() : undefined
+        });
+        if (!verifiedReport) return null;
 
-    const expiresAt =
-      typeof expiresInHours === 'number' && expiresInHours > 0
-        ? new Date(Date.now() + expiresInHours * 3600 * 1000).toISOString()
-        : null;
+        if (verificationStatus === 'Verified' && verifiedReport.roadId) {
+          db.createVerifiedHazard({
+            reportId: verifiedReport.id,
+            roadId: verifiedReport.roadId,
+            hazardType: verifiedReport.reportType,
+            severity: verifiedReport.severity,
+            description: verifiedReport.description,
+            actor: req.user!,
+            expiresAt: expiry.expiresAt
+          });
 
-    if (verificationStatus === 'Verified' && updated.roadId) {
-      db.createVerifiedHazard({
-        reportId: updated.id,
-        roadId: updated.roadId,
-        hazardType: updated.reportType,
-        severity: updated.severity,
-        description: updated.description,
-        actor: req.user!,
-        expiresAt
+          const shouldClose = officialAction === 'close_road';
+          db.updateRoadStatus({
+            roadId: verifiedReport.roadId,
+            status: shouldClose ? 'CLOSED' : 'VERIFIED_HAZARD',
+            riskScore: shouldClose ? 100 : 85,
+            riskCategory: 'Severe',
+            reason: reviewNotes ? String(reviewNotes) : `Expert-verified ${verifiedReport.reportType} near ${verifiedReport.locationName}`,
+            expiresAt: expiry.expiresAt,
+            actor: req.user!
+          });
+        } else if (verificationStatus === 'Resolved' && verifiedReport.roadId) {
+          db.db.prepare(`
+            UPDATE verified_hazards
+            SET is_active = 0
+            WHERE report_id = ? AND is_active = 1
+          `).run(verifiedReport.id);
+
+          const road = db.db.prepare(`
+            SELECT status, expires_at, risk_score
+            FROM road_segments
+            WHERE road_id = ? AND authority_id = ?
+          `).get(verifiedReport.roadId, req.authorityMembership!.authorityId) as {
+            status: RoadStatus;
+            expires_at: string | null;
+            risk_score: number | null;
+          } | undefined;
+
+          if (road) {
+            const now = new Date().toISOString();
+            const activeReports = db.db.prepare(`
+              SELECT verification_status AS verificationStatus
+              FROM community_reports
+              WHERE road_id = ? AND verification_status NOT IN ('Rejected', 'Resolved')
+            `).all(verifiedReport.roadId) as {
+              verificationStatus: CommunityReport['verificationStatus'];
+            }[];
+            const activeHazards = db.db.prepare(`
+              SELECT expires_at AS expiresAt
+              FROM verified_hazards
+              WHERE road_id = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > ?)
+            `).all(verifiedReport.roadId, now) as { expiresAt: string | null }[];
+            const state = deriveRoadLifecycleState({
+              status: road.status,
+              expiresAt: road.expires_at,
+              activeReports,
+              activeHazards,
+              fallbackStatus: 'OPEN',
+              now
+            });
+
+            if (state.status !== road.status || state.expiresAt !== road.expires_at) {
+              const riskScore =
+                state.status === 'CLOSED' ? 100 :
+                state.status === 'VERIFIED_HAZARD' ? 85 :
+                state.status === 'REPORTED_WATERLOGGING' ? road.risk_score ?? 60 : 25;
+              db.updateRoadStatus({
+                roadId: verifiedReport.roadId,
+                status: state.status,
+                riskScore,
+                riskCategory: classifyRiskScore(riskScore).category,
+                reason: reviewNotes
+                  ? String(reviewNotes)
+                  : `Incident ${verifiedReport.id} resolved; road status reflects remaining reports and hazards`,
+                expiresAt: state.expiresAt,
+                actor: req.user!
+              });
+            }
+          }
+        }
+
+        db.appendAuditLog(
+          req.user!,
+          'INCIDENT_VERIFICATION',
+          verifiedReport.id,
+          `Report status changed to ${verificationStatus} for ${verifiedReport.locationName}${officialAction ? ` (action: ${officialAction})` : ''}`,
+          req.authorityMembership!.authorityId
+        );
+
+        if (previousStatus !== verificationStatus) {
+          db.createNotification({
+            userId: verifiedReport.userId,
+            title: `Report ${verificationStatus}: ${verifiedReport.locationName}`,
+            message: `${req.user!.fullName} updated your ${verifiedReport.reportType} report to ${verificationStatus}.${reviewNotes ? ` Note: ${reviewNotes}` : ''}`,
+            severity: verificationStatus === 'Verified' ? 'warning' : 'info',
+            relatedRoadId: verifiedReport.roadId,
+            relatedReportId: verifiedReport.id
+          });
+        }
+
+        return verifiedReport;
       });
-
-      const shouldClose = officialAction === 'close_road';
-      db.updateRoadStatus({
-        roadId: updated.roadId,
-        status: shouldClose ? 'CLOSED' : 'VERIFIED_HAZARD',
-        riskScore: shouldClose ? 100 : 85,
-        riskCategory: 'Severe',
-        reason: reviewNotes ? String(reviewNotes) : `Expert-verified ${updated.reportType} near ${updated.locationName}`,
-        expiresAt,
-        actor: req.user!
-      });
-    } else if (verificationStatus === 'Resolved' && updated.roadId) {
-      db.updateRoadStatus({
-        roadId: updated.roadId,
-        status: 'OPEN',
-        riskScore: 25,
-        riskCategory: 'Moderate',
-        reason: reviewNotes ? String(reviewNotes) : `Incident ${updated.id} marked resolved`,
-        expiresAt: null,
-        actor: req.user!
-      });
+    } catch (error) {
+      console.error('[SankatSetu] Report verification transaction failed:', error);
+      return res.status(500).json({ error: 'Unable to update report verification.' });
     }
 
-    db.appendAuditLog(
-      req.user!,
-      'INCIDENT_VERIFICATION',
-      updated.id,
-      `Report status changed to ${verificationStatus} for ${updated.locationName}${officialAction ? ` (action: ${officialAction})` : ''}`
-    );
-
-    // Notify reporting citizen
-    db.createNotification({
-      userId: updated.userId,
-      title: `Report ${verificationStatus}: ${updated.locationName}`,
-      message: `${req.user!.fullName} updated your ${updated.reportType} report to ${verificationStatus}.${reviewNotes ? ` Note: ${reviewNotes}` : ''}`,
-      severity: verificationStatus === 'Verified' ? 'warning' : 'info',
-      relatedRoadId: updated.roadId,
-      relatedReportId: updated.id
-    });
+    if (!updated) return res.status(404).json({ error: 'Report not found in this authority.' });
 
     const { roads } = await getAuthoritativeRoads(false);
     res.json({ success: true, report: updated, roads });

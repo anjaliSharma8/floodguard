@@ -1,7 +1,26 @@
 export type Language = 'en' | 'hi' | 'mr';
 
-export type UserRole = 'CITIZEN' | 'EXPERT';
+export type UserRole = 'CITIZEN' | 'AUTHORITY_ADMIN' | 'EXPERT';
 export type AccountStatus = 'ACTIVE' | 'PENDING_APPROVAL' | 'REJECTED' | 'SUSPENDED';
+export type AuthorityPermission =
+  | 'REPORTS_VIEW'
+  | 'REPORTS_VERIFY'
+  | 'ROAD_STATUS_UPDATE'
+  | 'HAZARD_VERIFY'
+  | 'SHELTER_MANAGE'
+  | 'ALERT_CREATE'
+  | 'EXPERT_MANAGE'
+  | 'AUDIT_VIEW';
+
+export interface AuthorityMembership {
+  id: string;
+  authorityId: string;
+  authorityName: string;
+  authorityRegion: string;
+  role: 'AUTHORITY_ADMIN' | 'EXPERT';
+  status: 'INVITED' | 'PENDING' | 'ACTIVE' | 'SUSPENDED';
+  permissions: AuthorityPermission[];
+}
 
 export type RoadStatus =
   | 'OPEN'
@@ -25,6 +44,7 @@ export interface User {
   designation?: string;
   createdAt: string;
   preferredLanguage?: Language;
+  authorityMembership?: AuthorityMembership;
 }
 
 export interface AuthResponse {
@@ -45,6 +65,7 @@ export interface ExpertApplication {
   appliedAt: string;
   reviewedAt?: string;
   reviewedBy?: string;
+  authorityId?: string;
 }
 
 export interface AuditLog {
@@ -56,6 +77,7 @@ export interface AuditLog {
   targetResource: string;
   details: string;
   timestamp: string;
+  authorityId?: string;
 }
 
 export interface AppNotification {
@@ -88,6 +110,7 @@ export interface RoadNode {
 
 export interface RoadSegment {
   id: string;
+  authorityId?: string;
   name: string;
   from: string;
   to: string;
@@ -118,6 +141,7 @@ export interface RoadSegment {
 
 export interface Shelter {
   id: string;
+  authorityId?: string;
   name: string;
   lat: number;
   lng: number;
