@@ -188,15 +188,14 @@ test('REAL PUNE NETWORK: Verifies multiple OD pairs (Swargate-Shivajinagar, Koth
   assert.notEqual(sSC.edges.map(e => e.id).join(','), fSC.edges.map(e => e.id).join(','), 'Shortest and Fastest paths differ');
 
   // Test 2: Shivajinagar -> Swargate
-  // Shortest/Fastest goes direct via Tilak Road (Alka Talkies flood hotspot)
-  // Safest detours via Raja Bahadur Mill & Camp to avoid Alka Talkies
+  // Historical flood metadata is not a current road report, so routes may converge
+  // until current verified risk data distinguishes the corridors.
   const sSS = calculateDijkstraRoute(PUNE_ROAD_NODES, graphEdges, 'N_SHIVAJINAGAR', 'N_SWARGATE', 'shortest');
   const safeSS = calculateDijkstraRoute(PUNE_ROAD_NODES, graphEdges, 'N_SHIVAJINAGAR', 'N_SWARGATE', 'safest', 2.0);
   assert.equal(sSS.feasible, true);
   assert.equal(safeSS.feasible, true);
-  assert.ok(sSS.totalDistanceKm < safeSS.totalDistanceKm, 'Shortest is shorter');
-  assert.ok(safeSS.averageRiskScore < sSS.averageRiskScore, 'Safest has lower flood risk exposure');
-  assert.notEqual(sSS.edges.map(e => e.id).join(','), safeSS.edges.map(e => e.id).join(','), 'Safest chooses safer detour');
+  assert.ok(sSS.totalDistanceKm <= safeSS.totalDistanceKm, 'Shortest remains distance-optimal');
+  assert.ok(safeSS.averageRiskScore <= sSS.averageRiskScore, 'Safest does not increase risk exposure');
 
   // Test 3: Shivajinagar -> Nal Stop (Honest Mathematical Convergence)
   const sSN = calculateDijkstraRoute(PUNE_ROAD_NODES, graphEdges, 'N_SHIVAJINAGAR', 'N_NAL_STOP', 'shortest');

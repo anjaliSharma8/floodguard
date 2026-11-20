@@ -13,12 +13,9 @@ import {
   WaterwayFeature,
   AppNotification,
   Language,
-  TrafficFeedStatus,
   EvacuationPreferences
 } from '../types';
 import { ActiveRouteSelection, SelectedRoute } from '../utils/rules';
-import { INITIAL_HISTORICAL_FLOODS } from '../data/puneData';
-import type { OfflineStorageSummary } from '../services/offlineStorage';
 import { TRANSLATIONS } from '../utils/i18n';
 import { MapView } from './MapView';
 import { SafeRoutePlanner } from './SafeRoutePlanner';
@@ -41,7 +38,6 @@ import {
   PawPrint,
   Compass,
   Bell,
-  Database,
   Info,
   CheckCheck
 } from 'lucide-react';
@@ -60,12 +56,6 @@ interface CitizenViewProps {
   routeFeedbacks: RouteFeedback[];
   notifications: AppNotification[];
   rainfallFeed: RainfallFeedMetadata | null;
-  rainfallDataState: 'LIVE' | 'CACHED' | 'UNAVAILABLE';
-  trafficFeedStatus: Pick<
-    TrafficFeedStatus,
-    'provider' | 'isLiveActive' | 'lastChecked' | 'lastSuccessfulUpdate' | 'message'
-  > | null;
-  offlineStorageSummary: OfflineStorageSummary | null;
   lang: Language;
   setLang: (lang: Language) => void;
   isOffline: boolean;
@@ -126,9 +116,6 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
   routeFeedbacks,
   notifications,
   rainfallFeed,
-  rainfallDataState,
-  trafficFeedStatus,
-  offlineStorageSummary,
   lang,
   setLang,
   isOffline,
@@ -219,77 +206,6 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
 
   const myReports = reports.filter(r => r.userId === user.id || r.userName === user.fullName);
   const unreadAlerts = notifications.filter(n => !n.isRead).length;
-  const offlineRoadRecord = offlineStorageSummary?.datasets.find(dataset => dataset.id === 'roads');
-  const offlineRainfallRecord = offlineStorageSummary?.datasets.find(dataset => dataset.id === 'rainfall');
-  const availableRainfall = Boolean(rainfallFeed?.observations.some(observation => observation.isAvailable));
-  const rainfallState = isOffline
-    ? availableRainfall ? 'CACHED' : offlineRainfallRecord ? 'CACHED' : 'UNAVAILABLE'
-    : rainfallDataState;
-  const trafficState = isOffline
-    ? trafficFeedStatus?.lastSuccessfulUpdate ? 'CACHED' : 'UNAVAILABLE'
-    : trafficFeedStatus?.isLiveActive ? 'LIVE' : 'UNAVAILABLE';
-  const historicalSources = Array.from(new Set(INITIAL_HISTORICAL_FLOODS.map(record => record.source))).join(', ');
-  const formatTransparencyTimestamp = (value: string | null | undefined) => {
-    if (!value) return 'Unknown';
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString();
-  };
-  const dataStateClass = (state: string) => {
-    if (state === 'LIVE') return 'bg-emerald-950 text-emerald-300 border-emerald-800';
-    if (state === 'CACHED') return 'bg-blue-950 text-blue-300 border-blue-800';
-    if (state === 'HISTORICAL') return 'bg-slate-800 text-slate-300 border-slate-700';
-    return 'bg-amber-950 text-amber-300 border-amber-800';
-  };
-  const transparencyRows = [
-    {
-      name: 'Rainfall estimates',
-      source: rainfallFeed?.observations.find(observation => observation.source)?.source || 'Open-Meteo Forecast API',
-      updatedLabel: 'Last source update',
-      updated: formatTransparencyTimestamp(
-        rainfallFeed?.lastSuccessfulUpdate || offlineRainfallRecord?.sourceUpdatedAt
-      ),
-      freshness: rainfallState === 'LIVE'
-        ? 'Recently received from the source.'
-        : rainfallState === 'CACHED'
-          ? 'Previously downloaded information.'
-          : 'Data source could not be reached.',
-      reliability: availableRainfall ? 'Model estimate; not gauge-verified.' : 'Not verified',
-      state: rainfallState
-    },
-    {
-      name: 'Road network',
-      source: 'OpenStreetMap ODbL-derived bundled road snapshot',
-      updatedLabel: 'Last received or saved',
-      updated: formatTransparencyTimestamp(
-        isOffline ? offlineRoadRecord?.savedAt : lastLiveDataUpdate || offlineRoadRecord?.savedAt
-      ),
-      freshness: 'Local snapshot; source update time is unknown.',
-      reliability: 'Not verified',
-      state: roads.length > 0 ? 'CACHED' : 'UNAVAILABLE'
-    },
-    {
-      name: 'Traffic information',
-      source: trafficFeedStatus?.provider || 'TomTom Traffic Flow API / Estimated Baseline',
-      updatedLabel: 'Last successful update',
-      updated: formatTransparencyTimestamp(trafficFeedStatus?.lastSuccessfulUpdate),
-      freshness: trafficState === 'LIVE'
-        ? 'Recently received from the source.'
-        : trafficState === 'CACHED'
-          ? 'Previously received information; may be stale.'
-          : 'Live traffic data is unavailable; route speed estimates may be used.',
-      reliability: 'No aggregate confidence score available.',
-      state: trafficState
-    },
-    {
-      name: 'Historical flood records',
-      source: historicalSources || 'Unknown',
-      updatedLabel: 'Dataset update',
-      updated: 'Unknown',
-      freshness: 'Past records, not current conditions.',
-      reliability: 'Not verified',
-      state: 'HISTORICAL'
-    }
-  ];
 
   // Derive active & alternative route edges for MapView
   const selectedRoute: SelectedRoute | null = activeCalculation?.selectedRoute ?? null;
@@ -566,52 +482,6 @@ export const CitizenView: React.FC<CitizenViewProps> = ({
                 </div>
               </div>
             </div>
-
-            <section
-              aria-labelledby="citizen-data-transparency-heading"
-              className="rounded-2xl border border-slate-800 bg-slate-900 p-4 sm:p-5 shadow-lg space-y-3"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Database className="h-4 w-4 text-cyan-400" />
-                  <h3 id="citizen-data-transparency-heading" className="text-sm font-bold text-white">
-                    Data Transparency
-                  </h3>
-                </div>
-                <p className="text-[11px] text-slate-300" role="status">
-                  {!deviceOnline
-                    ? 'Device offline; showing available saved data.'
-                    : backendAvailable === false
-                      ? 'SankatSetu backend unavailable; live updates cannot be confirmed.'
-                      : backendAvailable === true
-                        ? 'SankatSetu backend connected.'
-                        : 'Checking data connection...'}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                {transparencyRows.map(row => (
-                  <div key={row.name} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-1.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <strong className="text-xs text-white">{row.name}</strong>
-                      <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-bold ${dataStateClass(row.state)}`}>
-                        {row.state}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-300">{row.source}</p>
-                    <p className="text-[10px] text-slate-400">
-                      {row.updatedLabel}: {row.updated}
-                    </p>
-                    <p className="text-[10px] text-slate-400">{row.freshness}</p>
-                    <p className="text-[10px] text-slate-400">Reliability: {row.reliability}</p>
-                  </div>
-                ))}
-              </div>
-
-              <p className="text-[10px] text-slate-400">
-                LIVE: recently received from the source. CACHED: previously downloaded. HISTORICAL: past records, not current conditions. UNAVAILABLE: source could not be reached. A risk estimate does not guarantee a route is safe.
-              </p>
-            </section>
 
             {/* Personal Evacuation Assistant */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg space-y-3">

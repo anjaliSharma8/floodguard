@@ -3,7 +3,7 @@ import { Content, FunctionDeclaration, GenerateContentConfig, GoogleGenAI, Modal
 import dotenv from 'dotenv';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createTcpServer } from 'node:net';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { resolve } from 'node:path';
 import {
   INITIAL_HOSPITALS,
@@ -102,6 +102,12 @@ function isValidPuneCoordinate(lat: number, lng: number): boolean {
     lng >= PUNE_BOUNDS.minLng &&
     lng <= PUNE_BOUNDS.maxLng
   );
+}
+
+function matchesSecret(candidate: string, expected: string): boolean {
+  const candidateBytes = Buffer.from(candidate, 'utf8');
+  const expectedBytes = Buffer.from(expected, 'utf8');
+  return candidateBytes.length === expectedBytes.length && timingSafeEqual(candidateBytes, expectedBytes);
 }
 
 function validateOptionalDataImage(imageUrl: unknown): { ok: boolean; error?: string; value?: string } {
@@ -356,8 +362,6 @@ export function createSanketSetuApp(dbPath?: string) {
       designation: String(designation).trim(),
       createdAt: now
     };
-    db.createUser(newExpert);
-
     const application: ExpertApplication = {
       id: `APP_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       userId: newExpert.id,
@@ -368,7 +372,7 @@ export function createSanketSetuApp(dbPath?: string) {
       status: 'PENDING_APPROVAL',
       appliedAt: now
     };
-    db.createExpertApplication(application);
+    db.createExpertRegistration(newExpert, application);
 
     const { passwordHash, ...safeUser } = newExpert;
     res.status(201).json({
@@ -396,7 +400,8 @@ export function createSanketSetuApp(dbPath?: string) {
     if (found.accountStatus === 'PENDING_APPROVAL') {
       return res.status(403).json({
         error: 'Your expert application is awaiting verification. Access to operational controls is restricted until approval.',
-        accountStatus: 'PENDING_APPROVAL'
+        accountStatus: 'PENDING_APPROVAL',
+        applicationId: db.getExpertApplicationForUser(found.id)?.id
       });
     }
     if (found.accountStatus === 'REJECTED') {
@@ -478,53 +483,61 @@ export function createSanketSetuApp(dbPath?: string) {
   });
 
   app.patch('/api/expert/applications/:id/approve', authenticateToken, requireRoles(['EXPERT']), (req: AuthenticatedRequest, res: Response) => {
-    const updated = db.updateExpertApplicationStatus(req.params.id, 'ACTIVE', req.user!.fullName);
-    if (!updated) return res.status(404).json({ error: 'Application not found.' });
+    const existing = db.getExpertApplicationById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Application not found.' });
+    if (existing.userId === req.user!.id) {
+      return res.status(403).json({ error: 'An Expert cannot approve their own application.' });
+    }
+    if (existing.status !== 'PENDING_APPROVAL') {
+      return res.status(409).json({ error: 'This application has already been reviewed.' });
+    }
 
-    db.appendAuditLog(
-      req.user!,
-      'EXPERT_APPROVAL',
-      updated.userId,
-      `Approved expert privileges for ${updated.fullName} (${updated.organisation})`
-    );
-    db.createNotification({
-      userId: updated.userId,
-      title: 'Expert Account Approved',
-      message: `Your SanketSetu Expert credentials (${updated.organisation}) have been approved by ${req.user!.fullName}.`,
-      severity: 'info'
-    });
-
+    const updated = db.updateExpertApplicationStatus(req.params.id, 'ACTIVE', req.user!);
+    if (!updated) return res.status(409).json({ error: 'This application has already been reviewed.' });
     res.json({ success: true, application: updated, message: `Approved expert ${updated.fullName}` });
   });
 
   app.patch('/api/expert/applications/:id/reject', authenticateToken, requireRoles(['EXPERT']), (req: AuthenticatedRequest, res: Response) => {
-    const updated = db.updateExpertApplicationStatus(req.params.id, 'REJECTED', req.user!.fullName);
-    if (!updated) return res.status(404).json({ error: 'Application not found.' });
+    const existing = db.getExpertApplicationById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Application not found.' });
+    if (existing.userId === req.user!.id) {
+      return res.status(403).json({ error: 'An Expert cannot reject their own application.' });
+    }
+    if (existing.status !== 'PENDING_APPROVAL') {
+      return res.status(409).json({ error: 'This application has already been reviewed.' });
+    }
 
-    db.appendAuditLog(
-      req.user!,
-      'EXPERT_REJECTION',
-      updated.userId,
-      `Rejected expert application for ${updated.fullName} (${updated.organisation})`
-    );
+    const updated = db.updateExpertApplicationStatus(req.params.id, 'REJECTED', req.user!);
+    if (!updated) return res.status(409).json({ error: 'This application has already been reviewed.' });
     res.json({ success: true, application: updated, message: `Rejected application for ${updated.fullName}` });
   });
 
-  // Non-admin server-secret bootstrap approval for initial deployment / CLI review
+  // One-time initial deployment bootstrap; subsequent reviews require an active Expert session.
   app.post('/api/expert/applications/:id/bootstrap-approve', authLimiter, (req: Request, res: Response) => {
     const configuredSecret = process.env.EXPERT_APPROVAL_SECRET?.trim();
-    if (!configuredSecret) {
+    const reviewerId = process.env.EXPERT_BOOTSTRAP_REVIEWER_ID?.trim();
+    const reviewerName = process.env.EXPERT_BOOTSTRAP_REVIEWER_NAME?.trim();
+    if (!configuredSecret || Buffer.byteLength(configuredSecret, 'utf8') < 32 || !reviewerId || !reviewerName) {
       return res.status(503).json({
-        error: 'EXPERT_APPROVAL_SECRET is not configured on the server.'
+        error: 'Initial Expert bootstrap is not configured. Set a 32+ byte secret and the provisioning reviewer ID and name on the server.'
       });
     }
-    const supplied = req.headers['x-expert-approval-secret'] || req.body?.secret;
-    if (!supplied || String(supplied) !== configuredSecret) {
+    const supplied = req.get('x-expert-approval-secret');
+    if (!supplied || !matchesSecret(supplied, configuredSecret)) {
       return res.status(403).json({ error: 'Invalid approval secret.' });
     }
-    const updated = db.updateExpertApplicationStatus(req.params.id, 'ACTIVE', 'System Provisioning Secret');
-    if (!updated) return res.status(404).json({ error: 'Application not found.' });
-    res.json({ success: true, application: updated });
+
+    const result = db.bootstrapApproveExpertApplication(req.params.id, reviewerId, reviewerName);
+    if (!('application' in result)) {
+      if (result.status === 'bootstrap_closed') {
+        return res.status(409).json({
+          error: 'Initial Expert bootstrap is closed. An active Expert must review this application.'
+        });
+      }
+      if (result.status === 'not_found') return res.status(404).json({ error: 'Application not found.' });
+      return res.status(409).json({ error: 'This application has already been reviewed.' });
+    }
+    res.json({ success: true, application: result.application, message: 'Initial Expert approval completed.' });
   });
 
   app.get('/api/expert/audit-logs', authenticateToken, requireRoles(['EXPERT']), (_req: AuthenticatedRequest, res: Response) => {
@@ -664,24 +677,8 @@ export function createSanketSetuApp(dbPath?: string) {
     res.json({ success: true, updatedRoad });
   });
 
-  app.get('/api/traffic/status', optionalAuth, (req: AuthenticatedRequest, res: Response) => {
-    const status = getTrafficFeedStatus();
-    const isActiveExpert =
-      req.user?.role === 'EXPERT' && req.user.accountStatus === 'ACTIVE';
-    if (isActiveExpert) {
-      res.json(status);
-      return;
-    }
-
-    res.json({
-      provider: status.provider,
-      isLiveActive: status.isLiveActive,
-      lastChecked: status.lastChecked,
-      lastSuccessfulUpdate: status.lastSuccessfulUpdate,
-      message: status.isLiveActive
-        ? 'Live traffic data is available.'
-        : 'Live traffic data is unavailable; route speed estimates may be used.'
-    });
+  app.get('/api/traffic/status', authenticateToken, requireRoles(['EXPERT']), (_req: AuthenticatedRequest, res: Response) => {
+    res.json(getTrafficFeedStatus());
   });
 
   app.get('/api/network/status', authenticateToken, requireRoles(['EXPERT']), (_req: AuthenticatedRequest, res: Response) => {
@@ -1333,6 +1330,55 @@ export function createSanketSetuApp(dbPath?: string) {
     };
     db.createRouteFeedback(fb);
     res.status(201).json({ success: true, feedback: fb });
+  });
+
+  app.post('/api/expert/alerts', writeLimiter, authenticateToken, requireRoles(['EXPERT']), (req: AuthenticatedRequest, res: Response) => {
+    const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
+    const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+    const severity = req.body?.severity;
+    const relatedRoadId = typeof req.body?.relatedRoadId === 'string' && req.body.relatedRoadId
+      ? req.body.relatedRoadId
+      : undefined;
+
+    if (!title || title.length > 120 || !message || message.length > 2000) {
+      return res.status(400).json({ error: 'Alert title (1–120 characters) and message (1–2000 characters) are required.' });
+    }
+    if (severity !== 'info' && severity !== 'warning' && severity !== 'critical') {
+      return res.status(400).json({ error: 'Invalid alert severity.' });
+    }
+    if (relatedRoadId && !db.getRoadSegments().some(road => road.id === relatedRoadId)) {
+      return res.status(400).json({ error: 'Affected road was not found in the configured road network.' });
+    }
+
+    const notification = db.createNotification({
+      title,
+      message,
+      severity,
+      ...(relatedRoadId ? { relatedRoadId } : {})
+    });
+    db.appendAuditLog(
+      req.user!,
+      'EXPERT_ALERT_CREATE',
+      notification.id,
+      `Created in-app alert "${title}"${relatedRoadId ? ` for road ${relatedRoadId}` : ' for Pune & PCMC'}; external delivery is not configured.`
+    );
+
+    res.status(201).json({
+      success: true,
+      notification,
+      alert: {
+        ...notification,
+        createdById: req.user!.id,
+        createdBy: req.user!.fullName,
+        deliveryStatus: 'NOT_CONFIGURED'
+      },
+      publication: 'IN_APP_ONLY',
+      deliveryStatus: 'NOT_CONFIGURED'
+    });
+  });
+
+  app.get('/api/expert/alerts', authenticateToken, requireRoles(['EXPERT']), (_req: AuthenticatedRequest, res: Response) => {
+    res.json({ alerts: db.getExpertAlerts() });
   });
 
   app.get('/api/notifications', optionalAuth, (req: AuthenticatedRequest, res: Response) => {

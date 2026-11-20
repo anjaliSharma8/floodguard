@@ -7,6 +7,8 @@ import fs from 'node:fs';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createSanketSetuApp } from '../../server';
+import type { SanketSetuDatabase } from '../db/database';
+import { generateToken } from '../utils/auth';
 import { INITIAL_EMERGENCY_FACILITIES } from '../data/puneData';
 import { stopScheduledOsmSync } from '../services/osmSyncService';
 
@@ -17,7 +19,7 @@ function makeTmpDbPath(name: string): string {
 
 async function withServer(
   dbPath: string,
-  fn: (baseUrl: string) => Promise<void>
+  fn: (baseUrl: string, db: SanketSetuDatabase) => Promise<void>
 ): Promise<void> {
   const { app, db } = createSanketSetuApp(dbPath);
   const server = app.listen(0, '127.0.0.1');
@@ -25,7 +27,7 @@ async function withServer(
   const port = (server.address() as AddressInfo).port;
   const baseUrl = `http://127.0.0.1:${port}`;
   try {
-    await fn(baseUrl);
+    await fn(baseUrl, db);
   } finally {
     server.closeAllConnections?.();
     await new Promise<void>(resolve => server.close(() => resolve()));
@@ -99,7 +101,7 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
   const pendingEmail = `ndrf.tester.${Date.now()}@ndrf.gov.in`;
   const citizenEmail = `cit.tester.${Date.now()}@pune.in`;
 
-  await withServer(dbPath, async baseUrl => {
+  await withServer(dbPath, async (baseUrl, db) => {
     // 1. Health endpoint reports strict 2 roles
     const healthRes = await fetch(`${baseUrl}/api/health`);
     assert.equal(healthRes.status, 200);
@@ -110,6 +112,17 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
     assert.equal('geminiConfigured' in health, false);
     const networkRes = await fetch(`${baseUrl}/api/network/status`);
     assert.equal(networkRes.status, 401);
+
+    const invalidExpertLogin = await fetch(`${baseUrl}/api/auth/expert/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: `missing.${Date.now()}@example.invalid`,
+        password: 'not-a-real-password'
+      })
+    });
+    assert.equal(invalidExpertLogin.status, 401);
+    assert.equal((await invalidExpertLogin.json()).error, 'Invalid email or password.');
 
     // 2. Register citizen
     const regCit = await fetch(`${baseUrl}/api/auth/citizen/register`, {
@@ -149,6 +162,29 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
       body: JSON.stringify({ email: pendingEmail, password: 'Password@123' })
     });
     assert.equal(pendingLogin.status, 403);
+    const pendingLoginBody = await pendingLogin.json();
+    assert.equal(pendingLoginBody.accountStatus, 'PENDING_APPROVAL');
+    assert.equal(pendingLoginBody.applicationId, pendingAppId);
+    const pendingDirectAccess = await fetch(`${baseUrl}/api/expert/applications`);
+    assert.equal(pendingDirectAccess.status, 401);
+    const pendingStoredUser = db.getUserByEmail(pendingEmail);
+    assert.ok(pendingStoredUser);
+    const pendingToken = generateToken({
+      id: pendingStoredUser.id,
+      fullName: pendingStoredUser.fullName,
+      email: pendingStoredUser.email,
+      role: pendingStoredUser.role,
+      accountStatus: pendingStoredUser.accountStatus,
+      createdAt: pendingStoredUser.createdAt
+    });
+    const pendingProtectedAccess = await fetch(`${baseUrl}/api/expert/applications`, {
+      headers: { Authorization: `Bearer ${pendingToken}` }
+    });
+    assert.equal(pendingProtectedAccess.status, 403);
+    const pendingTrafficAccess = await fetch(`${baseUrl}/api/traffic/status`, {
+      headers: { Authorization: `Bearer ${pendingToken}` }
+    });
+    assert.equal(pendingTrafficAccess.status, 403);
 
     // 4. Dev-login active expert approves pending expert (no ADMIN role needed or present)
     const devExpertRes = await fetch(`${baseUrl}/api/auth/dev-login`, {
@@ -182,6 +218,11 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
       headers: { Authorization: `Bearer ${citizenToken}` }
     });
     assert.equal(forbiddenApps.status, 403);
+    const forbiddenApproval = await fetch(`${baseUrl}/api/expert/applications/${pendingAppId}/approve`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${citizenToken}` }
+    });
+    assert.equal(forbiddenApproval.status, 403);
 
     const forbiddenNetwork = await fetch(`${baseUrl}/api/network/status`, {
       headers: { Authorization: `Bearer ${citizenToken}` }
@@ -206,14 +247,12 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
     assert.equal(network.externalFetchEnabled, false);
     assert.match(network.statusMessage, /does not fetch current data from Overpass/);
 
-    const publicTrafficResponse = await fetch(`${baseUrl}/api/traffic/status`, {
+    const unauthenticatedTrafficResponse = await fetch(`${baseUrl}/api/traffic/status`);
+    assert.equal(unauthenticatedTrafficResponse.status, 401);
+    const citizenTrafficResponse = await fetch(`${baseUrl}/api/traffic/status`, {
       headers: { Authorization: `Bearer ${citizenToken}` }
     });
-    assert.equal(publicTrafficResponse.status, 200);
-    const publicTraffic = await publicTrafficResponse.json();
-    assert.equal('liveSegments' in publicTraffic, false);
-    assert.equal('cachedSegments' in publicTraffic, false);
-    assert.doesNotMatch(publicTraffic.message, /API key is configured|not configured/i);
+    assert.equal(citizenTrafficResponse.status, 403);
 
     const expertTrafficResponse = await fetch(`${baseUrl}/api/traffic/status`, {
       headers: { Authorization: `Bearer ${expertToken}` }
@@ -228,6 +267,15 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
       headers: { Authorization: `Bearer ${expertToken}` }
     });
     assert.equal(approveRes.status, 200);
+    const approvedApplication = (await approveRes.json()).application;
+    assert.equal(approvedApplication.reviewedById, devExpert.user.id);
+    assert.equal(approvedApplication.reviewedBy, devExpert.user.fullName);
+    assert.ok(Number.isFinite(Date.parse(approvedApplication.reviewedAt)));
+    const duplicateApproval = await fetch(`${baseUrl}/api/expert/applications/${pendingAppId}/approve`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${expertToken}` }
+    });
+    assert.equal(duplicateApproval.status, 409);
   });
 
   // Reopen the SAME SQLite database file in a fresh server instance to verify persistence!
@@ -240,6 +288,18 @@ test('API enforces strictly two roles, blocks pending experts until peer-approve
     assert.equal(approvedLogin.status, 200);
     const body = await approvedLogin.json();
     assert.equal(body.user.accountStatus, 'ACTIVE');
+    const authorizedOperations = await fetch(`${baseUrl}/api/network/status`, {
+      headers: { Authorization: `Bearer ${body.token}` }
+    });
+    assert.equal(authorizedOperations.status, 200);
+    const persistedReview = await fetch(`${baseUrl}/api/expert/applications`, {
+      headers: { Authorization: `Bearer ${body.token}` }
+    });
+    const persistedApplications = await persistedReview.json();
+    const approvedApplication = persistedApplications.find((item: { id: string }) => item.id === pendingAppId);
+    assert.equal(approvedApplication.reviewedBy, 'Dr. Rajiv Kulkarni');
+    assert.equal(approvedApplication.reviewedById, 'USR_EXPERT_01');
+    assert.ok(Number.isFinite(Date.parse(approvedApplication.reviewedAt)));
   });
 });
 
@@ -536,5 +596,249 @@ test('POST /api/routes/find returns independent metrics, distinguishes shortest/
     assert.equal(airportClosed.shortest.edges.some((e: any) => e.id === 'R38'), false);
     assert.equal(airportClosed.shortest.closuresAvoidedCount, 1);
   });
+});
+
+test('expert alerts are role-protected, persisted, and explicitly not externally delivered', async () => {
+  await withServer(makeTmpDbPath('expert-alerts'), async baseUrl => {
+    const alertPayload = {
+      title: 'Rainfall watch',
+      message: 'Monitor verified reports near the river corridor.',
+      severity: 'warning'
+    };
+
+    const unauthenticated = await fetch(`${baseUrl}/api/expert/alerts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(alertPayload)
+    });
+    assert.equal(unauthenticated.status, 401);
+
+    const citizenLogin = await (
+      await fetch(`${baseUrl}/api/auth/dev-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: 'citizen' })
+      })
+    ).json();
+    const citizenToken = citizenLogin.token as string;
+    const citizenAttempt = await fetch(`${baseUrl}/api/expert/alerts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${citizenToken}`
+      },
+      body: JSON.stringify(alertPayload)
+    });
+    assert.equal(citizenAttempt.status, 403);
+
+    const expertLogin = await (
+      await fetch(`${baseUrl}/api/auth/dev-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: 'expert' })
+      })
+    ).json();
+    const expertToken = expertLogin.token as string;
+    const createdResponse = await fetch(`${baseUrl}/api/expert/alerts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${expertToken}`
+      },
+      body: JSON.stringify(alertPayload)
+    });
+    assert.equal(createdResponse.status, 201);
+    const created = await createdResponse.json();
+    assert.equal(created.publication, 'IN_APP_ONLY');
+    assert.equal(created.deliveryStatus, 'NOT_CONFIGURED');
+    assert.equal(created.alert.createdById, expertLogin.user.id);
+    assert.ok(Number.isFinite(Date.parse(created.alert.createdAt)));
+
+    const historyResponse = await fetch(`${baseUrl}/api/expert/alerts`, {
+      headers: { Authorization: `Bearer ${expertToken}` }
+    });
+    assert.equal(historyResponse.status, 200);
+    const history = await historyResponse.json();
+    assert.equal(history.alerts.length, 1);
+    assert.equal(history.alerts[0].id, created.alert.id);
+    assert.equal(history.alerts[0].createdById, expertLogin.user.id);
+
+    const citizenFeed = await fetch(`${baseUrl}/api/notifications`, {
+      headers: { Authorization: `Bearer ${citizenToken}` }
+    });
+    assert.equal(citizenFeed.status, 200);
+    const notifications = await citizenFeed.json();
+    assert.ok(notifications.some((item: { id: string }) => item.id === created.alert.id));
+
+    const auditResponse = await fetch(`${baseUrl}/api/expert/audit-logs`, {
+      headers: { Authorization: `Bearer ${expertToken}` }
+    });
+    assert.equal(auditResponse.status, 200);
+    const audit = await auditResponse.json();
+    assert.ok(audit.auditLogs.some((item: { action: string; targetResource: string; actorId: string }) =>
+      item.action === 'EXPERT_ALERT_CREATE' &&
+      item.targetResource === created.alert.id &&
+      item.actorId === expertLogin.user.id
+    ));
+  });
+});
+
+test('active Expert can reject an application and the rejected account remains blocked', async () => {
+  await withServer(makeTmpDbPath('expert-rejection'), async baseUrl => {
+    const email = `rejected.expert.${Date.now()}@example.test`;
+    const registration = await fetch(`${baseUrl}/api/auth/expert/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fullName: 'Rejected Applicant',
+        email,
+        password: 'Password@123',
+        organisation: 'Test Organization',
+        designation: 'Test Officer'
+      })
+    });
+    assert.equal(registration.status, 201);
+    const registered = await registration.json();
+    assert.equal(registered.user.accountStatus, 'PENDING_APPROVAL');
+
+    const expertLogin = await (
+      await fetch(`${baseUrl}/api/auth/dev-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account: 'expert' })
+      })
+    ).json();
+    const rejectedResponse = await fetch(
+      `${baseUrl}/api/expert/applications/${registered.application.id}/reject`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${expertLogin.token}` }
+      }
+    );
+    assert.equal(rejectedResponse.status, 200);
+    const rejected = (await rejectedResponse.json()).application;
+    assert.equal(rejected.status, 'REJECTED');
+    assert.equal(rejected.reviewedById, expertLogin.user.id);
+    assert.ok(Number.isFinite(Date.parse(rejected.reviewedAt)));
+
+    const rejectedLogin = await fetch(`${baseUrl}/api/auth/expert/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: 'Password@123' })
+    });
+    assert.equal(rejectedLogin.status, 403);
+    const loginError = await rejectedLogin.json();
+    assert.equal(loginError.accountStatus, 'REJECTED');
+    assert.match(loginError.error, /reviewed and rejected/i);
+  });
+});
+
+test('one-time initial Expert bootstrap requires server secret and reviewer identity and closes permanently', async () => {
+  const previousSecret = process.env.EXPERT_APPROVAL_SECRET;
+  const previousReviewerId = process.env.EXPERT_BOOTSTRAP_REVIEWER_ID;
+  const previousReviewerName = process.env.EXPERT_BOOTSTRAP_REVIEWER_NAME;
+  const testSecret = 'test-only-initial-expert-bootstrap-secret-32-bytes';
+  process.env.EXPERT_APPROVAL_SECRET = testSecret;
+  process.env.EXPERT_BOOTSTRAP_REVIEWER_ID = 'provisioner-test-01';
+  process.env.EXPERT_BOOTSTRAP_REVIEWER_NAME = 'Deployment Operator Test';
+
+  try {
+    await withServer(makeTmpDbPath('expert-bootstrap'), async (baseUrl, db) => {
+      const bootstrapWithActiveExpert = await fetch(
+        `${baseUrl}/api/expert/applications/not-an-application/bootstrap-approve`,
+        {
+          method: 'POST',
+          headers: { 'x-expert-approval-secret': testSecret }
+        }
+      );
+      assert.equal(bootstrapWithActiveExpert.status, 409);
+
+      db.db.prepare("DELETE FROM expert_applications WHERE user_id = 'USR_EXPERT_01'").run();
+      db.db.prepare("DELETE FROM users WHERE id = 'USR_EXPERT_01'").run();
+      db.db.prepare(`
+        UPDATE expert_bootstrap_state
+        SET completed_at = NULL, application_id = NULL, reviewer_id = NULL, reviewer_name = NULL
+        WHERE singleton_id = 1
+      `).run();
+      const activeCount = (db.db
+        .prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'EXPERT' AND account_status = 'ACTIVE'")
+        .get() as { count: number }).count;
+      assert.equal(activeCount, 0);
+
+      const email = `first.expert.${Date.now()}@example.test`;
+      const registration = await fetch(`${baseUrl}/api/auth/expert/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: 'First Expert Applicant',
+          email,
+          password: 'Password@123',
+          organisation: 'Test Organization',
+          designation: 'Test Officer'
+        })
+      });
+      assert.equal(registration.status, 201);
+      const registered = await registration.json();
+
+      const bodySecretAttempt = await fetch(
+        `${baseUrl}/api/expert/applications/${registered.application.id}/bootstrap-approve`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secret: testSecret })
+        }
+      );
+      assert.equal(bodySecretAttempt.status, 403, 'Bootstrap credentials must not be accepted in a request body');
+
+      const bootstrapResponse = await fetch(
+        `${baseUrl}/api/expert/applications/${registered.application.id}/bootstrap-approve`,
+        {
+          method: 'POST',
+          headers: { 'x-expert-approval-secret': testSecret }
+        }
+      );
+      assert.equal(bootstrapResponse.status, 200);
+      const bootstrapped = await bootstrapResponse.json();
+      assert.equal(bootstrapped.application.status, 'ACTIVE');
+      assert.equal(bootstrapped.application.reviewedById, 'provisioner-test-01');
+      assert.equal(bootstrapped.application.reviewedBy, 'Deployment Operator Test');
+      assert.ok(Number.isFinite(Date.parse(bootstrapped.application.reviewedAt)));
+      assert.equal(JSON.stringify(bootstrapped).includes(testSecret), false);
+
+      const approvedLogin = await fetch(`${baseUrl}/api/auth/expert/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: 'Password@123' })
+      });
+      assert.equal(approvedLogin.status, 200);
+      const activeExpert = await approvedLogin.json();
+      const authorizedEndpoint = await fetch(`${baseUrl}/api/expert/applications`, {
+        headers: { Authorization: `Bearer ${activeExpert.token}` }
+      });
+      assert.equal(authorizedEndpoint.status, 200);
+
+      const secondBootstrap = await fetch(
+        `${baseUrl}/api/expert/applications/${registered.application.id}/bootstrap-approve`,
+        {
+          method: 'POST',
+          headers: { 'x-expert-approval-secret': testSecret }
+        }
+      );
+      assert.equal(secondBootstrap.status, 409);
+
+      const noSecret = await fetch(
+        `${baseUrl}/api/expert/applications/${registered.application.id}/bootstrap-approve`,
+        { method: 'POST' }
+      );
+      assert.equal(noSecret.status, 403);
+    });
+  } finally {
+    if (previousSecret === undefined) delete process.env.EXPERT_APPROVAL_SECRET;
+    else process.env.EXPERT_APPROVAL_SECRET = previousSecret;
+    if (previousReviewerId === undefined) delete process.env.EXPERT_BOOTSTRAP_REVIEWER_ID;
+    else process.env.EXPERT_BOOTSTRAP_REVIEWER_ID = previousReviewerId;
+    if (previousReviewerName === undefined) delete process.env.EXPERT_BOOTSTRAP_REVIEWER_NAME;
+    else process.env.EXPERT_BOOTSTRAP_REVIEWER_NAME = previousReviewerName;
+  }
 });
 

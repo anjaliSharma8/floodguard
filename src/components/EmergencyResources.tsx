@@ -162,12 +162,7 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {filteredShelters.map(shelter => {
-            const occPct = shelter.capacity > 0
-              ? Math.round((shelter.currentOccupancy / shelter.capacity) * 100)
-              : 0;
-
-            return (
+          {filteredShelters.map(shelter => (
               <div key={shelter.id} className="bg-slate-800/70 border border-slate-700/80 rounded-xl p-3.5 text-xs space-y-2">
                 <div className="flex items-start justify-between">
                   <div>
@@ -188,18 +183,12 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
                   </div>
                 </div>
 
-                {/* Capacity Progress Bar */}
-                <div className="space-y-1">
+                <div className="space-y-1 rounded-lg bg-slate-900/70 p-2">
                   <div className="flex justify-between text-[11px] text-slate-300">
-                    <span>Capacity: {shelter.currentOccupancy} / {shelter.capacity}</span>
-                    <span className="font-bold text-cyan-300">{occPct}% Full</span>
+                    <span>Listed capacity: {shelter.capacity}</span>
+                    <span className="font-bold text-amber-300">Availability unknown</span>
                   </div>
-                  <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${occPct > 80 ? 'bg-red-500' : (occPct > 50 ? 'bg-amber-500' : 'bg-emerald-500')}`}
-                      style={{ width: `${Math.min(100, occPct)}%` }}
-                    />
-                  </div>
+                  <p className="text-[10px] text-slate-400">Current occupancy is unavailable; confirm before travel.</p>
                 </div>
 
                 <div className="flex items-center justify-between pt-1 border-t border-slate-700/60 text-[11px]">
@@ -209,8 +198,7 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
                   </a>
                 </div>
               </div>
-            );
-          })}
+          ))}
         </div>
       </div>
 
@@ -224,11 +212,11 @@ export const EmergencyResources: React.FC<EmergencyResourcesProps> = ({
               <h4 className="font-bold text-white truncate">{hosp.name}</h4>
               <p className="text-[11px] text-slate-400">{hosp.type}</p>
               <div className="flex justify-between text-[11px] text-slate-300 pt-1">
-                <span>Total Beds: <strong>{hosp.totalBeds}</strong></span>
-                <span className="text-emerald-400 font-semibold">ICU: {hosp.availableIcu} Beds</span>
+                <span>Listed beds: <strong>{hosp.totalBeds}</strong></span>
+                <span className="text-amber-300 font-semibold">Current ICU availability: Unknown</span>
               </div>
               <div className="pt-1 border-t border-slate-700/60 flex justify-between items-center text-[11px]">
-                <span className="text-red-400 font-bold">{hosp.hasTraumaCenter ? '24x7 Trauma Ready' : 'Emergency Desk'}</span>
+                <span className="text-red-400 font-bold">{hosp.hasTraumaCenter ? 'Trauma service listed' : 'Emergency desk listed'}</span>
                 <a href={`tel:${hosp.contact}`} className="text-cyan-400 font-mono font-bold">
                   Call Desk
                 </a>

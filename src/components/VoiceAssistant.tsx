@@ -1374,13 +1374,13 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
         );
         const nearest = matches.slice(0, 3);
         const details = nearest.map(shelter =>
-          `${shelter.name}, ${shelter.address}, ${shelter.currentOccupancy} of ${shelter.capacity} places occupied${shelter.petFriendly ? ', pets accepted' : ''}${shelter.wheelchairAccessible ? ', wheelchair accessible' : ''}`
+          `${shelter.name}, ${shelter.address}, listed capacity ${shelter.capacity}, current occupancy unavailable${shelter.petFriendly ? ', pet-friendly listing' : ''}${shelter.wheelchairAccessible ? ', wheelchair-accessible listing' : ''}`
         ).join('. ');
         const limitation = wantsElderly
           ? languageText(lang, ' The shelter data does not include a separate elderly-support field.', ' आश्रय डेटा में बुजुर्ग सहायता का अलग विवरण नहीं है।', ' निवारा डेटामध्ये ज्येष्ठांसाठी स्वतंत्र सुविधा माहिती नाही.')
           : '';
         say(matches.length
-          ? languageText(lang, `Showing ${matches.length} matching shelters. ${details}.${limitation}`, `${matches.length} मेल खाते आश्रय दिखा रहा हूँ। ${details}.${limitation}`, `${matches.length} जुळणारे निवारे दाखवत आहे. ${details}.${limitation}`)
+          ? languageText(lang, `Showing ${matches.length} matching shelter listings. Current occupancy and availability are not connected. ${details}.${limitation}`, `${matches.length} मेल खाने वाली आश्रय सूचियाँ दिखा रहा हूँ। वर्तमान क्षमता और उपलब्धता की जानकारी उपलब्ध नहीं है। ${details}.${limitation}`, `${matches.length} जुळणाऱ्या निवारा नोंदी दाखवत आहे. सध्याची उपस्थिती आणि उपलब्धता जोडलेली नाही. ${details}.${limitation}`)
           : languageText(lang, 'No shelters match those available filters.', 'इन उपलब्ध फ़िल्टर से कोई आश्रय नहीं मिला।', 'या उपलब्ध निकषांशी जुळणारे निवारे नाहीत.'));
       } else {
         const matches = location
@@ -1395,10 +1395,10 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
           location ? [location.coords.latitude, location.coords.longitude] : undefined
         );
         const list = matches.slice(0, 3).map(hospital =>
-          `${hospital.name}, ${hospital.type}, ${hospital.availableIcu} ICU beds available`
+          `${hospital.name}, ${hospital.type}, current ICU availability unverified`
         ).join('. ');
         say(matches.length
-          ? languageText(lang, `Showing ${matches.length} hospitals. ${list}.`, `${matches.length} अस्पताल दिखा रहा हूँ। ${list}।`, `${matches.length} रुग्णालये दाखवत आहे. ${list}.`)
+          ? languageText(lang, `Showing ${matches.length} hospital listings. Current bed availability is unverified. ${list}.`, `${matches.length} अस्पताल सूचियाँ दिखा रहा हूँ। वर्तमान बेड उपलब्धता सत्यापित नहीं है। ${list}।`, `${matches.length} रुग्णालयांच्या नोंदी दाखवत आहे. सध्याची बेड उपलब्धता पडताळलेली नाही. ${list}.`)
           : languageText(lang, 'No hospital data is available right now.', 'अभी अस्पताल का डेटा उपलब्ध नहीं है।', 'सध्या रुग्णालयांची माहिती उपलब्ध नाही.'));
       }
       return;

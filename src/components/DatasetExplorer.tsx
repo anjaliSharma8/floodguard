@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { calculateFloodRisk } from '../utils/rules';
-import { INITIAL_HISTORICAL_FLOODS } from '../data/puneData';
+import { INITIAL_HISTORICAL_FLOODS, INITIAL_WATERWAYS } from '../data/puneData';
 import { RainfallFeedMetadata, TrafficFeedStatus, User, OsmSyncLog } from '../types';
 import {
   Database,
@@ -42,6 +42,8 @@ interface DatasetExplorerProps {
   deviceOnline: boolean;
   backendAvailable: boolean | null;
   lastLiveDataUpdate: string | null;
+  operationalDataState: 'LIVE' | 'CACHED' | 'UNAVAILABLE';
+  rainfallDataState: 'LIVE' | 'CACHED' | 'UNAVAILABLE';
   onRefreshData?: () => void;
 }
 
@@ -56,6 +58,8 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
   deviceOnline,
   backendAvailable,
   lastLiveDataUpdate,
+  operationalDataState,
+  rainfallDataState,
   onRefreshData
 }) => {
   // Local OSM-derived graph status and manual refresh state
@@ -100,6 +104,10 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
   }, [token]);
 
   const handleManualSync = async () => {
+    if (!deviceOnline || backendAvailable !== true) {
+      setSyncFeedback({ text: 'Connect to the live backend before validating the local graph.', isError: true });
+      return;
+    }
     setIsSyncing(true);
     setSyncFeedback(null);
     try {
@@ -154,12 +162,13 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
     drainageCondition: drainage,
     hasHistoricalFlood: hasHistory,
     communityRiskScore: parsedCommunity,
-    rainfallTimestamp: new Date().toISOString()
+    rainfallTimestamp: null
   });
 
   const weatherLastUpdated = rainfallFeed?.lastSuccessfulUpdate
     ? new Date(rainfallFeed.lastSuccessfulUpdate).toLocaleString()
     : 'Unknown';
+  const weatherIsAvailable = rainfallFeed?.openMeteoStatus === 'OK' && rainfallDataState !== 'UNAVAILABLE';
   const trafficLastUpdated = trafficStatus?.lastSuccessfulUpdate
     ? new Date(trafficStatus.lastSuccessfulUpdate).toLocaleString()
     : typeof trafficStatus?.liveSegments === 'number'
@@ -173,8 +182,10 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
     typeof trafficStatus?.liveSegments === 'number' &&
     typeof trafficStatus.cachedSegments === 'number';
 
-  const lastSyncTimestamp =
-    networkStatus?.lastSync?.syncTimestamp || networkStatus?.lastSync?.createdAt;
+  const lastSuccessfulOsmSync = networkStatus?.lastSync?.status === 'SUCCESS'
+    ? networkStatus.lastSync
+    : networkStatus?.recentLogs?.find(log => log.status === 'SUCCESS') ?? null;
+  const lastSyncTimestamp = lastSuccessfulOsmSync?.syncTimestamp || lastSuccessfulOsmSync?.createdAt;
   const osmLastUpdated = lastSyncTimestamp
     ? new Date(lastSyncTimestamp).toLocaleString()
     : 'Unknown';
@@ -188,8 +199,10 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
       file: 'src/services/weatherService.ts',
       source: 'Open-Meteo Forecast API (~11 km hourly grid); direct IMD station data is not queried',
       lastUpdated: weatherLastUpdated,
-      freshness: rainfallFeed?.openMeteoStatus === 'OK' ? 'MODEL_ESTIMATE' : 'UNAVAILABLE',
-      confidence: rainfallFeed?.openMeteoStatus === 'OK' ? 'Not gauge-verified; no score' : 'Not verified',
+      freshness: weatherIsAvailable
+        ? rainfallDataState === 'CACHED' ? 'CACHED_MODEL_ESTIMATE' : 'MODEL_ESTIMATE'
+        : 'UNAVAILABLE',
+      confidence: weatherIsAvailable ? 'Unverified; not gauge-verified' : 'Unverified',
       coverage: '9 Pune & PCMC grid points; past-24h model estimates, current-hour estimate and next-24h forecast (not gauges)',
       badge: rainfallFeed?.openMeteoStatus === 'OK' ? 'API responded' : 'Unavailable'
     },
@@ -198,25 +211,25 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
       file: 'src/services/osmSyncService.ts & sanketsetu.db',
       source: 'Bundled ODbL-derived snapshot; scheduled local refresh (no runtime Overpass fetch)',
       lastUpdated: osmLastUpdated,
-      freshness: networkStatus?.lastSync?.status === 'SUCCESS' ? 'VALIDATED_LOCAL' : 'BUNDLED_BASELINE',
+      freshness: lastSuccessfulOsmSync ? 'VALIDATED_LOCAL' : 'BUNDLED_BASELINE',
       confidence: 'Topology validation only',
       coverage: `${networkStatus?.nodesCount ?? 'Unknown'} Nodes, ${networkStatus?.edgesCount ?? 'Unknown'} Bundled Road Segments (One-Way & Turn Constrained)`,
       badge: networkStatus?.lastSync?.status === 'SUCCESS' ? 'Local graph validated' : 'Bundled graph'
     },
     {
       name: 'Elevation & Terrain Slope',
-      file: 'datasets/processed/terrain.csv & roads.json',
-      source: 'Copernicus DEM GLO-90 (30m-class global elevation sampling)',
+      file: 'src/data/roads.json (bundled road attributes)',
+      source: 'Bundled road attributes; upstream elevation and slope source is not recorded',
       lastUpdated: 'Unknown',
       freshness: 'UNKNOWN',
-      confidence: 'Not verified',
-      coverage: 'Base elevations (545m–615m) across Mutha, Mula & Pavana river basins',
-      badge: 'Update status unknown'
+      confidence: 'Unverified',
+      coverage: 'Stored baseline elevation and slope attributes; no terrain survey timestamp is available',
+      badge: 'Provenance unknown'
     },
     {
       name: 'TomTom Traffic Flow & Estimated Speeds',
       file: 'src/services/trafficService.ts',
-      source: trafficStatus?.provider || 'TomTom Traffic Flow API / Estimated Baseline',
+      source: trafficStatus?.provider || 'Provider not confirmed',
       lastUpdated: trafficLastUpdated,
       freshness: hasAccurateTrafficStatus
         ? trafficStatus.isLiveActive ? 'LIVE' : 'ESTIMATED'
@@ -233,48 +246,50 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
     },
     {
       name: 'Waterways & Drainage Inventory',
-      file: 'datasets/processed/drainage.csv',
-      source: 'OSM Waterways (Mutha, Mula, Pavana, Ambil Odha, Nagzari)',
+      file: 'src/data/puneData.ts (waterway inventory)',
+      source: Array.from(new Set(INITIAL_WATERWAYS.map(waterway => waterway.source).filter(Boolean))).join('; ') || 'Unknown',
       lastUpdated: 'Unknown',
       freshness: 'UNKNOWN',
-      confidence: 'Not verified',
+      confidence: 'Unverified',
       coverage: 'Channel locations & inspection status; quantitative capacity marked unknown (capacityKnown=false)',
       badge: 'Partial inventory'
     },
     {
       name: 'Historical Flood Incidents',
-      file: 'datasets/processed/historical_floods.csv',
+      file: 'src/data/puneData.ts (historical records)',
       source: HISTORICAL_FLOOD_SOURCES || 'Unknown',
       lastUpdated: 'Unknown',
       freshness: 'HISTORICAL',
-      confidence: 'Not verified',
+      confidence: 'Unverified',
       coverage: INITIAL_HISTORICAL_FLOODS.map(record => `${record.name} (${record.date})`).join('; '),
       badge: 'Historical'
     },
     {
       name: 'Emergency Shelters, Hospitals & Rescue',
-      file: 'datasets/processed/shelters.csv & hospitals.csv',
-      source: 'PMC / PCMC Disaster Management & RESQ Charitable Trust Directories',
+      file: 'src/data/puneData.ts; shelter and hospital APIs',
+      source: 'Source attribution is not recorded in the bundled directory records',
       lastUpdated: 'Unknown',
       freshness: 'UNKNOWN',
-      confidence: 'Not verified',
-      coverage: 'Verified shelters (pet-friendly & step-free flags), trauma centers & 24x7 dispatch units',
-      badge: 'Directory'
+      confidence: 'Unverified',
+      coverage: 'Directory entries only; current shelter occupancy and hospital availability are not connected',
+      badge: 'Availability unknown'
     },
     {
       name: 'Community Field Reports & Hazards',
       file: 'data/sanketsetu.db (SQLite)',
       source: 'Citizen-submitted observations with strict Expert verification audit trail',
-      lastUpdated: lastLiveDataUpdate ? new Date(lastLiveDataUpdate).toLocaleString() : 'Unknown',
-      freshness: isBackendConnected && lastLiveDataUpdate ? 'LIVE' : 'UNAVAILABLE',
+      lastUpdated: operationalDataState === 'UNAVAILABLE'
+        ? 'Unknown'
+        : lastLiveDataUpdate ? `Backend response ${new Date(lastLiveDataUpdate).toLocaleString()}` : 'Unknown',
+      freshness: operationalDataState,
       confidence: 'Per-report verification status; no aggregate score',
       coverage: 'Geo-tagged waterlogging, tree falls, and verified road closures with operational audit log',
-      badge: isBackendConnected && lastLiveDataUpdate ? 'Backend refreshed' : 'Unavailable'
+      badge: operationalDataState === 'LIVE' ? 'Backend response received' : operationalDataState
     }
   ];
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl text-slate-100 space-y-6">
+    <div className="min-w-0 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl text-slate-100 space-y-6">
       {/* Title */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
         <div className="flex items-center space-x-2.5">
@@ -299,7 +314,7 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
               ? 'bg-emerald-950/60 text-emerald-300 border-emerald-700'
               : 'bg-amber-950/60 text-amber-300 border-amber-700'
           }`}>
-            Weather: {rainfallFeed?.openMeteoStatus === 'OK' ? 'MODEL ESTIMATES AVAILABLE' : 'UNAVAILABLE'}
+            Weather: {weatherIsAvailable ? `${rainfallDataState} MODEL ESTIMATES` : 'UNAVAILABLE'}
           </span>
           <span className="text-[11px] bg-slate-800 text-cyan-300 border border-slate-700 px-2.5 py-1 rounded-full font-mono">
             IMD: {rainfallFeed?.imdApiStatus || 'KEY_MISSING'}
@@ -318,7 +333,7 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
       <div className="p-3 bg-blue-950/40 border border-blue-900/70 rounded-xl text-xs text-slate-300 flex items-start space-x-2">
         <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
         <p className="leading-relaxed">
-          SanketSetu uses a <strong>rule-based weighted index</strong> (not a trained black-box ML model). Open-Meteo supplies gridded precipitation estimates across 9 regional grid points; these are not gauge observations, and direct IMD station data is not currently queried. The scheduled OSM-derived graph task refreshes and validates the bundled snapshot locally; it does not fetch current Overpass data. The system <strong>does not fabricate missing weather readings</strong>.
+          SanketSetu uses a <strong>rule-based weighted index</strong> (not a trained black-box ML model). Open-Meteo supplies gridded precipitation estimates across 9 regional grid points; these are not gauge observations, and direct IMD station data is not currently queried. Shelter occupancy and hospital availability are not live feeds, and terrain provenance is not recorded for bundled road attributes. The scheduled OSM-derived graph task refreshes and validates the bundled snapshot locally; it does not fetch current Overpass data. The system <strong>does not fabricate missing weather readings</strong>.
         </p>
       </div>
 
@@ -339,7 +354,7 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] font-mono px-2.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-indigo-300 flex items-center space-x-1.5">
               <Clock className="w-3.5 h-3.5 text-indigo-400" />
               <span>Refresh interval: {networkStatus?.syncIntervalHours ?? 'Unknown'} Hours</span>
@@ -349,8 +364,8 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
               <button
                 type="button"
                 onClick={handleManualSync}
-                disabled={isSyncing}
-                className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 text-white rounded-lg text-xs font-medium flex items-center space-x-1.5 transition shadow"
+                disabled={isSyncing || !isBackendConnected}
+                className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium flex items-center space-x-1.5 transition shadow"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
                 <span>{isSyncing ? 'Validating local graph...' : 'Refresh Local Graph'}</span>
@@ -431,7 +446,7 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
           </div>
         </div>
 
-        <div className="text-[11px] text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-1 pt-1 border-t border-slate-800/80">
+        <div className="text-[11px] text-slate-400 flex flex-col xl:flex-row xl:items-center justify-between gap-1 pt-1 border-t border-slate-800/80">
           <div className="flex items-center space-x-2">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
             <span>
@@ -450,7 +465,7 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>Verified Pune & PCMC Datasets (Source, Last Updated, Freshness & Confidence)</span>
+            <span>Configured Dataset Catalog (Source, Timestamp, Freshness & Confidence)</span>
           </h3>
         </div>
         <div className="overflow-x-auto">
@@ -484,7 +499,13 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
                   </td>
                   <td className="p-2.5 font-bold text-emerald-400">{d.confidence}</td>
                   <td className="p-2.5">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 whitespace-nowrap">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${
+                      d.freshness === 'UNAVAILABLE' || d.freshness === 'UNKNOWN' || d.freshness === 'UNAVAILABLE'
+                        ? 'bg-amber-500/20 text-amber-300'
+                        : d.freshness.startsWith('CACHED')
+                          ? 'bg-amber-500/20 text-amber-300'
+                          : 'bg-emerald-500/20 text-emerald-300'
+                    }`}>
                       {d.badge}
                     </span>
                   </td>
@@ -579,6 +600,9 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
           <span className="text-[11px] text-slate-400">
             Formula: R = 0.30·F_rain + 0.20·F_terrain + 0.15·F_drain + 0.15·F_hist + 0.20·F_comm
           </span>
+          <p className="text-[11px] text-amber-300">
+            Default and edited values are scenario inputs only; this output is not a live operational risk score.
+          </p>
         </div>
 
         {/* Inputs */}
@@ -711,14 +735,14 @@ export const DatasetExplorer: React.FC<DatasetExplorerProps> = ({
                   Calculated Risk: {riskResult.category}
                 </span>
                 <p className="text-xs text-slate-400">
-                  Confidence Score: <strong className="text-cyan-400">{Math.round(riskResult.confidenceScore * 100)}%</strong> • Completeness: {riskResult.dataCompletenessPct}%
+                  Scenario confidence (not source confidence): <strong className="text-cyan-400">{Math.round(riskResult.confidenceScore * 100)}%</strong> • Input completeness: {riskResult.dataCompletenessPct}%
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg border border-slate-700">
-                Freshness: <strong className="text-cyan-300">{riskResult.freshnessStatus}</strong>
+                Input status: <strong className="text-cyan-300">SIMULATED · NOT LIVE</strong>
               </span>
               {riskResult.contradictionDetected && (
                 <span className="bg-amber-950/80 text-amber-300 px-2.5 py-1 rounded-lg border border-amber-700 flex items-center space-x-1">

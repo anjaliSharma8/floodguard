@@ -32,8 +32,20 @@ CREATE TABLE IF NOT EXISTS expert_applications (
     status TEXT NOT NULL DEFAULT 'PENDING_APPROVAL' CHECK (status IN ('ACTIVE', 'PENDING_APPROVAL', 'REJECTED', 'SUSPENDED')),
     applied_at TEXT NOT NULL,
     reviewed_at TEXT,
-    reviewed_by TEXT
+    reviewed_by TEXT,
+    reviewed_by_id TEXT
 );
+
+CREATE TABLE IF NOT EXISTS expert_bootstrap_state (
+    singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+    completed_at TEXT,
+    application_id TEXT,
+    reviewer_id TEXT,
+    reviewer_name TEXT
+);
+
+INSERT OR IGNORE INTO expert_bootstrap_state (singleton_id, completed_at, application_id, reviewer_id, reviewer_name)
+VALUES (1, NULL, NULL, NULL, NULL);
 
 CREATE TABLE IF NOT EXISTS road_segments (
     road_id TEXT PRIMARY KEY,
@@ -98,6 +110,7 @@ CREATE TABLE IF NOT EXISTS community_reports (
     reviewed_at TEXT,
     resolved_at TEXT,
     client_request_id TEXT,
+    is_demo INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 

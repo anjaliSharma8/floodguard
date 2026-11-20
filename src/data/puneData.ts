@@ -64,7 +64,7 @@ export const INITIAL_ROAD_SEGMENTS: RoadSegment[] = rawGeo.features.map((feat) =
     slopePct: p.slope_pct,
     drainageCondition: p.drainage_condition,
     hasHistoricalFlood: p.has_historical_flood,
-    communityRiskScore: p.has_historical_flood ? 40 : 10
+    communityRiskScore: null
   });
 
   return {
@@ -88,7 +88,7 @@ export const INITIAL_ROAD_SEGMENTS: RoadSegment[] = rawGeo.features.map((feat) =
     riskScore: baseline.riskScore,
     riskCategory: baseline.category,
     confidenceScore: baseline.confidenceScore,
-    status: p.has_historical_flood ? 'REPORTED_WATERLOGGING' : 'OPEN',
+    status: 'UNKNOWN',
     coordinates: leafletCoords,
     geometrySource: p.geometry_source || 'OpenStreetMap via OSRM',
     lastUpdated: rawGeo.metadata.extracted_at
@@ -620,41 +620,6 @@ export const INITIAL_HISTORICAL_FLOODS: HistoricalFlood[] = [
     waterLevelM: 1.5,
     roadAffected: 'Old Sangvi Bridge Road',
     source: 'PCMC Incident Log'
-  }
-];
-
-export const INITIAL_COMMUNITY_REPORTS: CommunityReport[] = [
-  {
-    id: 'REP_101',
-    userId: 'USR_CITIZEN_01',
-    userName: 'Anjali Sharma',
-    roadId: 'R08',
-    locationName: 'Sinhagad Road near Ekta Nagari / Dandekar Bridge',
-    lat: 18.4968,
-    lng: 73.8214,
-    reportType: 'Waterlogging',
-    description: 'Historical flood-prone Mutha riverside low-lying lane; monitor drainage grates during intense rain.',
-    severity: 'High',
-    timestamp: '2026-10-30T08:15:00Z',
-    verificationStatus: 'Verified',
-    confidenceScore: 0.90,
-    reviewedBy: 'Dr. Rajiv Kulkarni',
-    reviewNotes: 'Confirmed historical risk zone along Mutha basin'
-  },
-  {
-    id: 'REP_102',
-    userId: 'USR_CITIZEN_01',
-    userName: 'Anjali Sharma',
-    roadId: 'R31',
-    locationName: 'Old Sangvi - Pavana Bridge Approach',
-    lat: 18.5818,
-    lng: 73.8168,
-    reportType: 'Drainage overflow',
-    description: 'Pavana river embankment stretch experiences runoff accumulation during monsoon peaks.',
-    severity: 'Moderate',
-    timestamp: '2026-10-30T08:40:00Z',
-    verificationStatus: 'Reported',
-    confidenceScore: 0.72
   }
 ];
 

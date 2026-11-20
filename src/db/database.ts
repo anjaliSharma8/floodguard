@@ -2,7 +2,6 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  INITIAL_COMMUNITY_REPORTS,
   INITIAL_POLLS,
   INITIAL_ROAD_SEGMENTS,
   INITIAL_SHELTERS,
@@ -14,6 +13,7 @@ import {
   AuditLog,
   CommunityReport,
   ExpertApplication,
+  ExpertAlert,
   LivePoll,
   RoadSegment,
   RoadNode,
@@ -50,6 +50,7 @@ export class SanketSetuDatabase {
     this.db.exec('PRAGMA foreign_keys = ON;');
     this.migrate();
     this.seedInitialData();
+    this.markInitialExpertBootstrapCompleteIfActive();
   }
 
   private migrate(): void {
@@ -81,6 +82,9 @@ export class SanketSetuDatabase {
     if (!reportColumns.some(column => column.name === 'client_request_id')) {
       this.db.exec('ALTER TABLE community_reports ADD COLUMN client_request_id TEXT');
     }
+    if (!reportColumns.some(column => column.name === 'is_demo')) {
+      this.db.exec('ALTER TABLE community_reports ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0');
+    }
     this.db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_community_reports_client_request
       ON community_reports(user_id, client_request_id)
@@ -94,6 +98,53 @@ export class SanketSetuDatabase {
       this.db
         .prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
         .run(3, 'v3_offline_report_idempotency', new Date().toISOString());
+    }
+
+    const existingV4 = this.db
+      .prepare('SELECT version FROM schema_migrations WHERE version = 4')
+      .get();
+    if (!existingV4) {
+      this.db.exec(`
+        UPDATE community_reports
+        SET is_demo = 1
+        WHERE report_id IN ('REP_101', 'REP_102');
+
+        UPDATE road_segments
+        SET status = 'UNKNOWN'
+        WHERE status = 'REPORTED_WATERLOGGING'
+          AND verified_by IS NULL
+          AND status_reason IS NULL;
+      `);
+      this.db
+        .prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
+        .run(4, 'v4_exclude_demo_reports_and_clear_inferred_live_road_status', new Date().toISOString());
+    }
+
+    const applicationColumns = this.db
+      .prepare('PRAGMA table_info(expert_applications)')
+      .all() as Array<{ name: string }>;
+    if (!applicationColumns.some(column => column.name === 'reviewed_by_id')) {
+      this.db.exec('ALTER TABLE expert_applications ADD COLUMN reviewed_by_id TEXT');
+    }
+
+    const existingV5 = this.db
+      .prepare('SELECT version FROM schema_migrations WHERE version = 5')
+      .get();
+    if (!existingV5) {
+      this.db
+        .prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
+        .run(5, 'v5_expert_reviewer_identity_and_one_time_bootstrap', new Date().toISOString());
+    }
+  }
+
+  private markInitialExpertBootstrapCompleteIfActive(): void {
+    const activeCount = (this.db
+      .prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'EXPERT' AND account_status = 'ACTIVE'")
+      .get() as { count: number }).count;
+    if (activeCount > 0) {
+      this.db
+        .prepare('UPDATE expert_bootstrap_state SET completed_at = COALESCE(completed_at, ?) WHERE singleton_id = 1')
+        .run(new Date().toISOString());
     }
   }
 
@@ -213,40 +264,6 @@ export class SanketSetuDatabase {
           p.totalVotes,
           p.isActive ? 1 : 0,
           now
-        );
-      }
-    }
-
-    // Seed community reports if empty
-    const reportCount = (this.db.prepare('SELECT COUNT(*) as c FROM community_reports').get() as { c: number }).c;
-    if (reportCount === 0) {
-      const insertReport = this.db.prepare(`
-        INSERT INTO community_reports (
-          report_id, user_id, user_name, road_id, location_name, latitude, longitude,
-          report_type, description, severity, image_url, verification_status,
-          confidence_score, reviewed_by, review_notes, reviewed_at, resolved_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      for (const rep of INITIAL_COMMUNITY_REPORTS) {
-        insertReport.run(
-          rep.id,
-          rep.userId,
-          rep.userName || 'Citizen Reporter',
-          rep.roadId ?? null,
-          rep.locationName,
-          rep.lat,
-          rep.lng,
-          rep.reportType,
-          rep.description,
-          rep.severity,
-          rep.imageUrl ?? null,
-          rep.verificationStatus,
-          rep.confidenceScore,
-          rep.reviewedBy ?? null,
-          rep.reviewNotes ?? null,
-          rep.reviewedAt ?? null,
-          rep.resolvedAt ?? null,
-          rep.timestamp
         );
       }
     }
@@ -439,59 +456,226 @@ export class SanketSetuDatabase {
       );
   }
 
+  public createExpertRegistration(user: StoredUser, appItem: ExpertApplication): void {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.createUser(user);
+      this.createExpertApplication(appItem);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  private mapExpertApplicationRow(row: Record<string, unknown>): ExpertApplication {
+    return {
+      id: String(row.application_id),
+      userId: String(row.user_id),
+      fullName: String(row.full_name),
+      email: String(row.email),
+      organisation: String(row.organisation),
+      designation: String(row.designation),
+      status: String(row.status) as AccountStatus,
+      appliedAt: String(row.applied_at),
+      reviewedAt: row.reviewed_at ? String(row.reviewed_at) : undefined,
+      reviewedBy: row.reviewed_by ? String(row.reviewed_by) : undefined,
+      reviewedById: row.reviewed_by_id ? String(row.reviewed_by_id) : undefined
+    };
+  }
+
   public getExpertApplications(): ExpertApplication[] {
     const rows = this.db
       .prepare('SELECT * FROM expert_applications ORDER BY applied_at DESC')
       .all() as Record<string, unknown>[];
-    return rows.map(r => ({
-      id: String(r.application_id),
-      userId: String(r.user_id),
-      fullName: String(r.full_name),
-      email: String(r.email),
-      organisation: String(r.organisation),
-      designation: String(r.designation),
-      status: String(r.status) as AccountStatus,
-      appliedAt: String(r.applied_at),
-      reviewedAt: r.reviewed_at ? String(r.reviewed_at) : undefined,
-      reviewedBy: r.reviewed_by ? String(r.reviewed_by) : undefined
-    }));
+    return rows.map(row => this.mapExpertApplicationRow(row));
+  }
+
+  public getExpertApplicationById(applicationId: string): ExpertApplication | null {
+    const row = this.db
+      .prepare('SELECT * FROM expert_applications WHERE application_id = ?')
+      .get(applicationId) as Record<string, unknown> | undefined;
+    return row ? this.mapExpertApplicationRow(row) : null;
+  }
+
+  public getExpertApplicationForUser(userId: string): ExpertApplication | null {
+    const row = this.db
+      .prepare('SELECT * FROM expert_applications WHERE user_id = ? ORDER BY applied_at DESC LIMIT 1')
+      .get(userId) as Record<string, unknown> | undefined;
+    return row ? this.mapExpertApplicationRow(row) : null;
   }
 
   public updateExpertApplicationStatus(
     applicationId: string,
-    status: AccountStatus,
-    reviewerName: string
+    status: 'ACTIVE' | 'REJECTED',
+    reviewer: User
   ): ExpertApplication | null {
-    const existing = this.db
-      .prepare('SELECT * FROM expert_applications WHERE application_id = ?')
-      .get(applicationId) as Record<string, unknown> | undefined;
-    if (!existing) return null;
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const existing = this.db
+        .prepare('SELECT * FROM expert_applications WHERE application_id = ?')
+        .get(applicationId) as Record<string, unknown> | undefined;
+      if (!existing || existing.status !== 'PENDING_APPROVAL') {
+        this.db.exec('ROLLBACK');
+        return null;
+      }
 
-    const now = new Date().toISOString();
-    this.db
-      .prepare(`
-        UPDATE expert_applications
-        SET status = ?, reviewed_at = ?, reviewed_by = ?
-        WHERE application_id = ?
-      `)
-      .run(status, now, reviewerName, applicationId);
+      const userId = String(existing.user_id);
+      if (userId === reviewer.id) {
+        this.db.exec('ROLLBACK');
+        return null;
+      }
 
-    this.db
-      .prepare('UPDATE users SET account_status = ?, updated_at = ? WHERE id = ?')
-      .run(status, now, String(existing.user_id));
+      const now = new Date().toISOString();
+      const appUpdate = this.db
+        .prepare(`
+          UPDATE expert_applications
+          SET status = ?, reviewed_at = ?, reviewed_by = ?, reviewed_by_id = ?
+          WHERE application_id = ? AND status = 'PENDING_APPROVAL'
+        `)
+        .run(status, now, reviewer.fullName, reviewer.id, applicationId);
+      const userUpdate = this.db
+        .prepare(`
+          UPDATE users SET account_status = ?, updated_at = ?
+          WHERE id = ? AND role = 'EXPERT' AND account_status = 'PENDING_APPROVAL'
+        `)
+        .run(status, now, userId);
+      if (Number(appUpdate.changes) !== 1 || Number(userUpdate.changes) !== 1) {
+        throw new Error('Expert application status changed during review.');
+      }
 
-    return {
-      id: String(existing.application_id),
-      userId: String(existing.user_id),
-      fullName: String(existing.full_name),
-      email: String(existing.email),
-      organisation: String(existing.organisation),
-      designation: String(existing.designation),
-      status,
-      appliedAt: String(existing.applied_at),
-      reviewedAt: now,
-      reviewedBy: reviewerName
-    };
+      this.appendAuditLog(
+        reviewer,
+        status === 'ACTIVE' ? 'EXPERT_APPROVAL' : 'EXPERT_REJECTION',
+        userId,
+        `${status === 'ACTIVE' ? 'Approved' : 'Rejected'} expert application for ${String(existing.full_name)} (${String(existing.organisation)})`
+      );
+      if (status === 'ACTIVE') {
+        this.createNotification({
+          userId,
+          title: 'Expert Account Approved',
+          message: `Your SanketSetu Expert credentials (${String(existing.organisation)}) have been approved by ${reviewer.fullName}.`,
+          severity: 'info'
+        });
+      }
+
+      this.db.exec('COMMIT');
+      return {
+        ...this.mapExpertApplicationRow(existing),
+        status,
+        reviewedAt: now,
+        reviewedBy: reviewer.fullName,
+        reviewedById: reviewer.id
+      };
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  public bootstrapApproveExpertApplication(
+    applicationId: string,
+    reviewerId: string,
+    reviewerName: string
+  ):
+    | { status: 'approved'; application: ExpertApplication }
+    | { status: 'bootstrap_closed' | 'not_found' | 'not_pending' } {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const activeCount = (this.db
+        .prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'EXPERT' AND account_status = 'ACTIVE'")
+        .get() as { count: number }).count;
+      const bootstrapState = this.db
+        .prepare('SELECT completed_at FROM expert_bootstrap_state WHERE singleton_id = 1')
+        .get() as { completed_at: string | null } | undefined;
+      if (activeCount > 0 || !bootstrapState || bootstrapState.completed_at) {
+        if (activeCount > 0 && bootstrapState && !bootstrapState.completed_at) {
+          this.db.prepare(`
+            UPDATE expert_bootstrap_state SET completed_at = ? WHERE singleton_id = 1
+          `).run(new Date().toISOString());
+        }
+        this.db.exec('COMMIT');
+        return { status: 'bootstrap_closed' };
+      }
+
+      const existing = this.db
+        .prepare('SELECT * FROM expert_applications WHERE application_id = ?')
+        .get(applicationId) as Record<string, unknown> | undefined;
+      if (!existing) {
+        this.db.exec('ROLLBACK');
+        return { status: 'not_found' };
+      }
+      if (existing.status !== 'PENDING_APPROVAL') {
+        this.db.exec('ROLLBACK');
+        return { status: 'not_pending' };
+      }
+
+      const now = new Date().toISOString();
+      const userId = String(existing.user_id);
+      const appUpdate = this.db
+        .prepare(`
+          UPDATE expert_applications
+          SET status = 'ACTIVE', reviewed_at = ?, reviewed_by = ?, reviewed_by_id = ?
+          WHERE application_id = ? AND status = 'PENDING_APPROVAL'
+        `)
+        .run(now, reviewerName, reviewerId, applicationId);
+      const userUpdate = this.db
+        .prepare(`
+          UPDATE users SET account_status = 'ACTIVE', updated_at = ?
+          WHERE id = ? AND role = 'EXPERT' AND account_status = 'PENDING_APPROVAL'
+        `)
+        .run(now, userId);
+      const bootstrapUpdate = this.db
+        .prepare(`
+          UPDATE expert_bootstrap_state
+          SET completed_at = ?, application_id = ?, reviewer_id = ?, reviewer_name = ?
+          WHERE singleton_id = 1 AND completed_at IS NULL
+        `)
+        .run(now, applicationId, reviewerId, reviewerName);
+      if (
+        Number(appUpdate.changes) !== 1 ||
+        Number(userUpdate.changes) !== 1 ||
+        Number(bootstrapUpdate.changes) !== 1
+      ) {
+        throw new Error('Initial Expert bootstrap could not be completed atomically.');
+      }
+
+      const bootstrapReviewer: User = {
+        id: reviewerId,
+        fullName: reviewerName,
+        email: '',
+        role: 'EXPERT',
+        accountStatus: 'ACTIVE',
+        createdAt: now
+      };
+      this.appendAuditLog(
+        bootstrapReviewer,
+        'EXPERT_BOOTSTRAP_APPROVAL',
+        userId,
+        `Completed one-time initial Expert approval for ${String(existing.full_name)} (${String(existing.organisation)}).`
+      );
+      this.createNotification({
+        userId,
+        title: 'Expert Account Approved',
+        message: 'Your SanketSetu Expert credentials have been approved through the one-time initial deployment setup.',
+        severity: 'info'
+      });
+
+      this.db.exec('COMMIT');
+      return {
+        status: 'approved',
+        application: {
+          ...this.mapExpertApplicationRow(existing),
+          status: 'ACTIVE',
+          reviewedAt: now,
+          reviewedBy: reviewerName,
+          reviewedById: reviewerId
+        }
+      };
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   // ----------------- ROADS & UPDATES -----------------
@@ -857,7 +1041,7 @@ export class SanketSetuDatabase {
 
   public getReports(): CommunityReport[] {
     const rows = this.db
-      .prepare('SELECT * FROM community_reports ORDER BY created_at DESC')
+      .prepare('SELECT * FROM community_reports WHERE is_demo = 0 ORDER BY created_at DESC')
       .all() as Record<string, unknown>[];
     return rows.map(r => ({
       id: String(r.report_id),
@@ -1161,6 +1345,34 @@ export class SanketSetuDatabase {
       relatedReportId: r.related_report_id ? String(r.related_report_id) : undefined,
       isRead: Boolean(r.is_read),
       createdAt: String(r.created_at)
+    }));
+  }
+
+  public getExpertAlerts(): ExpertAlert[] {
+    const rows = this.db
+      .prepare(`
+        SELECT n.*, a.actor_id, a.actor_name
+        FROM notifications n
+        JOIN audit_logs a
+          ON a.target_resource = n.notification_id
+         AND a.action = 'EXPERT_ALERT_CREATE'
+        ORDER BY n.created_at DESC
+        LIMIT 100
+      `)
+      .all() as Record<string, unknown>[];
+    return rows.map(row => ({
+      id: String(row.notification_id),
+      userId: row.user_id ? String(row.user_id) : undefined,
+      title: String(row.title),
+      message: String(row.message),
+      severity: String(row.severity) as AppNotification['severity'],
+      relatedRoadId: row.related_road_id ? String(row.related_road_id) : undefined,
+      relatedReportId: row.related_report_id ? String(row.related_report_id) : undefined,
+      isRead: Boolean(row.is_read),
+      createdAt: String(row.created_at),
+      createdById: String(row.actor_id),
+      createdBy: String(row.actor_name),
+      deliveryStatus: 'NOT_CONFIGURED'
     }));
   }
 

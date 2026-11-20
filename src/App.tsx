@@ -15,6 +15,7 @@ import {
   Language,
   User,
   AuditLog,
+  ExpertAlert,
   TrafficFeedStatus
 } from './types';
 import {
@@ -24,7 +25,6 @@ import {
   INITIAL_HOSPITALS,
   INITIAL_EMERGENCY_FACILITIES,
   INITIAL_WATERWAYS,
-  INITIAL_COMMUNITY_REPORTS,
   INITIAL_POLLS
 } from './data/puneData';
 import { ActiveRouteSelection, createRouteSelection, RouteMode } from './utils/rules';
@@ -48,7 +48,7 @@ import type { OfflineStorageSummary, PendingReportPayload } from './services/off
 
 const TOKEN_STORAGE_KEY = 'sanketsetu_token';
 const USER_STORAGE_KEY = 'sanketsetu_user';
-type PublicTrafficStatus = Pick<
+type TrafficStatusSummary = Pick<
   TrafficFeedStatus,
   'provider' | 'isLiveActive' | 'lastChecked' | 'lastSuccessfulUpdate' | 'message'
 >;
@@ -77,13 +77,18 @@ export function App() {
   const [backendAvailable, setBackendAvailable] = useState<boolean | null>(null);
   const [openMeteoStatus, setOpenMeteoStatus] = useState<string | null>(null);
   const [trafficStatus, setTrafficStatus] = useState<string | null>(null);
-  const [trafficFeedStatus, setTrafficFeedStatus] = useState<PublicTrafficStatus | null>(null);
+  const [trafficFeedStatus, setTrafficFeedStatus] = useState<TrafficStatusSummary | null>(null);
   const [rainfallDataState, setRainfallDataState] = useState<'LIVE' | 'CACHED' | 'UNAVAILABLE'>('UNAVAILABLE');
+  const [operationalDataState, setOperationalDataState] = useState<'LIVE' | 'CACHED' | 'UNAVAILABLE'>('UNAVAILABLE');
   const [offlineStorageSummary, setOfflineStorageSummary] = useState<OfflineStorageSummary | null>(null);
   const [pendingQueueError, setPendingQueueError] = useState<string | null>(null);
   const [lastLiveDataUpdate, setLastLiveDataUpdate] = useState<string | null>(null);
   const pendingReportSyncRef = useRef(false);
   const isOffline = !deviceOnline || backendAvailable === false;
+  const isAuthorizedExpert =
+    currentUser?.role === 'EXPERT' &&
+    currentUser.accountStatus === 'ACTIVE' &&
+    isRoleVerified;
 
   // Core Hydrological & Spatial Data (hydrated from backend APIs + offline fallback)
   const [nodes, setNodes] = useState<Record<string, RoadNode>>(PUNE_ROAD_NODES);
@@ -92,12 +97,15 @@ export function App() {
   const [hospitals, setHospitals] = useState<Hospital[]>(INITIAL_HOSPITALS);
   const [facilities, setFacilities] = useState<EmergencyFacility[]>(INITIAL_EMERGENCY_FACILITIES);
   const [waterways, setWaterways] = useState<WaterwayFeature[]>(INITIAL_WATERWAYS);
-  const [reports, setReports] = useState<CommunityReport[]>(INITIAL_COMMUNITY_REPORTS);
+  const [reports, setReports] = useState<CommunityReport[]>([]);
   const [polls, setPolls] = useState<LivePoll[]>(INITIAL_POLLS);
   const [routeFeedbacks, setRouteFeedbacks] = useState<RouteFeedback[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [rainfallFeed, setRainfallFeed] = useState<RainfallFeedMetadata | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [expertAlerts, setExpertAlerts] = useState<ExpertAlert[]>([]);
+  const [expertAlertsLoading, setExpertAlertsLoading] = useState(false);
+  const [expertAlertsError, setExpertAlertsError] = useState<string | null>(null);
 
   const refreshOfflineStorageSummary = useCallback(async () => {
     const summary = await getOfflineStorageSummary();
@@ -126,6 +134,7 @@ export function App() {
       if (cachedRoads.nodes && typeof cachedRoads.nodes === 'object' && Array.isArray(cachedRoads.segments)) {
         setNodes(cachedRoads.nodes);
         setRoads(cachedRoads.segments);
+        setOperationalDataState(current => current === 'LIVE' ? current : 'CACHED');
         if (cachedRoads.rainfall && Array.isArray(cachedRoads.rainfall.observations)) {
           setRainfallFeed(cachedRoads.rainfall);
         }
@@ -204,6 +213,27 @@ export function App() {
       .catch(error => console.warn('[SanketSetu] Could not load expert audit logs:', error));
   }, [token]);
 
+  const fetchExpertAlerts = useCallback(() => {
+    if (!token) return;
+    setExpertAlertsLoading(true);
+    setExpertAlertsError(null);
+    fetch('/api/expert/alerts', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(async response => {
+        if (!response.ok) throw new Error(`Expert alerts returned HTTP ${response.status}`);
+        return response.json() as Promise<{ alerts?: ExpertAlert[] }>;
+      })
+      .then(data => {
+        if (Array.isArray(data.alerts)) setExpertAlerts(data.alerts);
+      })
+      .catch(error => {
+        setExpertAlertsError(error instanceof Error ? error.message : String(error));
+        console.warn('[SanketSetu] Could not load expert alerts:', error);
+      })
+      .finally(() => setExpertAlertsLoading(false));
+  }, [token]);
+
   const hydrateLiveData = useCallback((authToken?: string | null) => {
     const authHeaders = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
     const load = <T,>(url: string, apply: (data: T) => void, headers?: HeadersInit) => {
@@ -245,6 +275,7 @@ export function App() {
     const handleOffline = () => {
       setDeviceOnline(false);
       setBackendAvailable(false);
+      setOperationalDataState(current => current === 'LIVE' ? 'CACHED' : current);
     };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -276,10 +307,19 @@ export function App() {
         setBackendAvailable(true);
         setOpenMeteoStatus(health.weatherFeed?.openMeteoStatus || 'UNAVAILABLE');
 
+        if (!isAuthorizedExpert) {
+          setTrafficFeedStatus(null);
+          setTrafficStatus(null);
+          return;
+        }
+
         try {
-          const trafficResponse = await fetch('/api/traffic/status', { cache: 'no-store' });
+          const trafficResponse = await fetch('/api/traffic/status', {
+            headers: authHeaders,
+            cache: 'no-store'
+          });
           if (!trafficResponse.ok) throw new Error(`Traffic status returned HTTP ${trafficResponse.status}`);
-          const traffic = await trafficResponse.json() as PublicTrafficStatus;
+          const traffic = await trafficResponse.json() as TrafficStatusSummary;
           if (!disposed) {
             setTrafficFeedStatus(traffic);
             setTrafficStatus(
@@ -356,11 +396,13 @@ export function App() {
         setPolls(pollData);
         setRouteFeedbacks(feedbackData);
         setNotifications(notificationData);
-        setLastLiveDataUpdate(
-          typeof roadData.lastUpdated === 'string' ? roadData.lastUpdated : new Date().toISOString()
-        );
+        setLastLiveDataUpdate(typeof roadData.lastUpdated === 'string' ? roadData.lastUpdated : null);
+        setOperationalDataState('LIVE');
       } catch (error) {
-        if (!disposed) console.warn('[SanketSetu] Live data refresh failed:', error);
+        if (!disposed) {
+          setOperationalDataState(current => current === 'LIVE' ? 'CACHED' : current);
+          console.warn('[SanketSetu] Live data refresh failed:', error);
+        }
       } finally {
         refreshInProgress = false;
       }
@@ -385,7 +427,7 @@ export function App() {
       window.clearInterval(healthInterval);
       window.clearInterval(dataInterval);
     };
-  }, [token]);
+  }, [token, isAuthorizedExpert]);
 
   useEffect(() => {
     void hydrateOfflineData().catch(error => {
@@ -463,9 +505,10 @@ export function App() {
       hydrateLiveData(token);
       if (currentUser?.role === 'EXPERT') {
         fetchAuditLogs();
+        fetchExpertAlerts();
       }
     }
-  }, [token, currentUser?.role, hydrateLiveData, fetchAuditLogs]);
+  }, [token, currentUser?.role, hydrateLiveData, fetchAuditLogs, fetchExpertAlerts]);
 
   const handleAuthSuccess = (newToken: string, user: User) => {
     setToken(newToken);
@@ -847,6 +890,38 @@ export function App() {
     }
   };
 
+  const handleCreateExpertAlert = async (
+    alert: { title: string; message: string; severity: AppNotification['severity']; relatedRoadId?: string }
+  ): Promise<{ ok: boolean; error?: string; alert?: ExpertAlert }> => {
+    if (!token || !deviceOnline || backendAvailable !== true) {
+      return { ok: false, error: 'Connect to the live backend before creating an alert.' };
+    }
+    try {
+      const response = await fetch('/api/expert/alerts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(alert)
+      });
+      const data = await response.json() as {
+        error?: string;
+        notification?: AppNotification;
+        alert?: ExpertAlert;
+      };
+      if (!response.ok || !data.notification || !data.alert) {
+        return { ok: false, error: data.error || `Alert creation failed with HTTP ${response.status}.` };
+      }
+      setNotifications(previous => [data.notification!, ...previous.filter(item => item.id !== data.notification!.id)]);
+      setExpertAlerts(previous => [data.alert!, ...previous.filter(item => item.id !== data.alert!.id)]);
+      fetchAuditLogs();
+      return { ok: true, alert: data.alert };
+    } catch {
+      return { ok: false, error: 'Network error while creating the in-app alert.' };
+    }
+  };
+
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-300">
@@ -912,9 +987,6 @@ export function App() {
           routeFeedbacks={routeFeedbacks}
           notifications={notifications}
           rainfallFeed={rainfallFeed}
-          rainfallDataState={rainfallDataState}
-          trafficFeedStatus={trafficFeedStatus}
-          offlineStorageSummary={offlineStorageSummary}
           lang={lang}
           setLang={setLang}
           isOffline={isOffline}
@@ -959,7 +1031,7 @@ export function App() {
           openMeteoStatus={openMeteoStatus}
           lastWeatherUpdate={rainfallFeed?.lastSuccessfulUpdate || null}
           lastLiveDataUpdate={lastLiveDataUpdate}
-          trafficStatus={trafficStatus}
+          trafficStatus={null}
           summary={offlineStorageSummary}
           pendingQueueError={pendingQueueError}
           onDownloadOfflineData={handleDownloadOfflineData}
@@ -1037,16 +1109,26 @@ export function App() {
           facilities={facilities}
           waterways={waterways}
           reports={reports}
+          notifications={notifications}
+          expertAlerts={expertAlerts}
+          expertAlertsLoading={expertAlertsLoading}
+          expertAlertsError={expertAlertsError}
           rainfallFeed={rainfallFeed}
+          trafficFeedStatus={trafficFeedStatus}
+          offlineStorageSummary={offlineStorageSummary}
           auditLogs={auditLogs}
           onUpdateRoadStatus={handleUpdateRoadStatus}
           onVerifyReport={handleVerifyReport}
+          onCreateAlert={handleCreateExpertAlert}
           selectedRoad={selectedRoad}
           onSelectRoad={setSelectedRoad}
           onRefreshAuditLogs={fetchAuditLogs}
           deviceOnline={deviceOnline}
           backendAvailable={backendAvailable}
           lastLiveDataUpdate={lastLiveDataUpdate}
+          operationalDataState={operationalDataState}
+          rainfallDataState={rainfallDataState}
+          onOpenChat={() => setIsChatOpen(true)}
           onOpenOfflineGuide={() => setIsOfflineGuideOpen(true)}
         />
 

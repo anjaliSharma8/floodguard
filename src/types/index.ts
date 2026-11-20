@@ -45,6 +45,7 @@ export interface ExpertApplication {
   appliedAt: string;
   reviewedAt?: string;
   reviewedBy?: string;
+  reviewedById?: string;
 }
 
 export interface AuditLog {
@@ -94,6 +95,12 @@ export interface AppNotification {
   relatedReportId?: string;
   isRead: boolean;
   createdAt: string;
+}
+
+export interface ExpertAlert extends AppNotification {
+  createdById: string;
+  createdBy: string;
+  deliveryStatus: 'NOT_CONFIGURED';
 }
 
 export interface EvacuationPreferences {

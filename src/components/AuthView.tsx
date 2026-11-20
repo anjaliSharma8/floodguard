@@ -40,6 +40,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [pendingApprovalAccount, setPendingApprovalAccount] = useState<User | null>(null);
+  const [pendingApplicationId, setPendingApplicationId] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,7 +87,15 @@ export const AuthView: React.FC<AuthViewProps> = ({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
           });
-          const data = await res.json();
+          let data;
+          try {
+            data = await res.json();
+          } catch {
+            if (res.status >= 500) {
+              throw new Error(`Expert sign-in service returned HTTP ${res.status}. Please try again later.`);
+            }
+            throw new Error(`Expert sign-in service returned an invalid response (HTTP ${res.status}).`);
+          }
 
           if (!res.ok) {
             if (data.accountStatus === 'PENDING_APPROVAL') {
@@ -98,11 +107,20 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 accountStatus: 'PENDING_APPROVAL',
                 createdAt: new Date().toISOString()
               });
+              setPendingApplicationId(typeof data.applicationId === 'string' ? data.applicationId : null);
               return;
             }
-            throw new Error(data.error || 'Expert authorization failed.');
+            throw new Error(
+              data.error ||
+              (res.status >= 500
+                ? `Expert sign-in service returned HTTP ${res.status}. Please try again later.`
+                : 'Expert authorization failed.')
+            );
           }
 
+          if (typeof data.token !== 'string' || !data.user) {
+            throw new Error('Expert sign-in returned an incomplete session response. Please retry.');
+          }
           onAuthSuccess(data.token, data.user);
         } else if (mode === 'signup') {
           const res = await fetch('/api/auth/expert/register', {
@@ -113,10 +131,19 @@ export const AuthView: React.FC<AuthViewProps> = ({
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Registration failed.');
           setPendingApprovalAccount(data.user);
+          setPendingApplicationId(typeof data.application?.id === 'string' ? data.application.id : null);
         }
       }
-    } catch (err: any) {
-      setError(err.message || 'Authentication error.');
+    } catch (err: unknown) {
+      if (err instanceof TypeError && /fetch/i.test(err.message)) {
+        setError(
+          typeof navigator !== 'undefined' && !navigator.onLine
+            ? 'Your device appears to be offline. Reconnect before signing in.'
+            : 'Cannot reach the SankatSetu login service. Confirm the app server is running and retry.'
+        );
+      } else {
+        setError(err instanceof Error ? err.message : 'Expert sign-in failed unexpectedly.');
+      }
     } finally {
       setLoading(false);
     }
@@ -158,7 +185,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
             <p className="text-xs text-slate-300 leading-relaxed max-w-md mx-auto">
               Your registration as a SanketSetu Expert for{' '}
               <strong className="text-white">{pendingApprovalAccount.organisation || 'your organisation'}</strong>{' '}
-              has been saved. Operational hazard-control access remains locked until an active approved Expert verifies your credentials.
+              has been saved. Operational access stays locked until a different active Expert verifies your credentials.
             </p>
           </div>
 
@@ -171,16 +198,34 @@ export const AuthView: React.FC<AuthViewProps> = ({
               <span className="text-slate-400">Role Requested:</span>
               <span className="font-bold text-indigo-400">EXPERT</span>
             </div>
+            {pendingApplicationId && (
+              <div className="flex justify-between">
+                <span className="text-slate-400">Application reference:</span>
+                <span className="font-semibold text-white">{pendingApplicationId}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-slate-400">Security Requirement:</span>
               <span className="text-amber-400 font-semibold">Active Expert Peer Approval Required</span>
             </div>
           </div>
 
+          <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4 text-left text-xs text-slate-300 space-y-2">
+            <p>
+              To complete review, an active Expert must sign in to their own account and open Expert Portal &gt; Approvals.
+              Pending Experts cannot review or approve applications.
+            </p>
+            <p>
+              If this deployment has no active Expert yet, contact its deployment operator to run the one-time initial
+              Expert setup. This application cannot approve itself.
+            </p>
+          </div>
+
           <button
             type="button"
             onClick={() => {
               setPendingApprovalAccount(null);
+              setPendingApplicationId(null);
               setMode('login');
             }}
             className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-all"

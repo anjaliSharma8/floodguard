@@ -465,17 +465,17 @@ export const MapView: React.FC<MapViewProps> = ({
           iconAnchor: [13, 13]
         });
 
-        const occupancyPct = Math.round((shelter.currentOccupancy / shelter.capacity) * 100);
         const marker = L.marker([shelter.lat, shelter.lng], { icon });
         marker.bindPopup(`
           <div style="font-family: system-ui; font-size: 12px; min-width: 195px;">
-            <div style="font-weight: bold; color: #1e3a8a; font-size: 13px;">${shelter.name}</div>
-            <div style="color: #475569; margin: 3px 0;">${shelter.address}</div>
+            <div style="font-weight: bold; color: #1e3a8a; font-size: 13px;">${escapeHtml(shelter.name)}</div>
+            <div style="color: #475569; margin: 3px 0;">${escapeHtml(shelter.address)}</div>
             <div style="margin: 5px 0; background: #f1f5f9; padding: 5px; border-radius: 4px;">
-              <div>Occupancy: <strong>${shelter.currentOccupancy} / ${shelter.capacity}</strong> (${occupancyPct}%)</div>
+              <div>Listed capacity: <strong>${shelter.capacity}</strong></div>
+              <div>Current occupancy / availability: <strong>Unavailable</strong> (no live feed)</div>
               <div>Pets: <strong>${shelter.petFriendly ? 'Yes' : 'No'}</strong> • Wheelchair: <strong>${shelter.wheelchairAccessible ? 'Yes' : 'No'}</strong></div>
             </div>
-            <div>Contact: <a href="tel:${shelter.contact}" style="color: #2563eb; font-weight: bold;">${shelter.contact}</a></div>
+            <div>Contact: <a href="tel:${escapeHtml(shelter.contact)}" style="color: #2563eb; font-weight: bold;">${escapeHtml(shelter.contact)}</a></div>
           </div>
         `);
         layerGroup.addLayer(marker);
@@ -494,12 +494,13 @@ export const MapView: React.FC<MapViewProps> = ({
         const marker = L.marker([hosp.lat, hosp.lng], { icon });
         marker.bindPopup(`
           <div style="font-family: system-ui; font-size: 12px; min-width: 195px;">
-            <div style="font-weight: bold; color: #991b1b; font-size: 13px;">${hosp.name}</div>
-            <div style="color: #64748b; font-size: 11px;">${hosp.type}</div>
+            <div style="font-weight: bold; color: #991b1b; font-size: 13px;">${escapeHtml(hosp.name)}</div>
+            <div style="color: #64748b; font-size: 11px;">${escapeHtml(hosp.type)}</div>
             <div style="margin: 5px 0; background: #fef2f2; padding: 5px; border-radius: 4px;">
-              <div>Total Beds: <strong>${hosp.totalBeds}</strong> • ICU: <strong>${hosp.availableIcu}</strong></div>
+              <div>Listed beds: <strong>${hosp.totalBeds}</strong></div>
+              <div>Current ICU availability: <strong>Unavailable</strong> (not connected)</div>
             </div>
-            <div>Phone: <a href="tel:${hosp.contact}" style="color: #dc2626; font-weight: bold;">${hosp.contact}</a></div>
+            <div>Phone: <a href="tel:${escapeHtml(hosp.contact)}" style="color: #dc2626; font-weight: bold;">${escapeHtml(hosp.contact)}</a></div>
           </div>
         `);
         layerGroup.addLayer(marker);
@@ -577,18 +578,21 @@ export const MapView: React.FC<MapViewProps> = ({
           const marker = L.marker([report.lat, report.lng], { icon });
           marker.bindPopup(`
             <div style="font-family: system-ui; font-size: 12px; min-width: 210px;">
-              <div style="font-weight: bold; color: #0f172a; font-size: 13px;">${report.locationName}</div>
+              <div style="font-weight: bold; color: #0f172a; font-size: 13px;">${escapeHtml(report.locationName)}</div>
               <div style="display: flex; gap: 4px; margin: 4px 0;">
                 <span style="background: ${badgeColor}; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700;">
-                  ${report.severity}
+                  ${escapeHtml(report.severity)}
                 </span>
                 <span style="background: #e2e8f0; color: #334155; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600;">
-                  ${report.verificationStatus}
+                  ${escapeHtml(report.verificationStatus)}
                 </span>
               </div>
-              <p style="color: #334155; margin: 5px 0;">${report.description}</p>
+              <p style="color: #334155; margin: 5px 0;">${escapeHtml(report.description)}</p>
               <div style="font-size: 10px; color: #64748b;">
-                Confidence: <strong>${Math.round(report.confidenceScore * 100)}%</strong>
+                Confidence: <strong>${typeof report.confidenceScore === 'number' && Number.isFinite(report.confidenceScore)
+                  ? `${Math.round(report.confidenceScore * 100)}%`
+                  : 'Unverified'}</strong>
+                · Reported: ${formatMapTimestamp(report.timestamp)}
               </div>
             </div>
           `);
