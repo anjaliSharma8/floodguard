@@ -21,10 +21,37 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('SankatSetu'), findsOneWidget);
+    expect(find.byKey(const ValueKey('home-logo')), findsOneWidget);
     expect(find.text('Your safety, our priority'), findsOneWidget);
+    expect(find.text('Flood risk updates'), findsOneWidget);
+    expect(find.text('Emergency actions'), findsOneWidget);
     expect(find.text('Safe Route Planner'), findsOneWidget);
     expect(find.byType(NavigationBar), findsOneWidget);
+  });
+
+  testWidgets('route action remains visible with the keyboard open', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+
+    final client = MockClient(
+      (_) async =>
+          http.Response(jsonEncode({'nodes': {}, 'segments': []}), 200),
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: SafeRoutePlannerScreen(client: client)),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final actionBounds = tester.getRect(find.text('Find Safe Route'));
+    expect(actionBounds.top, greaterThanOrEqualTo(0));
+    expect(actionBounds.bottom, lessThan(360));
   });
 
   testWidgets('Home feature cards and sign-in open their destination screens', (

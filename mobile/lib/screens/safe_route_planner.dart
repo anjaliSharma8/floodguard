@@ -46,6 +46,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
 
   String? errorMessage;
   String? roadsErrorMessage;
+  String? statusMessage;
 
   @override
   void initState() {
@@ -232,11 +233,9 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
     }
 
     if (selectedSourceId == selectedDestinationId) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Starting point and destination must be different.'),
-        ),
-      );
+      setState(() {
+        statusMessage = 'Starting point and destination must be different.';
+      });
       return;
     }
 
@@ -244,6 +243,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
       isFindingRoute = true;
       routeResponse = null;
       errorMessage = null;
+      statusMessage = null;
     });
 
     try {
@@ -266,13 +266,10 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
       final route = currentRoute;
 
       if (route != null && route['feasible'] == false) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              route['message']?.toString() ?? 'No feasible route found.',
-            ),
-          ),
-        );
+        setState(() {
+          statusMessage =
+              route['message']?.toString() ?? 'No feasible route found.';
+        });
       }
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -702,317 +699,344 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
         foregroundColor: Colors.white,
       ),
 
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Find a Safer Way',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 8),
-
-            const Text(
-              'Plan your journey while avoiding potentially flooded areas.',
-              style: TextStyle(color: Colors.grey, fontSize: 14),
-            ),
-
-            const SizedBox(height: 8),
-            const DemoDataNotice(
-              text: 'Routes use a static Pune road graph, not complete live navigation. Confirm road conditions with authorities before travelling.',
-            ),
-
-            const SizedBox(height: 8),
-
-            Text(
-              'Backend: $baseUrl',
-              key: const ValueKey('backend-api-url'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.grey, fontSize: 11),
-            ),
-
-            const SizedBox(height: 24),
-
-            const Text(
-              'Starting Point',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-
-            const SizedBox(height: 8),
-
-            if (isLoadingRoads)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Row(
-                  children: [
-                    const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Loading locations from $baseUrl...',
-                        style: const TextStyle(color: Colors.grey),
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else if (roadsErrorMessage != null)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      roadsErrorMessage!,
-                      style: TextStyle(color: Colors.red.shade900),
-                    ),
-                    const SizedBox(height: 8),
-                    TextButton.icon(
-                      onPressed: isLoadingRoads ? null : fetchRoads,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Retry loading locations'),
-                    ),
-                  ],
-                ),
-              )
-            else if (availableNodes.isEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  children: [
-                    const Expanded(
-                      child: Text('No road locations are currently available.'),
-                    ),
-                    TextButton.icon(
-                      onPressed: isLoadingRoads ? null : fetchRoads,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              )
-            else
-              buildLocationDropdown(
-                label: 'Select starting point',
-                selectedValue: selectedSourceId,
-                icon: Icons.my_location,
-                onChanged: (value) {
-                  setState(() {
-                    selectedSourceId = value;
-                    routeResponse = null;
-                  });
-                },
+      resizeToAvoidBottomInset: true,
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Find a Safer Way',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
 
-            if (availableNodes.isNotEmpty && !isLoadingRoads) ...[
-              const SizedBox(height: 20),
+              const SizedBox(height: 8),
+
               const Text(
-                'Destination',
+                'Plan your journey while avoiding potentially flooded areas.',
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+
+              const SizedBox(height: 8),
+              const DemoDataNotice(
+                text: 'Routes use a static Pune road graph, not complete live navigation. Confirm road conditions with authorities before travelling.',
+              ),
+
+              const SizedBox(height: 8),
+
+              Text(
+                'Backend: $baseUrl',
+                key: const ValueKey('backend-api-url'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.grey, fontSize: 11),
+              ),
+
+              const SizedBox(height: 24),
+
+              const Text(
+                'Starting Point',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
+
               const SizedBox(height: 8),
-              buildLocationDropdown(
-                label: 'Select destination',
-                selectedValue: selectedDestinationId,
-                icon: Icons.location_on,
-                onChanged: (value) {
-                  setState(() {
-                    selectedDestinationId = value;
-                    routeResponse = null;
-                  });
-                },
-              ),
-            ],
 
-            const SizedBox(height: 24),
-
-            const Text(
-              'Route Preference',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-
-            const SizedBox(height: 12),
-
-            Row(
-              children: [
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Text('Safest Route'),
-                    selected: selectedRoute == 'Safest',
-                    selectedColor: Colors.teal.shade100,
-                    onSelected: (_) {
-                      setState(() {
-                        selectedRoute = 'Safest';
-                      });
-                    },
+              if (isLoadingRoads)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(
+                    children: [
+                      const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Loading locations from $baseUrl...',
+                          style: const TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    ],
                   ),
+                )
+              else if (roadsErrorMessage != null)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        roadsErrorMessage!,
+                        style: TextStyle(color: Colors.red.shade900),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: isLoadingRoads ? null : fetchRoads,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Retry loading locations'),
+                      ),
+                    ],
+                  ),
+                )
+              else if (availableNodes.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'No road locations are currently available.',
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: isLoadingRoads ? null : fetchRoads,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                buildLocationDropdown(
+                  label: 'Select starting point',
+                  selectedValue: selectedSourceId,
+                  icon: Icons.my_location,
+                  onChanged: (value) {
+                    setState(() {
+                      selectedSourceId = value;
+                      routeResponse = null;
+                    });
+                  },
                 ),
 
-                const SizedBox(width: 12),
-
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Text('Shortest Route'),
-                    selected: selectedRoute == 'Shortest',
-                    selectedColor: Colors.teal.shade100,
-                    onSelected: (_) {
-                      setState(() {
-                        selectedRoute = 'Shortest';
-                      });
-                    },
-                  ),
+              if (availableNodes.isNotEmpty && !isLoadingRoads) ...[
+                const SizedBox(height: 20),
+                const Text(
+                  'Destination',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                buildLocationDropdown(
+                  label: 'Select destination',
+                  selectedValue: selectedDestinationId,
+                  icon: Icons.location_on,
+                  onChanged: (value) {
+                    setState(() {
+                      selectedDestinationId = value;
+                      routeResponse = null;
+                    });
+                  },
                 ),
               ],
-            ),
 
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
 
-            const Text(
-              'Route Map',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 12),
-
-            SizedBox(
-              height: 320,
-              width: double.infinity,
-              child: buildRouteMap(),
-            ),
-            if (mapTileError) ...[
-              const SizedBox(height: 6),
               const Text(
-                'Map tiles are unavailable. Route calculation still uses backend road-graph data.',
-                style: TextStyle(color: Colors.orange, fontSize: 12),
+                'Route Preference',
+                style: TextStyle(fontWeight: FontWeight.w600),
               ),
-            ],
 
-            const SizedBox(height: 20),
-
-            buildRouteDetails(),
-
-            if (errorMessage != null) ...[
               const SizedBox(height: 12),
 
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  errorMessage!,
-                  style: TextStyle(color: Colors.red.shade900),
-                ),
-              ),
-            ],
-
-            const SizedBox(height: 20),
-
-            // SAFETY NOTICE
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
                 children: [
-                  const Icon(
-                    Icons.warning_amber_rounded,
-                    color: Colors.deepOrange,
-                    size: 28,
+                  Expanded(
+                    child: ChoiceChip(
+                      label: const Text('Safest Route'),
+                      selected: selectedRoute == 'Safest',
+                      selectedColor: Colors.teal.shade100,
+                      onSelected: (_) {
+                        setState(() {
+                          selectedRoute = 'Safest';
+                        });
+                      },
+                    ),
                   ),
 
                   const SizedBox(width: 12),
 
                   Expanded(
-                    child: Text(
-                      'Safety Notice\n'
-                      'Avoid waterlogged roads and never cross '
-                      'flowing floodwater. Follow official '
-                      'emergency instructions. Route results use '
-                      'the available road-network data and are '
-                      'not a substitute for official emergency guidance.',
-                      style: TextStyle(
-                        color: Colors.orange.shade900,
-                        height: 1.5,
-                      ),
+                    child: ChoiceChip(
+                      label: const Text('Shortest Route'),
+                      selected: selectedRoute == 'Shortest',
+                      selectedColor: Colors.teal.shade100,
+                      onSelected: (_) {
+                        setState(() {
+                          selectedRoute = 'Shortest';
+                        });
+                      },
                     ),
                   ),
                 ],
               ),
-            ),
 
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
 
-            // FIND SAFE ROUTE BUTTON
-            SizedBox(
-              width: double.infinity,
-              height: 52,
+              const Text(
+                'Route Map',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
 
-              child: ElevatedButton.icon(
-                onPressed:
-                    isLoadingRoads || isFindingRoute || availableNodes.isEmpty
-                    ? null
-                    : () {
-                        debugPrint('FIND SAFE ROUTE BUTTON CLICKED');
+              const SizedBox(height: 12),
 
-                        findRoute();
-                      },
+              SizedBox(
+                height: 220,
+                width: double.infinity,
+                child: buildRouteMap(),
+              ),
+              if (mapTileError) ...[
+                const SizedBox(height: 6),
+                const Text(
+                  'Map tiles are unavailable. Route calculation still uses backend road-graph data.',
+                  style: TextStyle(color: Colors.orange, fontSize: 12),
+                ),
+              ],
 
-                icon: isFindingRoute
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : const Icon(Icons.alt_route),
+              const SizedBox(height: 20),
 
-                label: Text(
-                  isFindingRoute ? 'Calculating Route...' : 'Find Safe Route',
+              buildRouteDetails(),
 
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+              if (errorMessage != null) ...[
+                const SizedBox(height: 12),
+
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    errorMessage!,
+                    style: TextStyle(color: Colors.red.shade900),
                   ),
                 ),
+              ],
 
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryColor,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+              const SizedBox(height: 20),
+
+              // SAFETY NOTICE
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.deepOrange,
+                      size: 28,
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    Expanded(
+                      child: Text(
+                        'Safety Notice\n'
+                        'Avoid waterlogged roads and never cross '
+                        'flowing floodwater. Follow official '
+                        'emergency instructions. Route results use '
+                        'the available road-network data and are '
+                        'not a substitute for official emergency guidance.',
+                        style: TextStyle(
+                          color: Colors.orange.shade900,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: AnimatedPadding(
+        duration: const Duration(milliseconds: 150),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (statusMessage != null) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        statusMessage!,
+                        style: const TextStyle(color: Colors.deepOrange),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ],
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed:
+                        isLoadingRoads ||
+                            isFindingRoute ||
+                            availableNodes.isEmpty
+                        ? null
+                        : findRoute,
+                    icon: isFindingRoute
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(Icons.alt_route),
+                    label: Text(
+                      isFindingRoute
+                          ? 'Calculating Route...'
+                          : 'Find Safe Route',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
