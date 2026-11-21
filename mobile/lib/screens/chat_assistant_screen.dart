@@ -1,17 +1,19 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_service.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/language_selector.dart';
 
 class ChatAssistantScreen extends StatefulWidget {
   const ChatAssistantScreen({
     required this.api,
-    required this.language,
+    required this.onOpenGuide,
     super.key,
   });
 
   final ApiService api;
-  final String language;
+  final VoidCallback onOpenGuide;
 
   @override
   State<ChatAssistantScreen> createState() => _ChatAssistantScreenState();
@@ -23,12 +25,14 @@ class _ChatEntry {
     required this.isUser,
     this.source,
     this.failed = false,
+    this.failedQuestion,
   });
 
   final String text;
   final bool isUser;
   final String? source;
   final bool failed;
+  final String? failedQuestion;
 }
 
 class _ChatAssistantScreenState extends State<ChatAssistantScreen> {
@@ -44,8 +48,9 @@ class _ChatAssistantScreenState extends State<ChatAssistantScreen> {
     super.dispose();
   }
 
-  Future<void> _send() async {
-    final message = _controller.text.trim();
+  Future<void> _send([String? suggestedMessage]) async {
+    final responseLanguage = Localizations.localeOf(context).languageCode;
+    final message = (suggestedMessage ?? _controller.text).trim();
     if (message.isEmpty || _sending) return;
     setState(() {
       _messages.add(_ChatEntry(text: message, isUser: true));
@@ -56,7 +61,7 @@ class _ChatAssistantScreenState extends State<ChatAssistantScreen> {
     try {
       final reply = await widget.api.sendChatMessage(
         message: message,
-        language: widget.language,
+        language: responseLanguage,
       );
       if (!mounted) return;
       setState(
@@ -64,15 +69,15 @@ class _ChatAssistantScreenState extends State<ChatAssistantScreen> {
           _ChatEntry(text: reply.reply, isUser: false, source: reply.source),
         ),
       );
-    } on ApiException catch (error) {
+    } on ApiException {
       if (!mounted) return;
       setState(
         () => _messages.add(
           _ChatEntry(
-            text:
-                'The assistant service is unavailable (${error.message}). Use the offline emergency guide for basic safety steps. For immediate danger, contact local emergency services directly. No live conditions or route safety can be confirmed here.',
+            text: AppLocalizations.of(context).assistantUnavailable,
             isUser: false,
             failed: true,
+            failedQuestion: message,
           ),
         ),
       );
@@ -98,30 +103,53 @@ class _ChatAssistantScreenState extends State<ChatAssistantScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final languageName = switch (widget.language) {
-      'hi' => 'Hindi',
-      'mr' => 'Marathi',
-      _ => 'English',
-    };
+    final l10n = AppLocalizations.of(context);
+    final currentLanguage = Localizations.localeOf(context).languageCode;
     return Scaffold(
-      appBar: AppBar(title: const Text('Emergency assistant')),
+      appBar: AppBar(
+        title: Text(l10n.emergencyAssistant),
+        actions: [
+          IconButton(
+            onPressed: widget.onOpenGuide,
+            tooltip: l10n.offlineGuide,
+            icon: const Icon(Icons.menu_book_outlined),
+          ),
+        ],
+      ),
       body: Column(
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
-            child: DemoDataNotice(
-              text: 'Replies come from the backend chatbot and may be incomplete. Do not rely on it for live flood status, facility availability, route safety or emergency dispatch.',
-            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: DemoDataNotice(text: l10n.assistantSafetyNotice),
           ),
           Padding(
             padding: const EdgeInsets.all(8),
-            child: Text('Response language: $languageName'),
+            child: Text(
+              '${l10n.assistantResponseLanguage(languageName(l10n, currentLanguage))}\n${l10n.assistantUserTextNotice}',
+              textAlign: TextAlign.center,
+            ),
           ),
           Expanded(
             child: _messages.isEmpty
-                ? const EmptyPanel(
-                    icon: Icons.chat_outlined,
-                    message: 'Ask for general app guidance or flood-safety information. This assistant does not replace emergency services.',
+                ? ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      EmptyPanel(
+                        icon: Icons.chat_outlined,
+                        message: l10n.assistantEmpty,
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _suggestionChip(l10n.assistantQuestionEvacuation),
+                          _suggestionChip(l10n.assistantQuestionFloodwater),
+                          _suggestionChip(l10n.assistantQuestionSupplies),
+                        ],
+                      ),
+                    ],
                   )
                 : ListView.builder(
                     controller: _scrollController,
@@ -153,13 +181,23 @@ class _ChatAssistantScreenState extends State<ChatAssistantScreen> {
                                   if (entry.source != null) ...[
                                     const SizedBox(height: 6),
                                     Text(
-                                      'Service-reported source (not independently verified): ${entry.source}',
+                                      l10n.assistantSourceUnverified(
+                                        entry.source!,
+                                      ),
                                       style: const TextStyle(
                                         fontSize: 10,
                                         color: Colors.black54,
                                       ),
                                     ),
                                   ],
+                                  if (entry.failedQuestion != null)
+                                    TextButton.icon(
+                                      onPressed: _sending
+                                          ? null
+                                          : () => _send(entry.failedQuestion),
+                                      icon: const Icon(Icons.refresh),
+                                      label: Text(l10n.retry),
+                                    ),
                                 ],
                               ),
                             ),
@@ -183,8 +221,8 @@ class _ChatAssistantScreenState extends State<ChatAssistantScreen> {
                       maxLines: 4,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _send(),
-                      decoration: const InputDecoration(
-                        hintText: 'Ask a flood-safety question',
+                      decoration: InputDecoration(
+                        hintText: l10n.askFloodSafety,
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -199,7 +237,7 @@ class _ChatAssistantScreenState extends State<ChatAssistantScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.send),
-                    tooltip: 'Send message',
+                    tooltip: l10n.sendMessage,
                   ),
                 ],
               ),
@@ -209,4 +247,9 @@ class _ChatAssistantScreenState extends State<ChatAssistantScreen> {
       ),
     );
   }
+
+  Widget _suggestionChip(String question) => ActionChip(
+    label: Text(question),
+    onPressed: _sending ? null : () => _send(question),
+  );
 }

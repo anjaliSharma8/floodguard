@@ -1,0 +1,475 @@
+{
+  "@@locale": "en",
+  "appTitle": "SankatSetu",
+  "apiNetworkError": "The app could not connect to the server. Check your connection and try again.",
+  "apiTimeout": "The server request timed out. Check your connection and retry.",
+  "apiInvalidResponse": "The server returned data the app could not read.",
+  "language": "Language",
+  "settings": "Settings",
+  "currentLanguage": "Current language",
+  "english": "English",
+  "hindi": "हिन्दी",
+  "marathi": "मराठी",
+  "gujarati": "ગુજરાતી",
+  "tamil": "தமிழ்",
+  "telugu": "తెలుగు",
+  "welcome": "Your safety, our priority",
+  "welcomeTitle": "Welcome to SankatSetu",
+  "welcomeDescription": "Emergency guidance and essential safety features are available without an account.",
+  "continueAsGuest": "Continue as Guest",
+  "login": "Login",
+  "signIn": "Sign in",
+  "signUp": "Sign Up",
+  "createAccount": "Create Account / Sign Up",
+  "createYourAccount": "Create your account",
+  "signUpDescription": "Sign up for a SankatSetu citizen account.",
+  "signInDescription": "Sign in to continue to your safety dashboard.",
+  "fullName": "Full Name",
+  "email": "Email",
+  "password": "Password",
+  "confirmPassword": "Confirm Password",
+  "phoneOptional": "Phone (optional)",
+  "showPassword": "Show password",
+  "hidePassword": "Hide password",
+  "showConfirmPassword": "Show confirm password",
+  "hideConfirmPassword": "Hide confirm password",
+  "enterFullName": "Enter your full name.",
+  "enterEmail": "Enter your email address.",
+  "validEmail": "Enter a valid email address.",
+  "enterPassword": "Enter your password.",
+  "passwordMinLength": "Password must be at least 6 characters.",
+  "confirmYourPassword": "Confirm your password.",
+  "passwordsMismatch": "Passwords do not match.",
+  "alreadyHaveAccount": "Already have an account? Login",
+  "newToApp": "New to SankatSetu? Sign Up",
+  "backToWelcome": "Back to welcome options",
+  "home": "Home",
+  "homeRegion": "Pune, Maharashtra",
+  "map": "Risk Map",
+  "reports": "Reports",
+  "emergency": "Emergency",
+  "safeRoutes": "Safe Route Planner",
+  "alerts": "Disaster Alerts",
+  "offlineGuide": "Preparedness Guide",
+  "assistant": "Emergency Assistant",
+  "savedInfo": "Saved Information",
+  "logout": "Sign out",
+  "signOutGuest": "Sign out of guest mode",
+  "guestAccessActive": "Guest access is active. Emergency and safety features are available without an account.",
+  "signedInNotice": "Signed in as a citizen. Report submission uses your server-issued account token.",
+  "floodRiskUpdates": "Flood risk updates",
+  "liveRiskUnavailable": "Live flood-risk monitoring is not available yet. Check official alerts before travelling.",
+  "emergencyActions": "Emergency actions",
+  "findEmergencyHelp": "Find emergency help and nearby facilities",
+  "compareRoutes": "Compare safer routes and avoid flooded roads",
+  "reportWaterlogging": "Report waterlogging or blocked roads",
+  "moreTools": "More tools",
+  "keepSuppliesReady": "Keep essential supplies and emergency contacts ready.",
+  "currentRisk": "Road status from backend data",
+  "demoData": "Road and incident data may include seeded demo records.",
+  "loading": "Loading...",
+  "retry": "Retry",
+  "save": "Save",
+  "connected": "Backend reachable",
+  "offline": "Backend unavailable — offline guidance remains available",
+  "notDispatch": "This app does not contact emergency dispatch.",
+  "sosCall": "SOS · Open dialer for 101",
+  "callYourselfNotice": "The app cannot send your location or contact a rescue team. You must place the call yourself.",
+  "gettingLocation": "Getting location...",
+  "showMyLocation": "Show my location",
+  "yourLocation": "Your location: {location}",
+  "@yourLocation": {
+    "placeholders": {
+      "location": {}
+    }
+  },
+  "alertsInAppOnly": "In-app advisories only",
+  "alertsNoPushNotice": "Push notifications are not configured. This screen does not run as an emergency alert service.",
+  "alertsDataNotice": "There is no dedicated alerts or push-notification service. These in-app advisories come from road and report records and may include demo data.",
+  "followAuthorities": "Follow instructions from local authorities and official emergency services.",
+  "evacuateWhenTold": "Evacuate promptly when authorities instruct you to do so. Use a route confirmed safe by authorities; do not rely on an app route alone.",
+  "neverEnterFloodwater": "Never walk, swim or drive through floodwater. Depth, current, open drains and road damage may be hidden.",
+  "avoidPowerLines": "Stay away from fallen power lines and electrical equipment in or near water. Do not touch wet switches.",
+  "safeWater": "Drink sealed or treated water. Avoid water that may be contaminated by floodwater.",
+  "returnOnlyWhenSafe": "Return only when authorities say it is safe. Flooded buildings may have structural, electrical or gas hazards.",
+  "reportDontInvestigate": "Keep away from standing water, damaged bridges and fallen wires. Report hazards; do not approach to investigate.",
+  "emergencyGuidanceDisclaimer": "This guidance is not a live alert or a substitute for emergency services and local authority instructions.",
+  "before": "Before a flood",
+  "during": "During a flood",
+  "after": "After a flood",
+  "safeRouteTitle": "Safe Route Planner",
+  "findSaferWay": "Find a Safer Way",
+  "routeIntro": "Plan your journey while avoiding potentially flooded areas.",
+  "useCurrentLocation": "Use My Current Location",
+  "destination": "Destination",
+  "selectDestination": "Select destination",
+  "routePreference": "Route Preference",
+  "safestRoute": "Safest Route",
+  "shortestRoute": "Shortest Route",
+  "routeMap": "Route Map",
+  "findSafeRoute": "Find Safe Route",
+  "routeSafetyNotice": "Safety Notice\nAvoid waterlogged roads and never cross flowing floodwater. Follow official emergency instructions. Route results use available road-network data and are not a substitute for official emergency guidance.",
+  "routeNotLiveNavigation": "The road network is a demo map, not live navigation. Confirm conditions and route safety with local authorities.",
+  "floodRiskMap": "Flood risk map",
+  "refreshMapData": "Refresh map data",
+  "lowRisk": "Low risk",
+  "mediumRisk": "Medium risk",
+  "highRisk": "High risk",
+  "blockedRoad": "Blocked road",
+  "communityReport": "Community report",
+  "communityIncidents": "Community incidents",
+  "reportIncident": "Report incident",
+  "reportFormTitle": "Report an incident",
+  "currentLocation": "Current location",
+  "signInToReport": "Sign in to submit a report",
+  "publicReportFeed": "Viewing reports is public; submitting requires a citizen account.",
+  "noIncidentReports": "No incident reports are available.",
+  "reportSubmitted": "Report submitted",
+  "reportUnverified": "The server recorded this report as \"{status}\". It has not been verified by an authority.",
+  "@reportUnverified": {
+    "placeholders": {
+      "status": {}
+    }
+  },
+  "done": "Done",
+  "incidentType": "Incident type",
+  "severity": "Severity reported by you",
+  "locationName": "Location name",
+  "mappedLocationHint": "Area or mapped location",
+  "description": "Description",
+  "hazardDescriptionHint": "Describe the hazard or assistance needed",
+  "chooseMappedPoint": "Choose a mapped point (optional)",
+  "selectKnownPoint": "Select a known map point",
+  "relatedRoad": "Related road (optional)",
+  "noSpecificRoad": "No specific road",
+  "useGpsLocation": "Use current GPS location",
+  "submitting": "Submitting...",
+  "submitReport": "Submit report",
+  "enterLocationName": "Enter a location name.",
+  "describeIncident": "Describe what happened.",
+  "chooseAccurateLocation": "Choose a mapped location or grant location permission. A text-only location cannot be accurately placed on the incident map.",
+  "emergencyAssistant": "Emergency assistant",
+  "assistantResponseLanguage": "Response language: {language}",
+  "@assistantResponseLanguage": {
+    "placeholders": {
+      "language": {}
+    }
+  },
+  "assistantSafetyNotice": "Replies come from the backend chatbot and may be incomplete. They are not verified emergency guidance and do not confirm live conditions, facility availability, route safety or dispatch.",
+  "askFloodSafety": "Ask a flood-safety question",
+  "sendMessage": "Send message",
+  "assistantUnavailable": "The assistant service is unavailable. Use the offline emergency guide for basic safety steps. For immediate danger, contact local emergency services directly. This app cannot confirm live conditions or route safety.",
+  "assistantQuestionEvacuation": "When should I evacuate during a flood?",
+  "assistantQuestionFloodwater": "Why should I avoid floodwater?",
+  "assistantQuestionSupplies": "What should I pack in an emergency kit?",
+  "savedInformation": "Saved information",
+  "noSavedItems": "No saved items yet. Save a route or an emergency facility to keep it on this device.",
+  "removeSavedItem": "Remove saved item",
+  "retryAction": "Retry",
+  "backendRecordsNotice": "Backend records can include seeded demo data and may not reflect live conditions.",
+  "updateTimeNotProvided": "Update time not provided",
+  "high": "High",
+  "medium": "Medium",
+  "low": "Low",
+  "unknown": "Unknown",
+  "saveLanguageError": "Could not save language preference: {error}",
+  "@saveLanguageError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "startupRestoreError": "Could not restore saved app settings: {error}",
+  "@startupRestoreError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "sessionVerifyOffline": "Could not verify your saved sign-in. Continuing with the saved session while offline.",
+  "signOutError": "Could not sign out safely: {error}",
+  "@signOutError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "saveGuestError": "Could not save guest session: {error}",
+  "@saveGuestError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "settingsTitle": "Profile and Settings",
+  "languageUpdated": "Language updated",
+  "roadRiskAdvisory": "Road risk advisory",
+  "roadReportedBlocked": "Road reported blocked",
+  "criticalWaterlogging": "Critical waterlogging status",
+  "source": "Source",
+  "updated": "Updated",
+  "reviewStatus": "Review status",
+  "availableOffline": "Available offline",
+  "emergencyKit": "Emergency kit",
+  "guidanceBundled": "Guidance is bundled with the app; no network is needed.",
+  "guideBefore": "Before flooding",
+  "guideDuring": "During flooding",
+  "guideAfter": "After flooding",
+  "guideInclusive": "Inclusive assistance",
+  "readOfficialInstructions": "Read official instructions",
+  "fireRescue": "Fire and Rescue",
+  "dialerOpened": "Phone dialer opened for {name}. This app did not send an SOS or dispatch message.",
+  "@dialerOpened": {
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "noDialableNumber": "No dialable number is provided for {name}.",
+  "@noDialableNumber": {
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "dialerUnavailable": "This device could not open a phone dialer for {name}.",
+  "@dialerUnavailable": {
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "dialerError": "Could not open the phone dialer: {error}",
+  "@dialerError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "openMap": "Open map",
+  "noMapApp": "No map application could open this location.",
+  "mapAppError": "Could not open a map application: {error}",
+  "@mapAppError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "savedOnDevice": "{name} saved on this device.",
+  "@savedOnDevice": {
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "saveInformationError": "Could not save this information: {error}",
+  "@saveInformationError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "emergencyFacilities": "Emergency facilities",
+  "hospitals": "Hospitals",
+  "shelters": "Shelters",
+  "noFacilityRecords": "No emergency facility records returned.",
+  "noHospitalRecords": "No hospital records returned.",
+  "noShelterRecords": "No shelter records returned.",
+  "facilityDataNotice": "Emergency facility and capacity details come from backend records and may be seeded or outdated. Confirm directly with the facility before travelling.",
+  "beds": "Beds",
+  "icu": "ICU",
+  "traumaCenterListed": "The backend lists a trauma center. Availability is not confirmed live.",
+  "traumaCenterNotListed": "No trauma center is listed by the backend.",
+  "petFriendly": "Pet-friendly",
+  "wheelchairAccessible": "Wheelchair accessible",
+  "listed": "listed",
+  "notListed": "not listed",
+  "contact": "Contact",
+  "coordinates": "Coordinates",
+  "openRouteMap": "Open route map",
+  "errorGeneric": "Something went wrong. Please try again.",
+  "networkUnavailable": "The requested data is unavailable.",
+  "mapTilesUnavailable": "Map tiles are unavailable. Road and incident data are shown from the backend; the base map needs internet access.",
+  "noRoadNetwork": "Road network data is unavailable.",
+  "refreshReports": "Refresh reports",
+  "reportsDataNotice": "Reports are server records and may include seeded demo entries. Citizen submissions remain unverified until reviewed by an authority.",
+  "reportingDataNotice": "Reports are sent to the backend for review. The app cannot dispatch rescue services, and this API does not accept image uploads.",
+  "mappedLocationsUnavailable": "Mapped locations are unavailable; GPS can still provide coordinates.",
+  "positionSource": "Position source",
+  "gpsPermissionGranted": "GPS location (permission granted)",
+  "selectedMappedPoint": "Selected mapped road-network point",
+  "reporting": "Report",
+  "locationUnavailable": "Location unavailable",
+  "getRouteError": "Unable to calculate route.",
+  "routeNotFound": "No feasible route found.",
+  "noFeasibleRoute": "No feasible route available.",
+  "differentRoutePoints": "Starting point and destination must be different.",
+  "saveRouteError": "Could not save this route: {error}",
+  "@saveRouteError": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "routeSaved": "Route saved on this device.",
+  "startingPoint": "Starting point",
+  "selectStartingPoint": "Select starting point",
+  "gettingCurrentLocation": "Getting current location...",
+  "gpsNotAvailable": "GPS location is unavailable.",
+  "nearestRoadNodeUnavailable": "No road-network nodes are available to use as a starting point.",
+  "outsideRoadNetwork": "Outside the available Pune road network: the nearest node, {node}, is {distance} km away (maximum {maximum} km). No starting node was selected.",
+  "@outsideRoadNetwork": {
+    "placeholders": {
+      "node": {},
+      "distance": {},
+      "maximum": {}
+    }
+  },
+  "detectedGpsLocation": "Detected GPS location: {location}.",
+  "@detectedGpsLocation": {
+    "placeholders": {
+      "location": {}
+    }
+  },
+  "selectedStartingNode": "Selected starting node: {node} ({distance} km away).",
+  "@selectedStartingNode": {
+    "placeholders": {
+      "node": {},
+      "distance": {}
+    }
+  },
+  "noAlerts": "No road-risk advisories or open reports were returned by the backend.",
+  "critical": "Critical",
+  "roadNetwork": "Road network",
+  "backendStatus": "Backend status",
+  "riskScore": "Risk score",
+  "caution": "Caution",
+  "clear": "Clear",
+  "verified": "Verified",
+  "rejected": "Rejected",
+  "resolved": "Resolved",
+  "underReview": "Under Review",
+  "refresh": "Refresh",
+  "lowRiskLegend": "Low risk",
+  "mediumRiskLegend": "Medium risk",
+  "highRiskLegend": "High / blocked",
+  "roadNode": "Road node",
+  "communityReportLegend": "Community report",
+  "mapTilesError": "Map tiles are unavailable. Road and incident data are shown from the backend; the base map needs internet access.",
+  "loadingLocations": "Loading locations from {baseUrl}...",
+  "@loadingLocations": {
+    "placeholders": {
+      "baseUrl": {}
+    }
+  },
+  "noRoadLocations": "No road locations are currently available.",
+  "retryLoadingLocations": "Retry loading locations",
+  "routeTilesUnavailable": "Map tiles are unavailable. Route calculation still uses backend road-graph data.",
+  "routeDetails": "{route} route details",
+  "@routeDetails": {
+    "placeholders": {
+      "route": {}
+    }
+  },
+  "blockedRouteWarning": "Warning: this route includes a road marked blocked. Do not travel this route; follow current local authority guidance.",
+  "distance": "Distance",
+  "estimatedTime": "Estimated time",
+  "averageRisk": "Average risk",
+  "maximumRisk": "Maximum risk",
+  "safetyRating": "Safety rating",
+  "roadByRoad": "Road-by-road route",
+  "road": "Road",
+  "risk": "Risk",
+  "status": "Status",
+  "saveRouteDevice": "Save this route on this device",
+  "preference": "Preference",
+  "path": "Path",
+  "notProvided": "not provided",
+  "staticNetworkNotice": "Routes use a static Pune road graph, not complete live navigation. Confirm road conditions with authorities before travelling.",
+  "calculatingRoute": "Calculating route...",
+  "currentRouteName": "Current location",
+  "reportingSubmitted": "Submitting...",
+  "routePreferenceSafest": "Safest",
+  "routePreferenceShortest": "Shortest",
+  "routeFeasibility": "Route availability",
+  "openDirections": "Open directions",
+  "safe": "Safe",
+  "locationServiceOff": "Location services are turned off. Enable them or choose a known map location.",
+  "locationPermissionDenied": "Location permission was denied. You can still choose a mapped location.",
+  "locationPermissionPermanentlyDenied": "Location permission is disabled for this app. Enable it in system settings or choose a mapped location.",
+  "locationRequestFailed": "Could not get your location: {error}",
+  "@locationRequestFailed": {
+    "placeholders": {
+      "error": {}
+    }
+  },
+  "moderate": "Moderate",
+  "reportedAt": "Reported: {time}",
+  "@reportedAt": {
+    "placeholders": {
+      "time": {}
+    }
+  },
+  "reportTypeWaterlogging": "Waterlogging",
+  "reportTypeRoadFlooded": "Road flooded",
+  "reportTypeRoadBlocked": "Road blocked",
+  "reportTypeHeavyRainfall": "Heavy rainfall",
+  "reportTypeDrainageOverflow": "Drainage overflow",
+  "reportTypeFallenTree": "Fallen tree",
+  "reportTypeTrafficDisruption": "Traffic disruption",
+  "reportTypeRescueRequired": "Rescue required",
+  "positionSourceGps": "GPS location (permission granted)",
+  "positionSourceMapped": "Selected mapped road-network point",
+  "availableMappedLocationsNotice": "Mapped locations unavailable; GPS can still provide coordinates.",
+  "readSavedError": "Could not read saved information: {error}",
+  "removeSavedError": "Could not remove saved information: {error}",
+  "savedItemsNotice": "Items are stored on this device and may become outdated. Confirm facility details before relying on them.",
+  "savedRecordSubtitle": "{type} · Saved {time}",
+  "@savedRecordSubtitle": {
+    "placeholders": {
+      "type": {},
+      "time": {}
+    }
+  },
+  "route": "Route",
+  "assistantEmpty": "Ask for general app guidance or flood-safety information. This assistant does not replace emergency services.",
+  "assistantSourceUnverified": "Service-reported source (not independently verified): {source}",
+  "@assistantSourceUnverified": {
+    "placeholders": {
+      "source": {}
+    }
+  },
+  "assistantUserTextNotice": "Messages and replies from the service are shown as received; arbitrary generated content is not translated by this app.",
+  "safety": "Safety",
+  "featureUnavailable": "This feature is unavailable.",
+  "bePrepared": "Be prepared",
+  "searchTitle": "Search resources",
+  "searchHint": "Search shelters, hospitals, roads...",
+  "searchPrompt": "Search available shelters, hospitals, relief facilities, roads and reports.",
+  "searchNoResults": "No matching records were found.",
+  "searchUnavailable": "Search records are unavailable right now. Check your connection and retry.",
+  "searchPartialUnavailable": "Some search sources are unavailable. Showing records that could be loaded.",
+  "searchClear": "Clear search",
+  "searchAll": "All",
+  "searchOpenResource": "Open related feature",
+  "copyCoordinates": "Copy coordinates",
+  "coordinatesCopied": "Coordinates copied",
+  "reportReference": "Report ID: {id}",
+  "@reportReference": {
+    "placeholders": {
+      "id": {}
+    }
+  },
+  "mapPreviewTitle": "Map near you",
+  "viewFullRiskMap": "View Full Risk Map",
+  "mapCurrentLocation": "Current GPS location",
+  "mapUseLocation": "Use my location",
+  "mapLocationNeeded": "Allow location access to see whether map data covers your area.",
+  "mapLocationUnavailable": "Your current location is unavailable.",
+  "mapOutsideCoverage": "Your location is outside the available road-network coverage. No local risk information is shown.",
+  "mapStaticData": "Static demo data",
+  "mapRoadNetworkSource": "Road network records",
+  "mapStaleData": "Stale data",
+  "mapUnavailable": "Map data unavailable",
+  "mapRiskUnavailable": "No road-risk record is available for this location.",
+  "mapRiskContext": "Status is from a nearby mapped road, not an exact GPS-point reading.",
+  "mapKnownHazards": "Nearby reported hazards",
+  "mapNoHazards": "No nearby hazard reports are available.",
+  "mapExpandInfo": "Expand map details",
+  "mapCollapseInfo": "Show more map",
+  "emergencyAssistance": "Emergency Assistance",
+  "findShelterDescription": "Browse available shelter and facility records",
+  "reportHazard": "Report Hazard",
+  "reportHazardDescription": "Send a hazard report for review",
+  "accountSection": "Account",
+  "accountGuest": "You are using guest access.",
+  "accountSignedIn": "You are signed in."
+}

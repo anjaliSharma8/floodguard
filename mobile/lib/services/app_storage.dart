@@ -10,6 +10,7 @@ class AppStorage {
     : _secureStorage = secureStorage ?? const FlutterSecureStorage();
 
   static const _tokenKey = 'sankatsetu_auth_token';
+  static const _guestModeKey = 'sankatsetu_guest_mode';
   static const _languageKey = 'sankatsetu_language';
   static const _savedItemsKey = 'sankatsetu_saved_items';
 
@@ -17,15 +18,37 @@ class AppStorage {
 
   Future<String?> readToken() => _secureStorage.read(key: _tokenKey);
 
-  Future<void> writeToken(String token) =>
-      _secureStorage.write(key: _tokenKey, value: token);
+  Future<void> writeToken(String token) => _writeAuthenticatedToken(token);
 
   Future<void> clearToken() => _secureStorage.delete(key: _tokenKey);
+
+  Future<void> _writeAuthenticatedToken(String token) async {
+    await _secureStorage.write(key: _tokenKey, value: token);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.remove(_guestModeKey);
+  }
+
+  Future<bool> readGuestMode() async {
+    final preferences = await SharedPreferences.getInstance();
+    return preferences.getBool(_guestModeKey) ?? false;
+  }
+
+  Future<void> writeGuestMode(bool isGuest) async {
+    final preferences = await SharedPreferences.getInstance();
+    if (isGuest) {
+      await _secureStorage.delete(key: _tokenKey);
+      await preferences.setBool(_guestModeKey, true);
+    } else {
+      await preferences.remove(_guestModeKey);
+    }
+  }
 
   Future<String> readLanguage() async {
     final preferences = await SharedPreferences.getInstance();
     final value = preferences.getString(_languageKey);
-    return const {'en', 'hi', 'mr'}.contains(value) ? value! : 'en';
+    return const {'en', 'hi', 'mr', 'gu', 'ta', 'te'}.contains(value)
+        ? value!
+        : 'en';
   }
 
   Future<void> writeLanguage(String language) async {

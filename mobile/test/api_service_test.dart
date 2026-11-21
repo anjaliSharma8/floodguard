@@ -174,6 +174,58 @@ void main() {
     }
   });
 
+  test('saved citizen session is validated with its bearer token', () async {
+    final service = ApiService(
+      baseUrl: 'http://example.test',
+      client: MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url, Uri.parse('http://example.test/api/auth/me'));
+        expect(request.headers['authorization'], 'Bearer saved-session-token');
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'user': {
+              'id': 'USR_CITIZEN_1',
+              'fullName': 'Citizen User',
+              'email': 'citizen@example.test',
+              'role': 'CITIZEN',
+            },
+          }),
+          200,
+        );
+      }),
+    );
+
+    final session = await service.validateSession(token: 'saved-session-token');
+    expect(session.token, 'saved-session-token');
+    expect(session.userId, 'USR_CITIZEN_1');
+    expect(session.role, 'CITIZEN');
+  });
+
+  test(
+    'session validation preserves unauthorized status for expired tokens',
+    () async {
+      final service = ApiService(
+        baseUrl: 'http://example.test',
+        client: MockClient(
+          (_) async => http.Response(
+            jsonEncode({'error': 'Invalid or expired session token.'}),
+            401,
+          ),
+        ),
+      );
+
+      await expectLater(
+        service.validateSession(token: 'expired-token'),
+        throwsA(
+          isA<ApiException>()
+              .having((error) => error.kind, 'kind', ApiFailureKind.http)
+              .having((error) => error.statusCode, 'statusCode', 401),
+        ),
+      );
+    },
+  );
+
   test('HTTP failures preserve status and server error text', () async {
     final service = ApiService(
       baseUrl: 'http://example.test',

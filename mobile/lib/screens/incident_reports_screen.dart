@@ -1,9 +1,28 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../models/app_models.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../widgets/app_widgets.dart';
+
+String _localizedSeverity(AppLocalizations l10n, String severity) =>
+    switch (severity) {
+      'Low' => l10n.low,
+      'Moderate' => l10n.moderate,
+      'High' => l10n.high,
+      'Critical' => l10n.critical,
+      _ => severity,
+    };
+
+String _localizedReviewStatus(AppLocalizations l10n, String status) =>
+    switch (status) {
+      'Verified' => l10n.verified,
+      'Rejected' => l10n.rejected,
+      'Resolved' => l10n.resolved,
+      'Under Review' => l10n.underReview,
+      _ => status,
+    };
 
 class IncidentReportsScreen extends StatefulWidget {
   const IncidentReportsScreen({
@@ -47,7 +66,7 @@ class _IncidentReportsScreenState extends State<IncidentReportsScreen> {
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = error.message;
+        _error = error.localizedMessage(AppLocalizations.of(context));
         _loading = false;
       });
     }
@@ -69,42 +88,39 @@ class _IncidentReportsScreenState extends State<IncidentReportsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Community incidents'),
+        title: Text(l10n.communityIncidents),
         actions: [
           IconButton(
             onPressed: _loading ? null : _loadReports,
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh reports',
+            tooltip: l10n.refreshReports,
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openForm,
         icon: const Icon(Icons.add_alert),
-        label: const Text('Report incident'),
+        label: Text(l10n.reportIncident),
       ),
       body: RefreshIndicator(
         onRefresh: _loadReports,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
           children: [
-            const DemoDataNotice(
-              text: 'Reports are server records and may include seeded demo entries. Citizen submissions remain unverified until reviewed by an authority.',
-            ),
+            DemoDataNotice(text: l10n.reportsDataNotice),
             if (widget.token == null) ...[
               const SizedBox(height: 10),
               Card(
                 child: ListTile(
                   leading: const Icon(Icons.lock_outline),
-                  title: const Text('Sign in to submit a report'),
-                  subtitle: const Text(
-                    'Viewing the report feed is public; submitting requires a citizen account.',
-                  ),
+                  title: Text(l10n.signInToReport),
+                  subtitle: Text(l10n.publicReportFeed),
                   trailing: TextButton(
                     onPressed: widget.onLogin,
-                    child: const Text('Sign in'),
+                    child: Text(l10n.login),
                   ),
                 ),
               ),
@@ -118,7 +134,7 @@ class _IncidentReportsScreenState extends State<IncidentReportsScreen> {
             else if (_error != null)
               ErrorPanel(message: _error!, onRetry: _loadReports)
             else if (_reports.isEmpty)
-              const EmptyPanel(message: 'No incident reports are available.')
+              EmptyPanel(message: l10n.noIncidentReports)
             else
               ..._reports.map(_reportCard),
           ],
@@ -128,6 +144,7 @@ class _IncidentReportsScreenState extends State<IncidentReportsScreen> {
   }
 
   Widget _reportCard(CommunityReport report) {
+    final l10n = AppLocalizations.of(context);
     final statusColor = switch (report.verificationStatus) {
       'Verified' => Colors.green,
       'Rejected' => Colors.red,
@@ -164,7 +181,7 @@ class _IncidentReportsScreenState extends State<IncidentReportsScreen> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    report.verificationStatus,
+                    _localizedReviewStatus(l10n, report.verificationStatus),
                     style: TextStyle(
                       color: statusColor,
                       fontSize: 11,
@@ -176,7 +193,7 @@ class _IncidentReportsScreenState extends State<IncidentReportsScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              '${report.reportType} · ${report.severity}',
+              '${localizedReportType(l10n, report.reportType)} · ${_localizedSeverity(l10n, report.severity)}',
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             if (report.description.isNotEmpty) ...[
@@ -185,7 +202,12 @@ class _IncidentReportsScreenState extends State<IncidentReportsScreen> {
             ],
             const SizedBox(height: 7),
             Text(
-              'Reported: ${formatTimestamp(report.timestamp)}',
+              l10n.reportedAt(
+                formatTimestamp(
+                  report.timestamp,
+                  unavailable: l10n.updateTimeNotProvided,
+                ),
+              ),
               style: const TextStyle(fontSize: 11, color: Colors.black54),
             ),
           ],
@@ -263,13 +285,14 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = error.message;
+        _error = error.localizedMessage(AppLocalizations.of(context));
         _loadingRoads = false;
       });
     }
   }
 
   Future<void> _useCurrentLocation() async {
+    final l10n = AppLocalizations.of(context);
     setState(() {
       _gettingLocation = true;
       _error = null;
@@ -282,14 +305,14 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
         _latitude = position.latitude;
         _longitude = position.longitude;
         _selectedNodeId = null;
-        _locationSource = 'GPS location (permission granted)';
+        _locationSource = l10n.positionSourceGps;
         if (_locationController.text.trim().isEmpty) {
-          _locationController.text = 'Current location';
+          _locationController.text = l10n.currentLocation;
         }
       });
     } on LocationException catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.message);
+      setState(() => _error = error.localizedMessage(l10n));
     } finally {
       if (mounted) setState(() => _gettingLocation = false);
     }
@@ -298,29 +321,29 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
   void _selectNode(String? id) {
     if (id == null || _network == null) return;
     final node = _network!.nodes.firstWhere((entry) => entry.id == id);
+    final l10n = AppLocalizations.of(context);
     setState(() {
       _error = null;
       _selectedNodeId = id;
       _latitude = node.latitude;
       _longitude = node.longitude;
-      _locationSource = 'Selected mapped road-network point';
+      _locationSource = l10n.positionSourceMapped;
       _locationController.text = node.name;
     });
   }
 
   Future<void> _submit() async {
+    final l10n = AppLocalizations.of(context);
     if (_locationController.text.trim().isEmpty) {
-      setState(() => _error = 'Enter a location name.');
+      setState(() => _error = l10n.enterLocationName);
       return;
     }
     if (_descriptionController.text.trim().isEmpty) {
-      setState(() => _error = 'Describe what happened.');
+      setState(() => _error = l10n.describeIncident);
       return;
     }
     if (_latitude == null || _longitude == null) {
-      setState(
-        () => _error = 'Choose a mapped location or grant location permission. A text-only location cannot be accurately placed on the incident map.',
-      );
+      setState(() => _error = l10n.chooseAccurateLocation);
       return;
     }
 
@@ -343,14 +366,15 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
       await showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Report submitted'),
+          title: Text(l10n.reportSubmitted),
           content: Text(
-            'The server recorded this report as "${report.verificationStatus}". It has not been verified by an authority.',
+            '${l10n.reportUnverified(_localizedReviewStatus(l10n, report.verificationStatus))}\n\n'
+            '${l10n.reportReference(report.id)}',
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Done'),
+              child: Text(l10n.done),
             ),
           ],
         ),
@@ -358,7 +382,9 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
       if (mounted) Navigator.pop(context, true);
     } on ApiException catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.message);
+      setState(
+        () => _error = error.localizedMessage(AppLocalizations.of(context)),
+      );
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -367,24 +393,28 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
   @override
   Widget build(BuildContext context) {
     final network = _network;
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Report an incident')),
+      appBar: AppBar(title: Text(l10n.reportFormTitle)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const DemoDataNotice(
-            text: 'Reports are submitted to the backend for review. The app cannot dispatch rescue services, and this API does not accept image uploads.',
-          ),
+          DemoDataNotice(text: l10n.reportingDataNotice),
           const SizedBox(height: 14),
           DropdownButtonFormField<String>(
             initialValue: _reportType,
             isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Incident type',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: l10n.incidentType,
+              border: const OutlineInputBorder(),
             ),
             items: _reportTypes
-                .map((type) => DropdownMenuItem(value: type, child: Text(type)))
+                .map(
+                  (type) => DropdownMenuItem(
+                    value: type,
+                    child: Text(localizedReportType(l10n, type)),
+                  ),
+                )
                 .toList(),
             onChanged: _submitting
                 ? null
@@ -395,14 +425,16 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             initialValue: _severity,
-            decoration: const InputDecoration(
-              labelText: 'Severity reported by you',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: l10n.severity,
+              border: const OutlineInputBorder(),
             ),
             items: _severities
                 .map(
-                  (severity) =>
-                      DropdownMenuItem(value: severity, child: Text(severity)),
+                  (severity) => DropdownMenuItem(
+                    value: severity,
+                    child: Text(_localizedSeverity(l10n, severity)),
+                  ),
                 )
                 .toList(),
             onChanged: _submitting
@@ -415,10 +447,10 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
           TextField(
             controller: _locationController,
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: 'Location name',
-              hintText: 'Area or mapped location',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: l10n.locationName,
+              hintText: l10n.mappedLocationHint,
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 8),
@@ -429,11 +461,11 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
               initialValue: _selectedNodeId,
               isExpanded: true,
               menuMaxHeight: MediaQuery.sizeOf(context).height * 0.55,
-              decoration: const InputDecoration(
-                labelText: 'Choose a mapped point (optional)',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.chooseMappedPoint,
+                border: const OutlineInputBorder(),
               ),
-              hint: const Text('Select a known map point'),
+              hint: Text(l10n.selectKnownPoint),
               items: network.nodes
                   .map(
                     (node) => DropdownMenuItem(
@@ -446,7 +478,7 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
             )
           else if (_error != null)
             Text(
-              'Mapped locations unavailable; GPS can still provide coordinates.',
+              l10n.mappedLocationsUnavailable,
               style: TextStyle(color: Colors.orange.shade900),
             ),
           if (network != null && network.segments.isNotEmpty) ...[
@@ -455,11 +487,11 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
               initialValue: _selectedRoadId,
               isExpanded: true,
               menuMaxHeight: MediaQuery.sizeOf(context).height * 0.55,
-              decoration: const InputDecoration(
-                labelText: 'Related road (optional)',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.relatedRoad,
+                border: const OutlineInputBorder(),
               ),
-              hint: const Text('No specific road'),
+              hint: Text(l10n.noSpecificRoad),
               items: network.segments
                   .map(
                     (road) => DropdownMenuItem(
@@ -480,11 +512,11 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
             maxLines: 6,
             maxLength: 1000,
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: 'Description',
-              hintText: 'Describe the hazard or assistance needed',
+            decoration: InputDecoration(
+              labelText: l10n.description,
+              hintText: l10n.hazardDescriptionHint,
               alignLabelWithHint: true,
-              border: OutlineInputBorder(),
+              border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 8),
@@ -500,14 +532,12 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
                   )
                 : const Icon(Icons.my_location),
             label: Text(
-              _gettingLocation
-                  ? 'Getting location...'
-                  : 'Use current GPS location',
+              _gettingLocation ? l10n.gettingLocation : l10n.useGpsLocation,
             ),
           ),
           if (_locationSource != null)
             Text(
-              'Position source: $_locationSource (${_latitude!.toStringAsFixed(5)}, ${_longitude!.toStringAsFixed(5)})',
+              '${l10n.positionSource}: $_locationSource (${_latitude!.toStringAsFixed(5)}, ${_longitude!.toStringAsFixed(5)})',
               style: const TextStyle(fontSize: 12, color: Colors.black54),
             ),
           if (_error != null) ...[
@@ -524,7 +554,7 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.send),
-            label: Text(_submitting ? 'Submitting...' : 'Submit report'),
+            label: Text(_submitting ? l10n.submitting : l10n.submitReport),
           ),
         ],
       ),

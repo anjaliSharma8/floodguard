@@ -3,9 +3,11 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 
+import '../l10n/generated/app_localizations.dart';
 import '../models/app_models.dart';
 import '../services/api_service.dart';
 import '../services/app_storage.dart';
+import '../services/location_service.dart';
 import '../widgets/app_widgets.dart';
 
 class SafeRoutePlannerScreen extends StatefulWidget {
@@ -14,11 +16,13 @@ class SafeRoutePlannerScreen extends StatefulWidget {
     this.client,
     this.api,
     this.storage,
+    this.locationService,
   });
 
   final http.Client? client;
   final ApiService? api;
   final AppStorage? storage;
+  final LocationService? locationService;
 
   @override
   State<SafeRoutePlannerScreen> createState() => _SafeRoutePlannerScreenState();
@@ -26,13 +30,16 @@ class SafeRoutePlannerScreen extends StatefulWidget {
 
 class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
   static const Color primaryColor = Color(0xFF087E8B);
+  static const double _maximumGpsSnapDistanceKm = 5;
 
   late final ApiService _api;
   late final bool _ownsApi;
+  late final LocationService _locationService;
   String get baseUrl => _api.baseUrl;
 
   String? selectedSourceId;
   String? selectedDestinationId;
+  LatLng? detectedLocation;
 
   String selectedRoute = 'Safest';
 
@@ -42,17 +49,21 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
 
   bool isLoadingRoads = true;
   bool isFindingRoute = false;
+  bool isGettingLocation = false;
   bool mapTileError = false;
 
   String? errorMessage;
   String? roadsErrorMessage;
   String? statusMessage;
+  String? locationMessage;
+  bool locationMessageIsError = false;
 
   @override
   void initState() {
     super.initState();
     _api = widget.api ?? ApiService(client: widget.client);
     _ownsApi = widget.api == null;
+    _locationService = widget.locationService ?? LocationService();
     fetchRoads();
   }
 
@@ -111,11 +122,12 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
       });
     } on ApiException catch (error) {
       if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
 
       setState(() {
         isLoadingRoads = false;
         roadsErrorMessage =
-            'Unable to load locations from $baseUrl.\n${error.message}';
+            '${l10n.networkUnavailable} ($baseUrl).\n${error.localizedMessage(l10n)}';
       });
     }
   }
@@ -186,13 +198,16 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
   List<LatLng> get mapPoints {
     final points = routePoints;
 
-    if (points.isNotEmpty) return points;
+    if (points.isNotEmpty) {
+      if (detectedLocation != null) points.add(detectedLocation!);
+      return points;
+    }
 
     final start = getNodePosition(getNodeById(selectedSourceId));
 
     final end = getNodePosition(getNodeById(selectedDestinationId));
 
-    return [?start, ?end];
+    return [?start, ?end, ?detectedLocation];
   }
 
   // MAP CENTER
@@ -228,13 +243,14 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
   // FIND SAFE ROUTE
 
   Future<void> findRoute() async {
+    final l10n = AppLocalizations.of(context);
     if (selectedSourceId == null || selectedDestinationId == null) {
       return;
     }
 
     if (selectedSourceId == selectedDestinationId) {
       setState(() {
-        statusMessage = 'Starting point and destination must be different.';
+        statusMessage = l10n.differentRoutePoints;
       });
       return;
     }
@@ -267,8 +283,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
 
       if (route != null && route['feasible'] == false) {
         setState(() {
-          statusMessage =
-              route['message']?.toString() ?? 'No feasible route found.';
+          statusMessage = route['message']?.toString() ?? l10n.routeNotFound;
         });
       }
     } on ApiException catch (error) {
@@ -276,9 +291,105 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
 
       setState(() {
         isFindingRoute = false;
-        errorMessage = 'Unable to calculate route.\n${error.message}';
+        errorMessage = '${l10n.getRouteError}\n${error.localizedMessage(l10n)}';
       });
     }
+  }
+
+  Future<void> useCurrentLocation() async {
+    final l10n = AppLocalizations.of(context);
+    setState(() {
+      isGettingLocation = true;
+      locationMessage = null;
+      locationMessageIsError = false;
+    });
+
+    try {
+      final position = await _locationService.getCurrentPosition();
+      if (!mounted) return;
+
+      final gpsLocation = LatLng(position.latitude, position.longitude);
+      Map<String, dynamic>? nearestNode;
+      var nearestDistanceKm = double.infinity;
+
+      for (final node in availableNodes) {
+        final nodePosition = getNodePosition(node);
+        if (nodePosition == null) continue;
+
+        final distanceKm = const Distance().as(
+          LengthUnit.Kilometer,
+          gpsLocation,
+          nodePosition,
+        );
+        if (distanceKm < nearestDistanceKm) {
+          nearestNode = node;
+          nearestDistanceKm = distanceKm;
+        }
+      }
+
+      final closestNode = nearestNode;
+      if (closestNode == null) {
+        setState(() {
+          detectedLocation = gpsLocation;
+          selectedSourceId = null;
+          routeResponse = null;
+          locationMessageIsError = true;
+          locationMessage =
+              '${l10n.detectedGpsLocation(_formatCoordinates(gpsLocation))} '
+              '${l10n.nearestRoadNodeUnavailable}';
+        });
+        return;
+      }
+
+      if (nearestDistanceKm > _maximumGpsSnapDistanceKm) {
+        setState(() {
+          detectedLocation = gpsLocation;
+          selectedSourceId = null;
+          routeResponse = null;
+          locationMessageIsError = true;
+          locationMessage =
+              '${l10n.detectedGpsLocation(_formatCoordinates(gpsLocation))} '
+              '${l10n.outsideRoadNetwork(closestNode['name'].toString(), nearestDistanceKm.toStringAsFixed(2), _maximumGpsSnapDistanceKm.toStringAsFixed(0))}';
+        });
+        return;
+      }
+
+      final selectedNode = closestNode;
+      setState(() {
+        detectedLocation = gpsLocation;
+        selectedSourceId = selectedNode['id'].toString();
+        routeResponse = null;
+        locationMessageIsError = false;
+        locationMessage =
+            '${l10n.detectedGpsLocation(_formatCoordinates(gpsLocation))}\n'
+            '${l10n.selectedStartingNode(selectedNode['name'].toString(), nearestDistanceKm.toStringAsFixed(2))}';
+      });
+    } on LocationException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        locationMessage = error.localizedMessage(l10n);
+        locationMessageIsError = true;
+      });
+    } finally {
+      if (mounted) setState(() => isGettingLocation = false);
+    }
+  }
+
+  String _formatCoordinates(LatLng location) =>
+      '${location.latitude.toStringAsFixed(5)}, '
+      '${location.longitude.toStringAsFixed(5)}';
+
+  String _localizedRoadStatus(AppLocalizations l10n, Object? value) {
+    final status = value?.toString();
+    if (status == null) return l10n.unknown;
+    return switch (status) {
+      'blocked' => l10n.blockedRoad,
+      'critical_waterlogged' => l10n.criticalWaterlogging,
+      'caution' => l10n.caution,
+      'clear' => l10n.clear,
+      'unknown' || 'Unknown' => l10n.unknown,
+      _ => status,
+    };
   }
 
   // LOCATION DROPDOWN
@@ -375,6 +486,17 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
       }
     }
 
+    if (detectedLocation != null) {
+      markers.add(
+        Marker(
+          point: detectedLocation!,
+          width: 45,
+          height: 50,
+          child: const Icon(Icons.my_location, color: Colors.blue, size: 32),
+        ),
+      );
+    }
+
     debugPrint('MAP ROUTE POINTS: ${points.length}');
 
     return ClipRRect(
@@ -382,7 +504,8 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
       child: FlutterMap(
         key: ValueKey(
           '${selectedSourceId}_${selectedDestinationId}_'
-          '${selectedRoute}_${routeResponse == null}',
+          '${selectedRoute}_${routeResponse == null}_'
+          '${detectedLocation?.latitude}_${detectedLocation?.longitude}',
         ),
         options: MapOptions(
           initialCenter: mapCenter,
@@ -429,6 +552,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
   // ROUTE DETAILS
 
   Widget buildRouteDetails() {
+    final l10n = AppLocalizations.of(context);
     final route = currentRoute;
 
     if (route == null) {
@@ -445,7 +569,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
           border: Border.all(color: Colors.red.shade200),
         ),
         child: Text(
-          route['message']?.toString() ?? 'No feasible route available.',
+          route['message']?.toString() ?? l10n.noFeasibleRoute,
           style: TextStyle(
             color: Colors.red.shade900,
             fontWeight: FontWeight.w600,
@@ -469,11 +593,22 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
       (edge) => edge is Map && edge['status'] == 'blocked',
     );
 
-    final ratingColor = safetyRating == 'Safe'
+    final ratingColor = containsBlockedRoad
+        ? Colors.red
+        : safetyRating == 'Safe'
         ? Colors.green
         : safetyRating == 'Moderate'
         ? Colors.orange
         : Colors.red;
+    final ratingLabel = containsBlockedRoad
+        ? l10n.blockedRoad
+        : safetyRating == 'Safe'
+        ? l10n.safe
+        : safetyRating == 'Moderate'
+        ? l10n.medium
+        : safetyRating == 'Unknown'
+        ? l10n.unknown
+        : safetyRating;
 
     return Container(
       width: double.infinity,
@@ -487,13 +622,17 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '$selectedRoute Route Details',
+            l10n.routeDetails(
+              selectedRoute == 'Safest'
+                  ? l10n.routePreferenceSafest
+                  : l10n.routePreferenceShortest,
+            ),
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           if (containsBlockedRoad) ...[
             const SizedBox(height: 8),
-            const Text(
-              'Warning: the backend route includes a road marked blocked. Do not travel this route; follow current local authority guidance.',
+            Text(
+              l10n.blockedRouteWarning,
               style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
             ),
           ],
@@ -505,14 +644,14 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
               Expanded(
                 child: _detailItem(
                   Icons.route,
-                  'Distance',
+                  l10n.distance,
                   '${distance.toStringAsFixed(2)} km',
                 ),
               ),
               Expanded(
                 child: _detailItem(
                   Icons.access_time,
-                  'Estimated Time',
+                  l10n.estimatedTime,
                   '${travelTime.toStringAsFixed(1)} min',
                 ),
               ),
@@ -526,14 +665,14 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
               Expanded(
                 child: _detailItem(
                   Icons.warning_amber,
-                  'Average Risk',
+                  l10n.averageRisk,
                   averageRisk.toStringAsFixed(1),
                 ),
               ),
               Expanded(
                 child: _detailItem(
                   Icons.shield,
-                  'Maximum Risk',
+                  l10n.maximumRisk,
                   maximumRisk.toStringAsFixed(1),
                 ),
               ),
@@ -544,12 +683,12 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
 
           Row(
             children: [
-              const Text(
-                'Safety Rating: ',
+              Text(
+                '${l10n.safetyRating}: ',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               Text(
-                safetyRating,
+                ratingLabel,
                 style: TextStyle(
                   color: ratingColor,
                   fontWeight: FontWeight.bold,
@@ -562,15 +701,15 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
             const SizedBox(height: 16),
             const Divider(),
 
-            const Text(
-              'Road-by-road route',
+            Text(
+              l10n.roadByRoad,
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
 
             const SizedBox(height: 8),
 
             ...edges.map((edge) {
-              final name = edge['name'] ?? 'Road';
+              final name = edge['name'] ?? l10n.road;
               final risk = edge['riskScore'] ?? 'N/A';
               final status = edge['status'] ?? 'Unknown';
               final km = edge['distanceKm'] ?? 'N/A';
@@ -587,7 +726,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
                     Expanded(
                       child: Text(
                         '$name\n'
-                        'Distance: $km km | Risk: $risk | Status: $status',
+                        '${l10n.distance}: $km km | ${l10n.risk}: $risk | ${l10n.status}: ${_localizedRoadStatus(l10n, status)}',
                         style: const TextStyle(fontSize: 12),
                       ),
                     ),
@@ -601,7 +740,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
             OutlinedButton.icon(
               onPressed: _saveCurrentRoute,
               icon: const Icon(Icons.bookmark_add_outlined),
-              label: const Text('Save this route on this device'),
+              label: Text(l10n.saveRouteDevice),
             ),
           ],
         ],
@@ -610,6 +749,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
   }
 
   Future<void> _saveCurrentRoute() async {
+    final l10n = AppLocalizations.of(context);
     final route = currentRoute;
     final storage = widget.storage;
     if (route == null || storage == null) return;
@@ -619,33 +759,36 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
         .whereType<String>()
         .toList();
     final details = [
-      'Preference: $selectedRoute',
-      'Path: ${nodeNames.join(' → ')}',
-      'Distance: ${route['totalDistanceKm'] ?? 'not provided'} km',
-      'Estimated time: ${route['travelTimeMins'] ?? 'not provided'} minutes',
-      'Average risk: ${route['averageRiskScore'] ?? 'not provided'}',
-      'Maximum risk: ${route['maxRiskScore'] ?? 'not provided'}',
-      'Safety rating: ${route['safetyRating'] ?? 'not provided'}',
-      'Road-network coverage is a static Pune demo graph, not live navigation.',
+      '${l10n.preference}: ${selectedRoute == 'Safest' ? l10n.routePreferenceSafest : l10n.routePreferenceShortest}',
+      '${l10n.path}: ${nodeNames.join(' → ')}',
+      '${l10n.distance}: ${route['totalDistanceKm'] ?? l10n.notProvided} km',
+      '${l10n.estimatedTime}: ${route['travelTimeMins'] ?? l10n.notProvided} minutes',
+      '${l10n.averageRisk}: ${route['averageRiskScore'] ?? l10n.notProvided}',
+      '${l10n.maximumRisk}: ${route['maxRiskScore'] ?? l10n.notProvided}',
+      '${l10n.safetyRating}: ${route['safetyRating'] ?? l10n.notProvided}',
+      l10n.routeNotLiveNavigation,
     ].join('\n');
     try {
       await storage.saveItem(
         SavedItem(
           id: 'route:${selectedSourceId}_$selectedDestinationId',
           type: 'route',
-          title: '$selectedRoute route',
+          title: l10n.routeDetails(
+            selectedRoute == 'Safest'
+                ? l10n.routePreferenceSafest
+                : l10n.routePreferenceShortest,
+          ),
           details: details,
           savedAt: DateTime.now(),
         ),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Route saved on this device.')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.routeSaved)));
     } on Exception catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not save this route: $error')),
+        SnackBar(content: Text(l10n.saveRouteError(error.toString()))),
       );
     }
   }
@@ -689,10 +832,11 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Safe Route Planner',
+        title: Text(
+          l10n.safeRouteTitle,
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         backgroundColor: primaryColor,
@@ -708,22 +852,20 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Find a Safer Way',
+              Text(
+                l10n.findSaferWay,
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
 
               const SizedBox(height: 8),
 
-              const Text(
-                'Plan your journey while avoiding potentially flooded areas.',
+              Text(
+                l10n.routeIntro,
                 style: TextStyle(color: Colors.grey, fontSize: 14),
               ),
 
               const SizedBox(height: 8),
-              const DemoDataNotice(
-                text: 'Routes use a static Pune road graph, not complete live navigation. Confirm road conditions with authorities before travelling.',
-              ),
+              DemoDataNotice(text: l10n.staticNetworkNotice),
 
               const SizedBox(height: 8),
 
@@ -737,8 +879,8 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
 
               const SizedBox(height: 24),
 
-              const Text(
-                'Starting Point',
+              Text(
+                l10n.startingPoint,
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
 
@@ -757,7 +899,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'Loading locations from $baseUrl...',
+                          l10n.loadingLocations(baseUrl),
                           style: const TextStyle(color: Colors.grey),
                         ),
                       ),
@@ -783,7 +925,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
                       TextButton.icon(
                         onPressed: isLoadingRoads ? null : fetchRoads,
                         icon: const Icon(Icons.refresh),
-                        label: const Text('Retry loading locations'),
+                        label: Text(l10n.retryLoadingLocations),
                       ),
                     ],
                   ),
@@ -798,41 +940,92 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
                   ),
                   child: Row(
                     children: [
-                      const Expanded(
-                        child: Text(
-                          'No road locations are currently available.',
-                        ),
-                      ),
+                      Expanded(child: Text(l10n.noRoadLocations)),
                       TextButton.icon(
                         onPressed: isLoadingRoads ? null : fetchRoads,
                         icon: const Icon(Icons.refresh),
-                        label: const Text('Retry'),
+                        label: Text(l10n.retry),
                       ),
                     ],
                   ),
                 )
               else
-                buildLocationDropdown(
-                  label: 'Select starting point',
-                  selectedValue: selectedSourceId,
-                  icon: Icons.my_location,
-                  onChanged: (value) {
-                    setState(() {
-                      selectedSourceId = value;
-                      routeResponse = null;
-                    });
-                  },
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    buildLocationDropdown(
+                      label: l10n.selectStartingPoint,
+                      selectedValue: selectedSourceId,
+                      icon: Icons.my_location,
+                      onChanged: (value) {
+                        setState(() {
+                          selectedSourceId = value;
+                          detectedLocation = null;
+                          locationMessage = null;
+                          routeResponse = null;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed:
+                          isGettingLocation ||
+                              isFindingRoute ||
+                              isLoadingRoads ||
+                              availableNodes.isEmpty
+                          ? null
+                          : useCurrentLocation,
+                      icon: isGettingLocation
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.my_location),
+                      label: Text(
+                        isGettingLocation
+                            ? l10n.gettingCurrentLocation
+                            : l10n.useCurrentLocation,
+                      ),
+                    ),
+                    if (locationMessage != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: locationMessageIsError
+                              ? Colors.red.shade50
+                              : Colors.teal.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: locationMessageIsError
+                                ? Colors.red.shade200
+                                : Colors.teal.shade100,
+                          ),
+                        ),
+                        child: Text(
+                          locationMessage!,
+                          style: TextStyle(
+                            color: locationMessageIsError
+                                ? Colors.red.shade900
+                                : Colors.teal.shade900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
 
               if (availableNodes.isNotEmpty && !isLoadingRoads) ...[
                 const SizedBox(height: 20),
-                const Text(
-                  'Destination',
+                Text(
+                  l10n.destination,
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 8),
                 buildLocationDropdown(
-                  label: 'Select destination',
+                  label: l10n.selectDestination,
                   selectedValue: selectedDestinationId,
                   icon: Icons.location_on,
                   onChanged: (value) {
@@ -846,8 +1039,8 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
 
               const SizedBox(height: 24),
 
-              const Text(
-                'Route Preference',
+              Text(
+                l10n.routePreference,
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
 
@@ -857,7 +1050,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
                 children: [
                   Expanded(
                     child: ChoiceChip(
-                      label: const Text('Safest Route'),
+                      label: Text(l10n.safestRoute),
                       selected: selectedRoute == 'Safest',
                       selectedColor: Colors.teal.shade100,
                       onSelected: (_) {
@@ -872,7 +1065,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
 
                   Expanded(
                     child: ChoiceChip(
-                      label: const Text('Shortest Route'),
+                      label: Text(l10n.shortestRoute),
                       selected: selectedRoute == 'Shortest',
                       selectedColor: Colors.teal.shade100,
                       onSelected: (_) {
@@ -887,8 +1080,8 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
 
               const SizedBox(height: 24),
 
-              const Text(
-                'Route Map',
+              Text(
+                l10n.routeMap,
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
 
@@ -901,8 +1094,8 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
               ),
               if (mapTileError) ...[
                 const SizedBox(height: 6),
-                const Text(
-                  'Map tiles are unavailable. Route calculation still uses backend road-graph data.',
+                Text(
+                  l10n.routeTilesUnavailable,
                   style: TextStyle(color: Colors.orange, fontSize: 12),
                 ),
               ],
@@ -952,12 +1145,7 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
 
                     Expanded(
                       child: Text(
-                        'Safety Notice\n'
-                        'Avoid waterlogged roads and never cross '
-                        'flowing floodwater. Follow official '
-                        'emergency instructions. Route results use '
-                        'the available road-network data and are '
-                        'not a substitute for official emergency guidance.',
+                        l10n.routeSafetyNotice,
                         style: TextStyle(
                           color: Colors.orange.shade900,
                           height: 1.5,
@@ -1003,7 +1191,9 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
                     onPressed:
                         isLoadingRoads ||
                             isFindingRoute ||
-                            availableNodes.isEmpty
+                            availableNodes.isEmpty ||
+                            selectedSourceId == null ||
+                            selectedDestinationId == null
                         ? null
                         : findRoute,
                     icon: isFindingRoute
@@ -1018,8 +1208,8 @@ class _SafeRoutePlannerScreenState extends State<SafeRoutePlannerScreen> {
                         : const Icon(Icons.alt_route),
                     label: Text(
                       isFindingRoute
-                          ? 'Calculating Route...'
-                          : 'Find Safe Route',
+                          ? l10n.calculatingRoute
+                          : l10n.findSafeRoute,
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,

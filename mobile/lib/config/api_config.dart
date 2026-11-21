@@ -10,6 +10,6 @@ class ApiConfig {
     if (configured.isNotEmpty) {
       return configured.replaceFirst(RegExp(r'/+$'), '');
     }
-    return kIsWeb ? 'http://127.0.0.1:3000' : 'http://10.0.2.2:3000';
+    return kIsWeb ? 'http://127.0.0.1:3000' : 'http://192.168.0.104:3000';
   }
 }

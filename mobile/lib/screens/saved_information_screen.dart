@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../models/app_models.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../services/app_storage.dart';
 import '../widgets/app_widgets.dart';
 
@@ -38,29 +39,32 @@ class _SavedInformationScreenState extends State<SavedInformationScreen> {
       });
     } on Exception catch (error) {
       if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
       setState(() {
-        _error = 'Could not read saved information: $error';
+        _error = l10n.readSavedError(error.toString());
         _loading = false;
       });
     }
   }
 
   Future<void> _remove(SavedItem item) async {
+    final l10n = AppLocalizations.of(context);
     try {
       await widget.storage.removeItem(item.id);
       if (!mounted) return;
       setState(() => _items.removeWhere((saved) => saved.id == item.id));
     } on Exception catch (error) {
       if (!mounted) return;
-      setState(() => _error = 'Could not remove saved information: $error');
+      setState(() => _error = l10n.removeSavedError(error.toString()));
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Saved information'),
+        title: Text(l10n.savedInformation),
         actions: [
           IconButton(
             onPressed: _loading ? null : _load,
@@ -76,16 +80,11 @@ class _SavedInformationScreenState extends State<SavedInformationScreen> {
               child: ErrorPanel(message: _error!, onRetry: _load),
             )
           : _items.isEmpty
-          ? const EmptyPanel(
-              icon: Icons.bookmark_border,
-              message: 'No saved items yet. Save a route or an emergency facility to keep it on this device.',
-            )
+          ? EmptyPanel(icon: Icons.bookmark_border, message: l10n.noSavedItems)
           : ListView(
               padding: const EdgeInsets.all(14),
               children: [
-                const DemoDataNotice(
-                  text: 'Items are stored on this device and may become outdated. Confirm facility details before relying on them.',
-                ),
+                DemoDataNotice(text: l10n.savedItemsNotice),
                 const SizedBox(height: 8),
                 ..._items.map(
                   (item) => Card(
@@ -97,7 +96,13 @@ class _SavedInformationScreenState extends State<SavedInformationScreen> {
                       ),
                       title: Text(item.title),
                       subtitle: Text(
-                        '${item.type} · Saved ${formatTimestamp(item.savedAt)}',
+                        l10n.savedRecordSubtitle(
+                          item.type == 'route' ? l10n.route : item.type,
+                          formatTimestamp(
+                            item.savedAt,
+                            unavailable: l10n.updateTimeNotProvided,
+                          ),
+                        ),
                       ),
                       children: [
                         Padding(
@@ -107,7 +112,7 @@ class _SavedInformationScreenState extends State<SavedInformationScreen> {
                             children: [
                               Expanded(child: SelectableText(item.details)),
                               IconButton(
-                                tooltip: 'Remove saved item',
+                                tooltip: l10n.removeSavedItem,
                                 onPressed: () => _remove(item),
                                 icon: const Icon(Icons.delete_outline),
                               ),

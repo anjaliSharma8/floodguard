@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../models/app_models.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../services/api_service.dart';
 import '../widgets/app_widgets.dart';
 
@@ -34,7 +34,8 @@ class _Alert {
 class _AlertsScreenState extends State<AlertsScreen> {
   List<_Alert> _alerts = [];
   bool _loading = true;
-  String? _error;
+  bool _roadsUnavailable = false;
+  bool _reportsUnavailable = false;
 
   @override
   void initState() {
@@ -45,16 +46,15 @@ class _AlertsScreenState extends State<AlertsScreen> {
   Future<void> _load() async {
     setState(() {
       _loading = true;
-      _error = null;
+      _roadsUnavailable = false;
+      _reportsUnavailable = false;
+      _alerts = [];
     });
+    final alerts = <_Alert>[];
     try {
-      final results = await Future.wait<dynamic>([
-        widget.api.fetchRoadNetwork(),
-        widget.api.fetchReports(),
-      ]);
-      final network = results[0] as RoadNetwork;
-      final reports = results[1] as List<CommunityReport>;
-      final alerts = <_Alert>[];
+      final network = await widget.api.fetchRoadNetwork();
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
       for (final road in network.segments) {
         final noteworthy =
             road.status == 'blocked' ||
@@ -65,24 +65,32 @@ class _AlertsScreenState extends State<AlertsScreen> {
         alerts.add(
           _Alert(
             title: road.status == 'blocked'
-                ? 'Road reported blocked'
+                ? l10n.roadReportedBlocked
                 : road.status == 'critical_waterlogged'
-                ? 'Critical waterlogging status'
-                : 'Road risk advisory',
+                ? l10n.criticalWaterlogging
+                : l10n.roadRiskAdvisory,
             location: road.name,
             details:
-                'Backend status: ${road.status} · Risk score: ${road.riskScore.toStringAsFixed(0)}/100',
+                '${l10n.backendStatus}: ${_localizedRoadStatus(l10n, road.status)} · ${l10n.riskScore}: ${road.riskScore.toStringAsFixed(0)}/100',
             source: 'Road network',
             severity:
                 road.status == 'blocked' ||
                     road.status == 'critical_waterlogged' ||
                     road.riskScore >= 60
-                ? 'High'
-                : 'Medium',
+                ? l10n.high
+                : l10n.medium,
             timestamp: road.lastUpdated,
           ),
         );
       }
+    } on ApiException {
+      if (!mounted) return;
+      setState(() => _roadsUnavailable = true);
+    }
+    try {
+      final reports = await widget.api.fetchReports();
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
       for (final report in reports) {
         if (report.verificationStatus == 'Rejected' ||
             report.verificationStatus == 'Resolved') {
@@ -90,36 +98,33 @@ class _AlertsScreenState extends State<AlertsScreen> {
         }
         alerts.add(
           _Alert(
-            title: report.reportType,
+            title: localizedReportType(l10n, report.reportType),
             location: report.locationName,
             details:
-                '${report.description}\nReview status: ${report.verificationStatus}',
+                '${report.description}\n${l10n.reviewStatus}: ${_localizedReviewStatus(l10n, report.verificationStatus)}',
             source: 'Community report',
             severity: report.severity,
             timestamp: report.timestamp,
           ),
         );
       }
-      alerts.sort((a, b) {
-        final aTime = a.timestamp;
-        final bTime = b.timestamp;
-        if (aTime == null && bTime == null) return 0;
-        if (aTime == null) return 1;
-        if (bTime == null) return -1;
-        return bTime.compareTo(aTime);
-      });
+    } on ApiException {
       if (!mounted) return;
-      setState(() {
-        _alerts = alerts;
-        _loading = false;
-      });
-    } on ApiException catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _error = error.message;
-        _loading = false;
-      });
+      setState(() => _reportsUnavailable = true);
     }
+    if (!mounted) return;
+    alerts.sort((a, b) {
+      final aTime = a.timestamp;
+      final bTime = b.timestamp;
+      if (aTime == null && bTime == null) return 0;
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+      return bTime.compareTo(aTime);
+    });
+    setState(() {
+      _alerts = alerts;
+      _loading = false;
+    });
   }
 
   Color _color(String severity) {
@@ -133,14 +138,15 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Flood alerts'),
+        title: Text(l10n.alerts),
         actions: [
           IconButton(
             onPressed: _loading ? null : _load,
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+            tooltip: l10n.retry,
           ),
         ],
       ),
@@ -149,31 +155,42 @@ class _AlertsScreenState extends State<AlertsScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            const DemoDataNotice(
-              text: 'The backend has no dedicated alerts or push-notification API. These in-app advisories are derived from /api/roads and /api/reports; source records can include seeded demo data.',
-            ),
+            DemoDataNotice(text: l10n.alertsDataNotice),
             const SizedBox(height: 8),
-            const Card(
+            Card(
               child: ListTile(
                 leading: Icon(Icons.notifications_off_outlined),
-                title: Text('In-app only'),
-                subtitle: Text(
-                  'Push notifications are not configured. This screen does not run as an emergency alert service.',
-                ),
+                title: Text(l10n.alertsInAppOnly),
+                subtitle: Text(l10n.alertsNoPushNotice),
               ),
             ),
             const SizedBox(height: 8),
+            if (_roadsUnavailable || _reportsUnavailable)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.cloud_off_outlined),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(l10n.searchPartialUnavailable)),
+                      TextButton(onPressed: _load, child: Text(l10n.retry)),
+                    ],
+                  ),
+                ),
+              ),
             if (_loading)
               const Padding(
                 padding: EdgeInsets.all(28),
                 child: Center(child: CircularProgressIndicator()),
               )
-            else if (_error != null)
-              ErrorPanel(message: _error!, onRetry: _load)
             else if (_alerts.isEmpty)
-              const EmptyPanel(
+              EmptyPanel(
                 icon: Icons.verified_user_outlined,
-                message: 'No road-risk advisories or open reports were returned by the backend.',
+                message: l10n.noAlerts,
               )
             else
               ..._alerts.map((alert) {
@@ -199,13 +216,17 @@ class _AlertsScreenState extends State<AlertsScreen> {
                           const SizedBox(height: 4),
                           Text(alert.details),
                           const SizedBox(height: 5),
-                          Text('Source: ${alert.source}'),
-                          Text('Updated: ${formatTimestamp(alert.timestamp)}'),
+                          Text(
+                            '${l10n.source}: ${_localizedSource(l10n, alert.source)}',
+                          ),
+                          Text(
+                            '${l10n.updated}: ${formatTimestamp(alert.timestamp, unavailable: l10n.updateTimeNotProvided)}',
+                          ),
                         ],
                       ),
                     ),
                     trailing: Text(
-                      alert.severity,
+                      _localizedSeverity(l10n, alert.severity),
                       style: TextStyle(
                         color: color,
                         fontWeight: FontWeight.bold,
@@ -221,4 +242,38 @@ class _AlertsScreenState extends State<AlertsScreen> {
       ),
     );
   }
+
+  String _localizedSource(AppLocalizations l10n, String source) =>
+      source == 'Road network'
+      ? l10n.roadNetwork
+      : source == 'Community report'
+      ? l10n.communityReport
+      : source;
+
+  String _localizedRoadStatus(AppLocalizations l10n, String status) =>
+      switch (status) {
+        'blocked' => l10n.blockedRoad,
+        'critical_waterlogged' => l10n.criticalWaterlogging,
+        'caution' => l10n.caution,
+        'clear' => l10n.clear,
+        _ => status,
+      };
+
+  String _localizedReviewStatus(AppLocalizations l10n, String status) =>
+      switch (status) {
+        'Verified' => l10n.verified,
+        'Rejected' => l10n.rejected,
+        'Resolved' => l10n.resolved,
+        'Under Review' => l10n.underReview,
+        _ => status,
+      };
+
+  String _localizedSeverity(AppLocalizations l10n, String severity) =>
+      switch (severity.toLowerCase()) {
+        'critical' => l10n.critical,
+        'high' => l10n.high,
+        'moderate' || 'medium' => l10n.medium,
+        'low' => l10n.low,
+        _ => severity,
+      };
 }

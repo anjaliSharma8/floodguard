@@ -4,15 +4,24 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../models/app_models.dart';
 
 enum ApiFailureKind { network, timeout, http, parsing }
 
 class ApiException implements Exception {
-  const ApiException(this.message, this.kind);
+  const ApiException(this.message, this.kind, {this.statusCode});
 
   final String message;
   final ApiFailureKind kind;
+  final int? statusCode;
+
+  String localizedMessage(AppLocalizations l10n) => switch (kind) {
+    ApiFailureKind.network => l10n.apiNetworkError,
+    ApiFailureKind.timeout => l10n.apiTimeout,
+    ApiFailureKind.parsing => l10n.apiInvalidResponse,
+    ApiFailureKind.http => message,
+  };
 
   @override
   String toString() => message;
@@ -197,6 +206,19 @@ class ApiService {
     });
   }
 
+  Future<AuthSession> validateSession({required String token}) async {
+    final response = await _request('GET', '/api/auth/me', token: token);
+    try {
+      final result = _asMap(response, 'session response');
+      return AuthSession.fromJson({'token': token, 'user': result['user']});
+    } on FormatException catch (error) {
+      throw ApiException(
+        'Could not read saved sign-in session: ${error.message}',
+        ApiFailureKind.parsing,
+      );
+    }
+  }
+
   Future<AuthSession> registerCitizen({
     required String fullName,
     required String email,
@@ -299,6 +321,7 @@ class ApiService {
               ? 'Request to $path failed with HTTP ${response.statusCode}.'
               : 'Request to $path failed (${response.statusCode}): $serverMessage',
           ApiFailureKind.http,
+          statusCode: response.statusCode,
         );
       }
       return decoded;
